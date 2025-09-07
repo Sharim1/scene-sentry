@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="dashboard-modern">
-    <div class="container-fluid">
+    <div class="w-full">
         <!-- Modern Header Section -->
         <div class="dashboard-header">
             <div class="header-content">
@@ -49,8 +49,8 @@
         </div>
     
     <!-- Stats Cards -->
-    <div class="row g-4 mb-4">
-        <div class="col-lg-4">
+    <div class="grid lg:grid-cols-3 gap-4 mb-4">
+        <div>
             <div class="modern-stat-card pending-card">
                 <div class="stat-content">
                     <div class="stat-number">{{ recommendations|length }}</div>
@@ -62,7 +62,7 @@
             </div>
         </div>
         
-        <div class="col-lg-4">
+        <div>
             <div class="modern-stat-card watchlist-card">
                 <div class="stat-content">
                     <div class="stat-number">{{ library_stats.confirmed + library_stats.in_progress }}</div>
@@ -74,7 +74,7 @@
             </div>
         </div>
         
-        <div class="col-lg-4">
+        <div>
             <div class="modern-stat-card accuracy-card">
                 <div class="stat-content">
                     <div class="stat-number">87%</div>
@@ -89,35 +89,26 @@
     
     <!-- Content Tabs -->
     <div class="modern-tabs-container">
-        <ul class="nav nav-pills modern-tabs" id="content-tabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="movies-tab" data-bs-toggle="pill" data-bs-target="#movies" 
-                        type="button" role="tab">
-                    <i data-feather="film" class="me-2"></i>Movies
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tv-shows-tab" data-bs-toggle="pill" data-bs-target="#tv-shows" 
-                        type="button" role="tab">
-                    <i data-feather="tv" class="me-2"></i>TV Shows
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="books-tab" data-bs-toggle="pill" data-bs-target="#books" 
-                        type="button" role="tab">
-                    <i data-feather="book" class="me-2"></i>Books
-                </button>
-            </li>
-        </ul>
+        <div class="modern-tabs flex gap-2" id="content-tabs" role="tablist">
+            <button class="nav-link active" id="movies-tab" data-target="#movies" type="button" role="tab">
+                <i data-feather="film" class="mr-2"></i>Movies
+            </button>
+            <button class="nav-link" id="tv-shows-tab" data-target="#tv-shows" type="button" role="tab">
+                <i data-feather="tv" class="mr-2"></i>TV Shows
+            </button>
+            <button class="nav-link" id="books-tab" data-target="#books" type="button" role="tab">
+                <i data-feather="book" class="mr-2"></i>Books
+            </button>
+        </div>
     </div>
     
     <!-- Tab Content -->
     <div class="tab-content" id="content-tab-content">
         <!-- Movies Tab -->
-        <div class="tab-pane fade show active" id="movies" role="tabpanel">
+        <div class="tab-pane active" id="movies" role="tabpanel">
             <div class="content-section-modern">
                 <div class="section-title">
-                    <i data-feather="film" class="me-2"></i>New Movie Recommendations
+                    <i data-feather="film" class="mr-2"></i>New Movie Recommendations
                 </div>
                 
                 {% set movie_recommendations = recommendations|selectattr("content.content_type", "equalto", "movie")|list %}
@@ -173,10 +164,10 @@
         </div>
         
         <!-- TV Shows Tab -->
-        <div class="tab-pane fade" id="tv-shows" role="tabpanel">
+        <div class="tab-pane hidden" id="tv-shows" role="tabpanel">
             <div class="content-section-modern">
                 <div class="section-title">
-                    <i data-feather="tv" class="me-2"></i>New TV Show Recommendations
+                    <i data-feather="tv" class="mr-2"></i>New TV Show Recommendations
                 </div>
                 
                 {% set tv_recommendations = recommendations|selectattr("content.content_type", "equalto", "tv_show")|list %}
@@ -232,10 +223,10 @@
         </div>
         
         <!-- Books Tab -->
-        <div class="tab-pane fade" id="books" role="tabpanel">
+        <div class="tab-pane hidden" id="books" role="tabpanel">
             <div class="content-section-modern">
                 <div class="section-title">
-                    <i data-feather="book" class="me-2"></i>New Book Recommendations
+                    <i data-feather="book" class="mr-2"></i>New Book Recommendations
                 </div>
                 
                 {% set book_recommendations = recommendations|selectattr("content.content_type", "equalto", "book")|list %}
@@ -300,14 +291,27 @@ setTimeout(() => {
     location.reload();
 }, 300000);
 
-// Initialize tabs
+// Initialize tabs (vanilla JS)
 document.addEventListener('DOMContentLoaded', function() {
-    // Enable bootstrap tabs
-    var triggerTabList = [].slice.call(document.querySelectorAll('[data-bs-toggle="pill"]'));
-    triggerTabList.forEach(function (triggerEl) {
-        var tabTrigger = new bootstrap.Tab(triggerEl);
+    const tabs = document.querySelectorAll('.modern-tabs .nav-link');
+    const panes = {
+        movies: document.querySelector('#movies'),
+        'tv-shows': document.querySelector('#tv-shows'),
+        books: document.querySelector('#books')
+    };
+
+    tabs.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            Object.values(panes).forEach(p => p.classList.add('hidden'));
+            btn.classList.add('active');
+            const target = btn.getAttribute('data-target');
+            if (target && document.querySelector(target)) {
+                document.querySelector(target).classList.remove('hidden');
+            }
+        });
     });
-    
+
     // Handle force discovery with progress indicator
     const discoveryForm = document.getElementById('discovery-form');
     const discoveryBtn = document.getElementById('discovery-btn');
@@ -318,8 +322,6 @@ document.addEventListener('DOMContentLoaded', function() {
         discoveryForm.addEventListener('submit', function(e) {
             // Show loading state
             discoveryBtn.disabled = true;
-            discoveryBtn.classList.remove('btn-outline-primary');
-            discoveryBtn.classList.add('btn-primary');
             discoveryIcon.setAttribute('data-feather', 'loader');
             discoveryIcon.classList.add('spinner');
             discoveryText.textContent = 'Discovering...';
@@ -345,7 +347,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (discoveryBtn.disabled) {
                     discoveryText.textContent = 'Still processing...';
                 }
-            }, 10000); // Show "Still processing..." after 10 seconds
+            }, 10000);
         });
     }
 });

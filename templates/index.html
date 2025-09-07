@@ -5,9 +5,9 @@
 {% block content %}
 <!-- Hero Section -->
 <section class="hero-section-modern">
-    <div class="container">
-        <div class="row align-items-center min-vh-100">
-            <div class="col-lg-6">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="grid lg:grid-cols-2 items-center min-h-screen gap-8">
+            <div class="w-full">
                 <div class="hero-badge">
                     <span class="badge-icon">🤖</span>
                     <span>AI-Powered Discovery</span>
@@ -40,11 +40,11 @@
                 </div>
                 
                 <div class="hero-actions">
-                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg hero-cta">
+                    <a href="{{ url_for('register') }}" class="inline-flex items-center px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow hero-cta">
                         Start Free Trial
-                        <i data-feather="arrow-right" class="ms-2"></i>
+                        <i data-feather="arrow-right" class="ml-2"></i>
                     </a>
-                    <a href="#how-it-works" class="btn btn-outline-light btn-lg">
+                    <a href="#how-it-works" class="inline-flex items-center px-6 py-3 rounded-lg border border-white/30 text-white hover:bg-white/10">
                         See How It Works
                     </a>
                 </div>
@@ -60,7 +60,7 @@
                 </div>
             </div>
             
-            <div class="col-lg-6">
+            <div class="w-full">
                 <div class="hero-visual">
                     <div class="floating-card card-1">
                         <div class="card-content">
@@ -107,8 +107,8 @@
 
 <!-- Features Section -->
 <section id="features" class="features-section-modern">
-    <div class="container">
-        <div class="text-center mb-5">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="text-center mb-12">
             <div class="section-badge">
                 <span>🎯 Features</span>
             </div>
@@ -118,8 +118,8 @@
             </p>
         </div>
         
-        <div class="row g-4">
-            <div class="col-lg-4">
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
                 <div class="feature-card-modern">
                     <div class="feature-icon-modern">
                         <i data-feather="search"></i>
@@ -135,7 +135,7 @@
                 </div>
             </div>
             
-            <div class="col-lg-4">
+            <div>
                 <div class="feature-card-modern">
                     <div class="feature-icon-modern">
                         <i data-feather="target"></i>
@@ -151,7 +151,7 @@
                 </div>
             </div>
             
-            <div class="col-lg-4">
+            <div>
                 <div class="feature-card-modern">
                     <div class="feature-icon-modern">
                         <i data-feather="bell"></i>
@@ -172,8 +172,8 @@
 
 <!-- How It Works Section -->
 <section id="how-it-works" class="how-it-works-modern">
-    <div class="container">
-        <div class="text-center mb-5">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="text-center mb-12">
             <div class="section-badge">
                 <span>⚡ Process</span>
             </div>
@@ -228,13 +228,13 @@
 
 <!-- Social Proof Section -->
 <section class="social-proof-modern">
-    <div class="container">
-        <div class="text-center mb-5">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="text-center mb-12">
             <h3>Loved by Entertainment Enthusiasts</h3>
         </div>
         
-        <div class="row g-4">
-            <div class="col-lg-4">
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
                 <div class="testimonial-card">
                     <div class="testimonial-content">
                         "This AI found shows I never would have discovered on my own. It's like having a personal entertainment curator!"
@@ -249,7 +249,7 @@
                 </div>
             </div>
             
-            <div class="col-lg-4">
+            <div>
                 <div class="testimonial-card">
                     <div class="testimonial-content">
                         "Finally, an app that actually understands my taste. The recommendations are spot-on every time."
@@ -264,7 +264,7 @@
                 </div>
             </div>
             
-            <div class="col-lg-4">
+            <div>
                 <div class="testimonial-card">
                     <div class="testimonial-content">
                         "The weekly reminders and progress tracking keep me engaged with my entertainment goals."
@@ -284,15 +284,15 @@
 
 <!-- CTA Section -->
 <section class="cta-section-modern">
-    <div class="container">
+    <div class="max-w-7xl mx-auto px-4">
         <div class="cta-content">
             <h2>Ready to Transform Your Entertainment Experience?</h2>
             <p>Join thousands of users who never run out of amazing content to enjoy.</p>
             
             <div class="cta-actions">
-                <a href="{{ url_for('register') }}" class="btn btn-light btn-lg">
+                <a href="{{ url_for('register') }}" class="inline-flex items-center px-6 py-3 rounded-lg bg-white text-gray-900 hover:bg-gray-100 font-medium">
                     Start Free Trial
-                    <i data-feather="arrow-right" class="ms-2"></i>
+                    <i data-feather="arrow-right" class="ml-2"></i>
                 </a>
                 <div class="cta-note">
                     <i data-feather="check"></i>

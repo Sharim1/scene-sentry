@@ -3,35 +3,35 @@
 {% block title %}Login - EntertainmentAI{% endblock %}
 
 {% block content %}
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-4">
+<div class="max-w-7xl mx-auto px-4 py-12">
+    <div class="grid place-items-center">
+        <div class="w-full max-w-md">
             <div class="auth-card">
-                <div class="text-center mb-4">
-                    <h2 class="h4 fw-bold">Welcome Back</h2>
-                    <p class="text-muted">Sign in to your entertainment discovery account</p>
+                <div class="text-center mb-6">
+                    <h2 class="text-xl font-bold">Welcome Back</h2>
+                    <p class="text-gray-400">Sign in to your entertainment discovery account</p>
                 </div>
                 
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
+                <form method="POST" class="space-y-4">
+                    <div>
+                        <label for="username" class="block text-sm mb-1">Username</label>
+                        <input type="text" id="username" name="username" required class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     </div>
                     
-                    <div class="mb-4">
-                        <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
+                    <div>
+                        <label for="password" class="block text-sm mb-1">Password</label>
+                        <input type="password" id="password" name="password" required class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     </div>
                     
-                    <button type="submit" class="btn btn-primary w-100 mb-3">
-                        <i data-feather="log-in" class="me-2"></i>Sign In
+                    <button type="submit" class="w-full inline-flex justify-center items-center px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium">
+                        <i data-feather="log-in" class="mr-2"></i>Sign In
                     </button>
                 </form>
                 
-                <div class="text-center">
-                    <p class="text-muted">
+                <div class="text-center mt-4">
+                    <p class="text-gray-400">
                         Don't have an account? 
-                        <a href="{{ url_for('register') }}" class="text-primary text-decoration-none">
+                        <a href="{{ url_for('register') }}" class="text-indigo-400 hover:text-indigo-300">
                             Sign up here
                         </a>
                     </p>

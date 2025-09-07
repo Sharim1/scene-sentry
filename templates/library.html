@@ -3,20 +3,20 @@
 {% block title %}My Library - EntertainmentAI{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="max-w-7xl mx-auto px-4 py-4">
     <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
+    <div class="mb-4">
+        <div>
             <h1 class="h3 mb-3">
-                <i data-feather="bookmark" class="me-2"></i>My Library
+                <i data-feather="bookmark" class="mr-2"></i>My Library
             </h1>
             
             <!-- Filters -->
             <div class="filters-section">
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label small">Content Type</label>
-                        <select class="form-select" id="typeFilter" onchange="updateFilters()">
+                <div class="grid md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-sm mb-1">Content Type</label>
+                        <select class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500" id="typeFilter" onchange="updateFilters()">
                             <option value="all" {{ 'selected' if current_type == 'all' else '' }}>All Types</option>
                             <option value="movie" {{ 'selected' if current_type == 'movie' else '' }}>Movies</option>
                             <option value="tv_show" {{ 'selected' if current_type == 'tv_show' else '' }}>TV Shows</option>
@@ -24,9 +24,9 @@
                         </select>
                     </div>
                     
-                    <div class="col-md-4">
-                        <label class="form-label small">Status</label>
-                        <select class="form-select" id="statusFilter" onchange="updateFilters()">
+                    <div>
+                        <label class="block text-sm mb-1">Status</label>
+                        <select class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500" id="statusFilter" onchange="updateFilters()">
                             <option value="all" {{ 'selected' if current_status == 'all' else '' }}>All Status</option>
                             <option value="confirmed" {{ 'selected' if current_status == 'confirmed' else '' }}>To Watch/Read</option>
                             <option value="in_progress" {{ 'selected' if current_status == 'in_progress' else '' }}>In Progress</option>
@@ -35,9 +35,9 @@
                         </select>
                     </div>
                     
-                    <div class="col-md-4">
-                        <label class="form-label small">Sort By</label>
-                        <select class="form-select" id="sortFilter">
+                    <div>
+                        <label class="block text-sm mb-1">Sort By</label>
+                        <select class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500" id="sortFilter">
                             <option value="updated">Recently Updated</option>
                             <option value="added">Recently Added</option>
                             <option value="title">Title A-Z</option>
@@ -172,7 +172,7 @@
                             </div>
                             
                             {% if item.content.content_type == 'tv_show' and item.status == 'in_progress' %}
-                                <div class="form-check form-check-inline ms-2">
+                                <div class="form-check form-check-inline ml-2">
                                     <input class="form-check-input" type="checkbox" name="weekly_release" 
                                            id="weekly_{{ item.id }}" {{ 'checked' if item.weekly_release else '' }}>
                                     <label class="form-check-label small" for="weekly_{{ item.id }}">
@@ -193,29 +193,32 @@
             </div>
             
             <!-- Rating Modal -->
-            <div class="modal fade" id="ratingModal{{ item.id }}" tabindex="-1">
-                <div class="modal-dialog modal-sm">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h6 class="modal-title">Rate {{ item.content.title }}</h6>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div id="ratingModal{{ item.id }}" class="hidden fixed inset-0 z-50 overflow-y-auto">
+                <div class="flex items-center justify-center min-h-screen px-4">
+                    <div class="fixed inset-0 bg-black/60" data-close-modal></div>
+                    <div class="relative bg-slate-900 border border-white/10 rounded-xl w-full max-w-sm mx-auto p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h6 class="text-sm font-semibold">Rate {{ item.content.title }}</h6>
+                            <button type="button" class="text-gray-400 hover:text-gray-200" data-close-modal>
+                                <i data-feather="x"></i>
+                            </button>
                         </div>
-                        <div class="modal-body text-center">
-                            <form method="POST" action="{{ url_for('update_library_item') }}">
+                        <div class="text-center">
+                            <form method="POST" action="{{ url_for('update_library_item') }}" class="space-y-3">
                                 <input type="hidden" name="item_id" value="{{ item.id }}">
                                 <input type="hidden" name="status" value="{{ item.status }}">
                                 
-                                <div class="rating-stars mb-3">
+                                <div class="rating-stars mb-3 inline-flex gap-2">
                                     {% for i in range(1, 6) %}
-                                        <label class="star-label">
-                                            <input type="radio" name="rating" value="{{ i }}" 
+                                        <label class="star-label cursor-pointer">
+                                            <input type="radio" name="rating" value="{{ i }}" class="hidden"
                                                    {{ 'checked' if item.rating == i else '' }}>
                                             <i data-feather="star" class="star-input"></i>
                                         </label>
                                     {% endfor %}
                                 </div>
                                 
-                                <button type="submit" class="btn btn-primary btn-sm">Save Rating</button>
+                                <button type="submit" class="inline-flex items-center px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Save Rating</button>
                             </form>
                         </div>
                     </div>
@@ -233,7 +236,7 @@
                 Start adding content from your dashboard recommendations, or search for something specific.
             </p>
             <a href="{{ url_for('dashboard') }}" class="btn btn-primary">
-                <i data-feather="home" class="me-2"></i>Go to Dashboard
+                <i data-feather="home" class="mr-2"></i>Go to Dashboard
             </a>
         </div>
     {% endif %}
@@ -253,10 +256,27 @@ function updateFilters() {
     window.location.href = url.toString();
 }
 
+// Modal open/close (replace Bootstrap)
+document.addEventListener('click', (e) => {
+    const openBtn = e.target.closest('[data-bs-target]');
+    if (openBtn) {
+        const target = openBtn.getAttribute('data-bs-target');
+        const modal = document.querySelector(target);
+        if (modal) {
+            modal.classList.remove('hidden');
+            feather.replace();
+        }
+    }
+    if (e.target.closest('[data-close-modal]')) {
+        const overlay = e.target.closest('.fixed.inset-0') || document.querySelector('.fixed.inset-0');
+        if (overlay) overlay.classList.add('hidden');
+    }
+});
+
 // Star rating interaction
 document.querySelectorAll('.star-label').forEach(label => {
     label.addEventListener('mouseover', function() {
-        const rating = this.querySelector('input').value;
+        const rating = Number(this.querySelector('input').value);
         const container = this.closest('.rating-stars');
         const stars = container.querySelectorAll('.star-input');
         
