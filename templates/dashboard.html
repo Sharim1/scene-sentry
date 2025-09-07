@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - EntertainmentAI{% endblock %}
+
+{% block content %}
+<div class="dashboard-modern">
+    <div class="container-fluid">
+        <!-- Modern Header Section -->
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div class="header-text">
+                    <div class="greeting-section">
+                        <h1 class="dashboard-title">
+                            <span class="greeting-time">Good evening,</span>
+                            <span class="user-name">{{ session.username }}</span>
+                        </h1>
+                        <p class="dashboard-subtitle">
+                            Your AI has discovered 
+                            <span class="metric-highlight">{{ recommendations|length }}</span> 
+                            new recommendations tailored just for you
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Enhanced Search and Actions -->
+                <div class="dashboard-actions">
+                    <div class="search-bar-modern">
+                        <form method="POST" action="{{ url_for('search_content') }}" class="search-form-modern">
+                            <div class="search-input-container">
+                                <i data-feather="search" class="search-icon"></i>
+                                <input type="text" name="query" class="search-input" 
+                                       placeholder="Search for movies, shows, books..." required>
+                                <button type="submit" class="search-button">
+                                    <i data-feather="arrow-right"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <form method="POST" action="{{ url_for('force_discovery') }}" id="discovery-form">
+                        <button type="submit" class="discovery-button" id="discovery-btn">
+                            <i data-feather="refresh-cw" id="discovery-icon"></i>
+                            <span id="discovery-text">Discover Now</span>
+                            <div class="button-shine"></div>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    
+    <!-- Stats Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-4">
+            <div class="modern-stat-card pending-card">
+                <div class="stat-content">
+                    <div class="stat-number">{{ recommendations|length }}</div>
+                    <div class="stat-label">Pending Reviews</div>
+                </div>
+                <div class="stat-icon">
+                    <i data-feather="clock"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="modern-stat-card watchlist-card">
+                <div class="stat-content">
+                    <div class="stat-number">{{ library_stats.confirmed + library_stats.in_progress }}</div>
+                    <div class="stat-label">Watch List</div>
+                </div>
+                <div class="stat-icon">
+                    <i data-feather="bookmark"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="modern-stat-card accuracy-card">
+                <div class="stat-content">
+                    <div class="stat-number">87%</div>
+                    <div class="stat-label">AI Accuracy</div>
+                </div>
+                <div class="stat-icon">
+                    <i data-feather="target"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Content Tabs -->
+    <div class="modern-tabs-container">
+        <ul class="nav nav-pills modern-tabs" id="content-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="movies-tab" data-bs-toggle="pill" data-bs-target="#movies" 
+                        type="button" role="tab">
+                    <i data-feather="film" class="me-2"></i>Movies
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tv-shows-tab" data-bs-toggle="pill" data-bs-target="#tv-shows" 
+                        type="button" role="tab">
+                    <i data-feather="tv" class="me-2"></i>TV Shows
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="books-tab" data-bs-toggle="pill" data-bs-target="#books" 
+                        type="button" role="tab">
+                    <i data-feather="book" class="me-2"></i>Books
+                </button>
+            </li>
+        </ul>
+    </div>
+    
+    <!-- Tab Content -->
+    <div class="tab-content" id="content-tab-content">
+        <!-- Movies Tab -->
+        <div class="tab-pane fade show active" id="movies" role="tabpanel">
+            <div class="content-section-modern">
+                <div class="section-title">
+                    <i data-feather="film" class="me-2"></i>New Movie Recommendations
+                </div>
+                
+                {% set movie_recommendations = recommendations|selectattr("content.content_type", "equalto", "movie")|list %}
+                
+                {% if movie_recommendations %}
+                    <div class="recommendations-grid-modern">
+                        {% for rec in movie_recommendations[:6] %}
+                        <div class="recommendation-card-modern">
+                            <div class="card-poster">
+                                {% if rec.content.poster_url %}
+                                    <img src="{{ rec.content.poster_url }}" alt="{{ rec.content.title }}" class="poster-image">
+                                {% else %}
+                                    <div class="poster-placeholder">
+                                        <i data-feather="film"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="confidence-badge">{{ (rec.confidence_score * 100) | round | int }}%</div>
+                            </div>
+                            
+                            <div class="card-content">
+                                <h6 class="content-title">{{ rec.content.title }}</h6>
+                                {% if rec.content.release_date %}
+                                    <p class="content-year">{{ rec.content.release_date[:4] }}</p>
+                                {% endif %}
+                                <p class="content-description">{{ rec.reasoning[:100] }}...</p>
+                                
+                                <div class="card-actions">
+                                    <form method="POST" action="{{ url_for('add_to_library') }}" class="action-form">
+                                        <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                                        <button type="submit" name="status" value="confirmed" class="btn btn-sm btn-success">
+                                            <i data-feather="plus"></i>
+                                        </button>
+                                        <button type="submit" name="status" value="maybe" class="btn btn-sm btn-warning">
+                                            <i data-feather="bookmark"></i>
+                                        </button>
+                                        <button type="submit" name="status" value="in_progress" class="btn btn-sm btn-primary">
+                                            <i data-feather="play"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state-modern">
+                        <i data-feather="film" class="empty-icon"></i>
+                        <h5>No movie recommendations yet</h5>
+                        <p>Our AI agents are searching for movies you'll love</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- TV Shows Tab -->
+        <div class="tab-pane fade" id="tv-shows" role="tabpanel">
+            <div class="content-section-modern">
+                <div class="section-title">
+                    <i data-feather="tv" class="me-2"></i>New TV Show Recommendations
+                </div>
+                
+                {% set tv_recommendations = recommendations|selectattr("content.content_type", "equalto", "tv_show")|list %}
+                
+                {% if tv_recommendations %}
+                    <div class="recommendations-grid-modern">
+                        {% for rec in tv_recommendations[:6] %}
+                        <div class="recommendation-card-modern">
+                            <div class="card-poster">
+                                {% if rec.content.poster_url %}
+                                    <img src="{{ rec.content.poster_url }}" alt="{{ rec.content.title }}" class="poster-image">
+                                {% else %}
+                                    <div class="poster-placeholder">
+                                        <i data-feather="tv"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="confidence-badge">{{ (rec.confidence_score * 100) | round | int }}%</div>
+                            </div>
+                            
+                            <div class="card-content">
+                                <h6 class="content-title">{{ rec.content.title }}</h6>
+                                {% if rec.content.release_date %}
+                                    <p class="content-year">{{ rec.content.release_date[:4] }}</p>
+                                {% endif %}
+                                <p class="content-description">{{ rec.reasoning[:100] }}...</p>
+                                
+                                <div class="card-actions">
+                                    <form method="POST" action="{{ url_for('add_to_library') }}" class="action-form">
+                                        <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                                        <button type="submit" name="status" value="confirmed" class="btn btn-sm btn-success">
+                                            <i data-feather="plus"></i>
+                                        </button>
+                                        <button type="submit" name="status" value="maybe" class="btn btn-sm btn-warning">
+                                            <i data-feather="bookmark"></i>
+                                        </button>
+                                        <button type="submit" name="status" value="in_progress" class="btn btn-sm btn-primary">
+                                            <i data-feather="play"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state-modern">
+                        <i data-feather="tv" class="empty-icon"></i>
+                        <h5>No TV show recommendations yet</h5>
+                        <p>Our AI agents are searching for shows you'll love</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Books Tab -->
+        <div class="tab-pane fade" id="books" role="tabpanel">
+            <div class="content-section-modern">
+                <div class="section-title">
+                    <i data-feather="book" class="me-2"></i>New Book Recommendations
+                </div>
+                
+                {% set book_recommendations = recommendations|selectattr("content.content_type", "equalto", "book")|list %}
+                
+                {% if book_recommendations %}
+                    <div class="recommendations-grid-modern">
+                        {% for rec in book_recommendations[:6] %}
+                        <div class="recommendation-card-modern">
+                            <div class="card-poster">
+                                {% if rec.content.poster_url %}
+                                    <img src="{{ rec.content.poster_url }}" alt="{{ rec.content.title }}" class="poster-image">
+                                {% else %}
+                                    <div class="poster-placeholder">
+                                        <i data-feather="book"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="confidence-badge">{{ (rec.confidence_score * 100) | round | int }}%</div>
+                            </div>
+                            
+                            <div class="card-content">
+                                <h6 class="content-title">{{ rec.content.title }}</h6>
+                                {% if rec.content.author %}
+                                    <p class="content-year">by {{ rec.content.author }}</p>
+                                {% endif %}
+                                <p class="content-description">{{ rec.reasoning[:100] }}...</p>
+                                
+                                <div class="card-actions">
+                                    <form method="POST" action="{{ url_for('add_to_library') }}" class="action-form">
+                                        <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
+                                        <button type="submit" name="status" value="confirmed" class="btn btn-sm btn-success">
+                                            <i data-feather="plus"></i>
+                                        </button>
+                                        <button type="submit" name="status" value="maybe" class="btn btn-sm btn-warning">
+                                            <i data-feather="bookmark"></i>
+                                        </button>
+                                        <button type="submit" name="status" value="in_progress" class="btn btn-sm btn-primary">
+                                            <i data-feather="play"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state-modern">
+                        <i data-feather="book" class="empty-icon"></i>
+                        <h5>No book recommendations yet</h5>
+                        <p>Our AI agents are searching for books you'll love</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-refresh recommendations every 5 minutes
+setTimeout(() => {
+    location.reload();
+}, 300000);
+
+// Initialize tabs
+document.addEventListener('DOMContentLoaded', function() {
+    // Enable bootstrap tabs
+    var triggerTabList = [].slice.call(document.querySelectorAll('[data-bs-toggle="pill"]'));
+    triggerTabList.forEach(function (triggerEl) {
+        var tabTrigger = new bootstrap.Tab(triggerEl);
+    });
+    
+    // Handle force discovery with progress indicator
+    const discoveryForm = document.getElementById('discovery-form');
+    const discoveryBtn = document.getElementById('discovery-btn');
+    const discoveryIcon = document.getElementById('discovery-icon');
+    const discoveryText = document.getElementById('discovery-text');
+    
+    if (discoveryForm && discoveryBtn) {
+        discoveryForm.addEventListener('submit', function(e) {
+            // Show loading state
+            discoveryBtn.disabled = true;
+            discoveryBtn.classList.remove('btn-outline-primary');
+            discoveryBtn.classList.add('btn-primary');
+            discoveryIcon.setAttribute('data-feather', 'loader');
+            discoveryIcon.classList.add('spinner');
+            discoveryText.textContent = 'Discovering...';
+            
+            // Re-initialize feather icons to show the new loader icon
+            feather.replace();
+            
+            // Add CSS animation for spinner
+            const style = document.createElement('style');
+            style.textContent = `
+                .spinner {
+                    animation: spin 1s linear infinite;
+                }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Add a timeout to handle potential long operations
+            setTimeout(() => {
+                if (discoveryBtn.disabled) {
+                    discoveryText.textContent = 'Still processing...';
+                }
+            }, 10000); // Show "Still processing..." after 10 seconds
+        });
+    }
+});
+</script>
+{% endblock %}

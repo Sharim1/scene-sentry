@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - EntertainmentAI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="content-section">
+                <div class="section-header">
+                    <h3><i data-feather="settings" class="me-2"></i>Settings</h3>
+                    <p class="text-muted">Customize your entertainment discovery preferences</p>
+                </div>
+                
+                <form method="POST">
+                    <!-- Search API Preference -->
+                    <div class="mb-4">
+                        <label for="search_api" class="form-label">Preferred Search API</label>
+                        <select class="form-select" id="search_api" name="search_api">
+                            <option value="tavily" {{ 'selected' if user.search_api_preference == 'tavily' else '' }}>
+                                Tavily (Recommended)
+                            </option>
+                            <option value="brightdata" {{ 'selected' if user.search_api_preference == 'brightdata' else '' }}>
+                                Bright Data
+                            </option>
+                        </select>
+                        <div class="form-text">
+                            Choose your preferred search API for content discovery. Tavily is recommended for better entertainment content detection.
+                        </div>
+                    </div>
+                    
+                    <!-- Genre Preferences -->
+                    <div class="mb-4">
+                        <label class="form-label">Preferred Genres</label>
+                        <p class="text-muted small mb-3">
+                            Select your favorite genres to help our AI understand your taste better.
+                        </p>
+                        
+                        <div class="row g-2">
+                            {% for genre in available_genres %}
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" 
+                                           value="{{ genre }}" id="genre_{{ loop.index }}"
+                                           {{ 'checked' if genre in current_genres else '' }}>
+                                    <label class="form-check-label" for="genre_{{ loop.index }}">
+                                        {{ genre }}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <!-- Notification Preferences -->
+                    <div class="mb-4">
+                        <label class="form-label">Notification Preferences</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="email_notifications" 
+                                   id="email_notifications" checked>
+                            <label class="form-check-label" for="email_notifications">
+                                Email notifications for new recommendations
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="reminder_notifications" 
+                                   id="reminder_notifications" checked>
+                            <label class="form-check-label" for="reminder_notifications">
+                                Reminders for content to watch/read
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="weekly_digest" 
+                                   id="weekly_digest" checked>
+                            <label class="form-check-label" for="weekly_digest">
+                                Weekly discovery digest
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Discovery Settings -->
+                    <div class="mb-4">
+                        <label class="form-label">Discovery Settings</label>
+                        <div class="mb-3">
+                            <label for="discovery_frequency" class="form-label">How often should AI agents search for new content?</label>
+                            <select class="form-select" id="discovery_frequency" name="discovery_frequency">
+                                <option value="15" {{ 'selected' if user.discovery_frequency == 15 else '' }}>Every 15 minutes</option>
+                                <option value="30" {{ 'selected' if user.discovery_frequency == 30 else '' }}>Every 30 minutes (Recommended)</option>
+                                <option value="60" {{ 'selected' if user.discovery_frequency == 60 else '' }}>Every hour</option>
+                                <option value="120" {{ 'selected' if user.discovery_frequency == 120 else '' }}>Every 2 hours</option>
+                                <option value="240" {{ 'selected' if user.discovery_frequency == 240 else '' }}>Every 4 hours</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="include_books" 
+                                   id="include_books" checked>
+                            <label class="form-check-label" for="include_books">
+                                Include book recommendations
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="include_movies" 
+                                   id="include_movies" checked>
+                            <label class="form-check-label" for="include_movies">
+                                Include movie recommendations
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="include_tv_shows" 
+                                   id="include_tv_shows" checked>
+                            <label class="form-check-label" for="include_tv_shows">
+                                Include TV show recommendations
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i data-feather="save" class="me-2"></i>Save Settings
+                        </button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <i data-feather="arrow-left" class="me-2"></i>Back to Dashboard
+                        </a>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Account Management -->
+            <div class="content-section">
+                <div class="section-header">
+                    <h4><i data-feather="user" class="me-2"></i>Account Information</h4>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Username:</strong> {{ user.username }}</p>
+                        <p><strong>Email:</strong> {{ user.email }}</p>
+                        <p><strong>Member since:</strong> {{ user.created_at.strftime('%B %Y') }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="stats">
+                            <p><strong>Library items:</strong> {{ user.library_items|length }}</p>
+                            <p><strong>Recommendations received:</strong> {{ user.recommendations|length }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Danger Zone -->
+            <div class="content-section">
+                <div class="section-header">
+                    <h4 class="text-danger"><i data-feather="alert-triangle" class="me-2"></i>Danger Zone</h4>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <h6>Reset Recommendations</h6>
+                    <p class="mb-2">This will clear all your current recommendations and restart the discovery process.</p>
+                    <button class="btn btn-warning btn-sm">Reset Recommendations</button>
+                </div>
+                
+                <div class="alert alert-danger">
+                    <h6>Delete Account</h6>
+                    <p class="mb-2">Permanently delete your account and all associated data. This action cannot be undone.</p>
+                    <button class="btn btn-danger btn-sm">Delete Account</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

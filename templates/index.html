@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}AI Entertainment Hub - Discover Your Next Favorite{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero-section-modern">
+    <div class="container">
+        <div class="row align-items-center min-vh-100">
+            <div class="col-lg-6">
+                <div class="hero-badge">
+                    <span class="badge-icon">🤖</span>
+                    <span>AI-Powered Discovery</span>
+                </div>
+                
+                <h1 class="hero-title">
+                    Discover Your Next
+                    <span class="gradient-text">Entertainment</span>
+                    Obsession
+                </h1>
+                
+                <p class="hero-description">
+                    Our AI agents work 24/7 to find movies, TV shows, and books perfectly tailored to your taste. 
+                    Never run out of amazing content to enjoy.
+                </p>
+                
+                <div class="hero-stats">
+                    <div class="stat-item">
+                        <div class="stat-number">10K+</div>
+                        <div class="stat-label">Happy Users</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">50M+</div>
+                        <div class="stat-label">Recommendations</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">95%</div>
+                        <div class="stat-label">Accuracy Rate</div>
+                    </div>
+                </div>
+                
+                <div class="hero-actions">
+                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg hero-cta">
+                        Start Free Trial
+                        <i data-feather="arrow-right" class="ms-2"></i>
+                    </a>
+                    <a href="#how-it-works" class="btn btn-outline-light btn-lg">
+                        See How It Works
+                    </a>
+                </div>
+                
+                <div class="hero-trust">
+                    <span class="trust-text">Trusted by entertainment enthusiasts worldwide</span>
+                    <div class="trust-avatars">
+                        <div class="avatar"></div>
+                        <div class="avatar"></div>
+                        <div class="avatar"></div>
+                        <div class="avatar-more">+10K</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6">
+                <div class="hero-visual">
+                    <div class="floating-card card-1">
+                        <div class="card-content">
+                            <div class="movie-poster"></div>
+                            <div class="card-info">
+                                <h6>Inception</h6>
+                                <div class="match-score">97% Match</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="floating-card card-2">
+                        <div class="card-content">
+                            <div class="movie-poster show"></div>
+                            <div class="card-info">
+                                <h6>Stranger Things</h6>
+                                <div class="match-score">92% Match</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="floating-card card-3">
+                        <div class="card-content">
+                            <div class="movie-poster book"></div>
+                            <div class="card-info">
+                                <h6>Dune</h6>
+                                <div class="match-score">89% Match</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="ai-pulse">
+                        <div class="pulse-ring"></div>
+                        <div class="pulse-ring"></div>
+                        <div class="pulse-core">
+                            <i data-feather="zap"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section id="features" class="features-section-modern">
+    <div class="container">
+        <div class="text-center mb-5">
+            <div class="section-badge">
+                <span>🎯 Features</span>
+            </div>
+            <h2 class="section-title">Intelligent Entertainment Discovery</h2>
+            <p class="section-description">
+                Advanced AI technology meets personalized recommendations for the ultimate entertainment experience.
+            </p>
+        </div>
+        
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">
+                        <i data-feather="search"></i>
+                    </div>
+                    <h4>24/7 AI Discovery</h4>
+                    <p>Our AI agents continuously search across thousands of sources to find content perfectly matched to your preferences.</p>
+                    <div class="feature-stats">
+                        <span class="feature-stat">
+                            <i data-feather="clock"></i>
+                            Real-time updates
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">
+                        <i data-feather="target"></i>
+                    </div>
+                    <h4>Smart Categorization</h4>
+                    <p>Automatically organize your discoveries into watchlists, maybe lists, in-progress, and completed with intelligent tracking.</p>
+                    <div class="feature-stats">
+                        <span class="feature-stat">
+                            <i data-feather="layers"></i>
+                            Auto-organize
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card-modern">
+                    <div class="feature-icon-modern">
+                        <i data-feather="bell"></i>
+                    </div>
+                    <h4>Intelligent Reminders</h4>
+                    <p>Get notified about new episodes, sequel releases, and perfect timing suggestions for your entertainment schedule.</p>
+                    <div class="feature-stats">
+                        <span class="feature-stat">
+                            <i data-feather="calendar"></i>
+                            Smart timing
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How It Works Section -->
+<section id="how-it-works" class="how-it-works-modern">
+    <div class="container">
+        <div class="text-center mb-5">
+            <div class="section-badge">
+                <span>⚡ Process</span>
+            </div>
+            <h2 class="section-title">How It Works</h2>
+            <p class="section-description">
+                Get personalized entertainment recommendations in three simple steps.
+            </p>
+        </div>
+        
+        <div class="steps-container-modern">
+            <div class="step-modern">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>Tell Us Your Taste</h4>
+                    <p>Share your favorite genres, rate some content, and let our AI understand your unique preferences.</p>
+                </div>
+                <div class="step-visual">
+                    <div class="step-icon">
+                        <i data-feather="heart"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step-modern">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>AI Agents Search</h4>
+                    <p>Our intelligent agents continuously scan the web, reviews, and databases to find perfect matches.</p>
+                </div>
+                <div class="step-visual">
+                    <div class="step-icon">
+                        <i data-feather="cpu"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step-modern">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>Discover & Enjoy</h4>
+                    <p>Review curated recommendations, organize your entertainment, and never run out of amazing content.</p>
+                </div>
+                <div class="step-visual">
+                    <div class="step-icon">
+                        <i data-feather="play"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Social Proof Section -->
+<section class="social-proof-modern">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h3>Loved by Entertainment Enthusiasts</h3>
+        </div>
+        
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        "This AI found shows I never would have discovered on my own. It's like having a personal entertainment curator!"
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar"></div>
+                        <div>
+                            <div class="author-name">Sarah Chen</div>
+                            <div class="author-title">Film Enthusiast</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        "Finally, an app that actually understands my taste. The recommendations are spot-on every time."
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar"></div>
+                        <div>
+                            <div class="author-name">Marcus Rodriguez</div>
+                            <div class="author-title">TV Series Addict</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        "The weekly reminders and progress tracking keep me engaged with my entertainment goals."
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar"></div>
+                        <div>
+                            <div class="author-name">Emily Johnson</div>
+                            <div class="author-title">Book Lover</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="cta-section-modern">
+    <div class="container">
+        <div class="cta-content">
+            <h2>Ready to Transform Your Entertainment Experience?</h2>
+            <p>Join thousands of users who never run out of amazing content to enjoy.</p>
+            
+            <div class="cta-actions">
+                <a href="{{ url_for('register') }}" class="btn btn-light btn-lg">
+                    Start Free Trial
+                    <i data-feather="arrow-right" class="ms-2"></i>
+                </a>
+                <div class="cta-note">
+                    <i data-feather="check"></i>
+                    <span>No credit card required • 14-day free trial</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

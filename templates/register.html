@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Register - EntertainmentAI{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="auth-card">
+                <div class="text-center mb-4">
+                    <h2 class="h4 fw-bold">Join EntertainmentAI</h2>
+                    <p class="text-muted">Start discovering your next favorite entertainment</p>
+                </div>
+                
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="search_api" class="form-label">Preferred Search API</label>
+                        <select class="form-select" id="search_api" name="search_api">
+                            <option value="tavily">Tavily (Recommended)</option>
+                            <option value="brightdata">Bright Data</option>
+                        </select>
+                        <div class="form-text">
+                            Choose your preferred search API for content discovery. You can change this later in settings.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h6>Entertainment Preferences (Optional)</h6>
+                        <p class="text-muted small">Select your favorite genres to help our AI understand your taste:</p>
+                        
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Action" id="action">
+                                    <label class="form-check-label" for="action">Action</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Comedy" id="comedy">
+                                    <label class="form-check-label" for="comedy">Comedy</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Drama" id="drama">
+                                    <label class="form-check-label" for="drama">Drama</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Science Fiction" id="scifi">
+                                    <label class="form-check-label" for="scifi">Sci-Fi</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Horror" id="horror">
+                                    <label class="form-check-label" for="horror">Horror</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Romance" id="romance">
+                                    <label class="form-check-label" for="romance">Romance</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Thriller" id="thriller">
+                                    <label class="form-check-label" for="thriller">Thriller</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Documentary" id="documentary">
+                                    <label class="form-check-label" for="documentary">Documentary</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="genres" value="Animation" id="animation">
+                                    <label class="form-check-label" for="animation">Animation</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 mb-3">
+                        <i data-feather="user-plus" class="me-2"></i>Create Account
+                    </button>
+                </form>
+                
+                <div class="text-center">
+                    <p class="text-muted">
+                        Already have an account? 
+                        <a href="{{ url_for('login') }}" class="text-primary text-decoration-none">
+                            Sign in here
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
