@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}{{ gossip.title }} - MovieMind{% endblock %}
+
+{% block content %}
+<!-- Back Button -->
+<a href="/gossip" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Back to Feed
+</a>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Main Content -->
+    <div class="lg:col-span-2">
+        <article class="bg-card rounded-xl border border-white/5 overflow-hidden">
+            <!-- Image -->
+            {% if gossip.image_url %}
+            <div class="aspect-video w-full overflow-hidden">
+                <img src="{{ gossip.image_url }}" alt="{{ gossip.title }}" class="w-full h-full object-cover">
+            </div>
+            {% endif %}
+            
+            <!-- Content -->
+            <div class="p-8">
+                <!-- Meta -->
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20">
+                        {{ gossip.tag.value|title if gossip.tag else 'News' }}
+                    </span>
+                    <span class="text-sm text-muted-foreground">{{ gossip.source_name }}</span>
+                    <span class="text-sm text-muted-foreground">•</span>
+                    <span class="text-sm text-muted-foreground">{{ gossip.time_ago }}</span>
+                </div>
+                
+                <!-- Title -->
+                <h1 class="text-3xl font-display font-bold mb-6 leading-tight">
+                    {{ gossip.title }}
+                </h1>
+                
+                <!-- AI Badge -->
+                <div class="flex items-center gap-2 mb-6 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-primary"></i>
+                    <span class="text-sm">This content was scraped and analyzed by our AI agents</span>
+                    <span class="ml-auto text-sm font-bold text-primary">{{ (gossip.confidence_score * 100)|int }}% confidence</span>
+                </div>
+                
+                <!-- Content -->
+                <div class="prose prose-invert max-w-none">
+                    <p class="text-lg text-muted-foreground leading-relaxed whitespace-pre-line">
+                        {{ gossip.content }}
+                    </p>
+                </div>
+                
+                <!-- Source Link -->
+                <div class="mt-8 pt-6 border-t border-white/5">
+                    <a href="{{ gossip.source_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline">
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                        Read Original Article
+                    </a>
+                </div>
+            </div>
+        </article>
+    </div>
+    
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Related Content -->
+        {% if related_content %}
+        <div class="bg-card rounded-xl border border-white/5 p-6">
+            <h3 class="font-display font-bold mb-4">Related Content</h3>
+            <a href="/content/{{ related_content.id }}" class="block group">
+                <div class="flex gap-4">
+                    {% if related_content.poster_url %}
+                    <img src="{{ related_content.poster_url }}" alt="{{ related_content.title }}" class="w-20 h-28 rounded-lg object-cover">
+                    {% endif %}
+                    <div>
+                        <h4 class="font-semibold group-hover:text-primary transition-colors">{{ related_content.title }}</h4>
+                        <p class="text-sm text-muted-foreground">{{ related_content.content_type|replace('_', ' ')|title }}</p>
+                        {% if related_content.rating %}
+                        <div class="flex items-center gap-1 mt-2 text-yellow-400">
+                            <i data-lucide="star" class="w-4 h-4 fill-current"></i>
+                            <span class="text-sm font-bold text-foreground">{{ "%.1f"|format(related_content.rating) }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </a>
+            <form method="POST" action="/library/add" class="mt-4">
+                <input type="hidden" name="content_id" value="{{ related_content.id }}">
+                <button type="submit" name="status" value="planned" class="btn btn-primary w-full">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Add to Library
+                </button>
+            </form>
+        </div>
+        {% endif %}
+        
+        <!-- Similar Gossip -->
+        {% if similar_gossip %}
+        <div class="bg-card rounded-xl border border-white/5 p-6">
+            <h3 class="font-display font-bold mb-4">More Like This</h3>
+            <div class="space-y-4">
+                {% for item in similar_gossip %}
+                <a href="/gossip/{{ item.id }}" class="block group">
+                    <div class="flex gap-3">
+                        {% if item.image_url %}
+                        <img src="{{ item.image_url }}" alt="" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
+                        {% endif %}
+                        <div>
+                            <h4 class="text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">{{ item.title }}</h4>
+                            <p class="text-xs text-muted-foreground mt-1">{{ item.source_name }}</p>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Share -->
+        <div class="bg-card rounded-xl border border-white/5 p-6">
+            <h3 class="font-display font-bold mb-4">Share This</h3>
+            <div class="flex gap-2">
+                <button onclick="navigator.clipboard.writeText(window.location.href)" class="btn btn-outline flex-1">
+                    <i data-lucide="link" class="w-4 h-4"></i>
+                    Copy Link
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

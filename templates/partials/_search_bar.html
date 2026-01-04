@@ -1,0 +1,27 @@
+<!-- Search Bar Component -->
+<!-- Usage: {% include 'partials/_search_bar.html' %} -->
+
+<form method="POST" action="/search" class="relative" x-data="{ loading: false }" @submit="loading = true">
+    <div class="relative">
+        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none"></i>
+        <input 
+            type="text" 
+            name="query" 
+            placeholder="Search for movies, shows, books..."
+            class="w-full h-12 pl-12 pr-24 bg-card/50 border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+            required
+        >
+        <button 
+            type="submit"
+            class="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            :disabled="loading"
+        >
+            <span x-show="!loading">Search</span>
+            <span x-show="loading" class="flex items-center gap-2">
+                <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                Searching...
+            </span>
+        </button>
+    </div>
+</form>
+

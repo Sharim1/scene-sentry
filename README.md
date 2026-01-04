@@ -1,61 +1,119 @@
-# Entertainment Discovery AI App
+# MovieMind
 
-## Overview
+AI-powered entertainment discovery and gossip platform. Get personalized recommendations, track your watchlist, and stay updated with the latest entertainment news.
 
-This is a Flask-based entertainment discovery application that uses AI agents to continuously search and recommend movies, TV shows, and books tailored to user preferences. The system runs background processes that analyze user behavior and search across multiple sources to provide personalized content recommendations. Users can manage their discoveries through a library system with status tracking (confirmed, in progress, finished, maybe) and receive intelligent reminders.
+## Features
 
-## User Preferences
+- **AI-Powered Discovery**: LangGraph-orchestrated agents that search and analyze entertainment content
+- **Entertainment Gossip**: Real-time scraping of news from Variety, Deadline, Hollywood Reporter, and more
+- **Smart Recommendations**: Personalized suggestions based on your taste and viewing history
+- **Library Management**: Track what you're watching, planning to watch, or have completed
+- **Book-to-Screen Tracking**: Follow your favorite book adaptations from announcement to premiere
 
-Preferred communication style: Simple, everyday language.
+## Tech Stack
 
-## System Architecture
+- **Backend**: FastAPI + Python 3.11+
+- **Database**: SQLAlchemy ORM (SQLite for dev, PostgreSQL for production)
+- **AI**: LangChain + LangGraph + Google Gemini
+- **Search**: Tavily API for web scraping
+- **Frontend**: Jinja2 templates + Tailwind CSS + Alpine.js
+- **Auth**: Session-based (Clerk integration ready)
 
-### Backend Architecture
-- **Framework**: Flask web application with SQLAlchemy ORM for database operations
-- **Database**: SQLite for development with configurable database URI (designed to support PostgreSQL in production)
-- **Background Processing**: APScheduler for running continuous discovery tasks and reminder notifications
-- **AI Integration**: Google Gemini API for content analysis and recommendation generation
+## Getting Started
 
-### Core Components
-- **AI Agents** (`ai_agents.py`): RecommendationAgent that analyzes user preferences and generates personalized recommendations
-- **Content APIs** (`content_apis.py`): TMDbAPI integration for fetching movie/TV show metadata and web scraping capabilities
-- **Background Tasks** (`background_tasks.py`): Scheduled jobs for continuous content discovery and reminder system
-- **Models** (`models.py`): Database schema including User, Content, LibraryItem, Recommendation, and Reminder entities
+### Prerequisites
 
-### Data Models
-- **User**: Authentication, preferences, and API choice configuration
-- **Content**: Unified content model supporting movies, TV shows, and books with metadata
-- **LibraryItem**: User-content relationship with status tracking and ratings
-- **Recommendation**: AI-generated suggestions with confidence scoring
-- **Reminder**: Scheduled notifications for user engagement
+- Python 3.11 or higher
+- Node.js (optional, for Tailwind CSS compilation)
 
-### Frontend Architecture
-- **Template Engine**: Jinja2 templates with Bootstrap 5 dark theme
-- **JavaScript**: Vanilla JS for interactive features including star ratings, modals, and search
-- **Responsive Design**: Mobile-first approach with component-based CSS architecture
+### Installation
 
-### Authentication & Session Management
-- **Security**: Werkzeug password hashing with Flask sessions
-- **User Management**: Registration with API preference selection and profile management
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd MovieMind
+```
 
-## External Dependencies
+2. Create a virtual environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
 
-### AI & Search APIs
-- **Google Gemini API**: Primary AI service for content analysis and recommendation generation
-- **TMDb API**: Movie and TV show metadata, poster images, and detailed content information
-- **Tavily/Bright Data APIs**: Web search capabilities for content discovery (user-configurable)
+3. Install dependencies:
+```bash
+pip install -e .
+# Or with uv:
+uv sync
+```
 
-### Infrastructure Services
-- **Database**: SQLite (development) with PostgreSQL compatibility for production
-- **Background Jobs**: APScheduler for task scheduling and execution
-- **Web Scraping**: Trafilatura library for content extraction from web sources
+4. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
 
-### Frontend Dependencies
-- **Bootstrap 5**: UI framework with dark theme support
-- **Feather Icons**: Icon system for consistent visual elements
-- **Custom CSS**: Component-based styling with CSS variables and gradients
+5. Run the application:
+```bash
+python run.py
+# Or:
+uvicorn app.main:app --reload --port 5000
+```
 
-### Development Tools
-- **Flask-SQLAlchemy**: ORM with relationship management and migrations
-- **Werkzeug**: WSGI utilities and security features
-- **Logging**: Built-in Python logging for debugging and monitoring
+6. Open http://localhost:5000 in your browser
+
+### Required API Keys
+
+- **GEMINI_API_KEY**: Get from [Google AI Studio](https://aistudio.google.com/)
+- **TAVILY_API_KEY**: Get from [Tavily](https://tavily.com/)
+- **TMDB_API_KEY**: Get from [TMDb](https://www.themoviedb.org/settings/api)
+
+## Project Structure
+
+```
+MovieMind/
+├── app/                    # FastAPI application
+│   ├── agents/            # AI agents (discovery, gossip)
+│   ├── models/            # SQLAlchemy models
+│   ├── routes/            # API routes
+│   ├── services/          # Business logic
+│   ├── tasks/             # Background tasks
+│   ├── config.py          # Settings
+│   ├── database.py        # Database setup
+│   └── main.py            # FastAPI app
+├── templates/             # Jinja2 templates
+│   ├── partials/          # Reusable components
+│   ├── auth/              # Auth pages
+│   ├── gossip/            # Gossip pages
+│   └── errors/            # Error pages
+├── static/                # Static files
+│   ├── css/               # Stylesheets
+│   ├── js/                # JavaScript
+│   └── images/            # Images
+├── run.py                 # Entry point
+└── pyproject.toml         # Dependencies
+```
+
+## Development
+
+### Running Tests
+```bash
+pytest
+```
+
+### Database Migrations
+The app uses SQLAlchemy with automatic table creation. For schema changes, you may need to recreate the database during development:
+```bash
+rm moviemind.db
+python run.py
+```
+
+### Tailwind CSS
+Tailwind is loaded via CDN in development. For production, you can compile:
+```bash
+npx tailwindcss -i ./static/css/input.css -o ./static/css/app.css --minify
+```
+
+## License
+
+MIT License

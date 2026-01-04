@@ -1,284 +1,244 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - EntertainmentAI{% endblock %}
+{% block title %}Dashboard - MovieMind{% endblock %}
 
 {% block content %}
-<div class="dashboard-modern">
-    <div class="w-full">
-        <!-- Modern Header Section -->
-        <div class="dashboard-header">
-            <div class="header-content">
-                <div class="header-text">
-                    <div class="greeting-section">
-                        <h1 class="dashboard-title">
-                            <span class="greeting-time">Good evening,</span>
-                            <span class="user-name">{{ session.username }}</span>
-                        </h1>
-                        <p class="dashboard-subtitle">
-                            Your AI has discovered 
-                            <span class="metric-highlight">{{ recommendations|length }}</span> 
-                            new recommendations tailored just for you
-                        </p>
-                    </div>
-                </div>
-                
-                <!-- Enhanced Search and Actions -->
-                <div class="dashboard-actions">
-                    <div class="search-bar-modern">
-                        <form method="POST" action="{{ url_for('search_content') }}" class="search-form-modern">
-                            <div class="search-input-container">
-                                <i data-feather="search" class="search-icon"></i>
-                                <input type="text" name="query" class="search-input" 
-                                       placeholder="Search for movies, shows, books..." required>
-                                <button type="submit" class="search-button">
-                                    <i data-feather="arrow-right"></i>
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                    
-                    <form method="POST" action="{{ url_for('force_discovery') }}" id="discovery-form">
-                        <button type="submit" class="discovery-button" id="discovery-btn">
-                            <i data-feather="refresh-cw" id="discovery-icon"></i>
-                            <span id="discovery-text">Discover Now</span>
-                            <div class="button-shine"></div>
+<!-- Hero Section -->
+{% if featured_gossip %}
+<div class="relative rounded-2xl overflow-hidden min-h-[400px] flex items-end p-8 md:p-12 mb-12">
+    <div class="absolute inset-0">
+        {% if featured_gossip.image_url %}
+        <img src="{{ featured_gossip.image_url }}" alt="Featured" class="w-full h-full object-cover">
+        {% else %}
+        <div class="w-full h-full bg-gradient-to-br from-primary/30 to-accent/20"></div>
+        {% endif %}
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent"></div>
+        <div class="absolute inset-0 bg-gradient-to-r from-background via-transparent to-transparent"></div>
+    </div>
+    
+    <div class="relative z-10 max-w-2xl">
+        <div class="flex items-center gap-2 mb-4 animate-in" style="animation-delay: 0.1s;">
+            <span class="px-2 py-1 rounded-md bg-primary text-white text-xs font-bold uppercase tracking-wider">Featured</span>
+            <span class="text-white/80 text-sm font-medium">{{ featured_gossip.source_name }}</span>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-display font-bold text-white mb-4 leading-tight animate-in" style="animation-delay: 0.2s;">
+            {{ featured_gossip.title }}
+        </h1>
+        <p class="text-lg text-white/70 mb-8 line-clamp-2 animate-in" style="animation-delay: 0.3s;">
+            {{ featured_gossip.summary or featured_gossip.content[:150] }}...
+        </p>
+        <div class="flex flex-wrap gap-4 animate-in" style="animation-delay: 0.4s;">
+            <a href="/gossip/{{ featured_gossip.id }}" class="btn btn-lg btn-primary rounded-full px-8 shadow-lg shadow-primary/30">
+                <i data-lucide="flame" class="w-5 h-5"></i>
+                Read Gossip
+            </a>
+            {% if featured_gossip.related_content %}
+            <a href="/library/add?content_id={{ featured_gossip.related_content_id }}" class="btn btn-lg btn-outline rounded-full px-8 bg-white/5 border-white/10 hover:bg-white/10 text-white backdrop-blur-md">
+                <i data-lucide="plus" class="w-5 h-5"></i>
+                Add to Watchlist
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<!-- Default Hero when no featured gossip -->
+<div class="relative rounded-2xl overflow-hidden min-h-[300px] flex items-center justify-center p-8 md:p-12 mb-12 bg-gradient-to-br from-primary/20 to-accent/10 border border-white/5">
+    <div class="text-center max-w-xl">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/30">
+            <i data-lucide="sparkles" class="w-8 h-8 text-white"></i>
+        </div>
+        <h1 class="text-3xl md:text-4xl font-display font-bold mb-4">
+            Welcome back, {{ user.username }}!
+        </h1>
+        <p class="text-muted-foreground mb-6">
+            Discover the latest entertainment gossip and recommendations curated just for you.
+        </p>
+        
+        <!-- Search Bar -->
+        {% include 'partials/_search_bar.html' %}
+    </div>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Main Feed -->
+    <div class="lg:col-span-2 space-y-8">
+        <!-- Search (if no featured) -->
+        {% if not featured_gossip %}
+        <div class="hidden">{% include 'partials/_search_bar.html' %}</div>
+        {% else %}
+        {% include 'partials/_search_bar.html' %}
+        {% endif %}
+        
+        <!-- Fresh Gossip Section -->
+        <div>
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-display font-bold flex items-center gap-2">
+                    <i data-lucide="flame" class="w-6 h-6 text-accent"></i>
+                    Fresh Gossip
+                </h2>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-muted-foreground">AI Refreshing in 5m</span>
+                    <form method="POST" action="/gossip/refresh">
+                        <button type="submit" class="btn btn-sm btn-ghost">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                         </button>
                     </form>
                 </div>
             </div>
-        </div>
-    
-    <!-- Stats Cards -->
-    <div class="grid lg:grid-cols-3 gap-4 mb-4">
-        <div>
-            <div class="modern-stat-card pending-card">
-                <div class="stat-content">
-                    <div class="stat-number">{{ recommendations|length }}</div>
-                    <div class="stat-label">Pending Reviews</div>
-                </div>
-                <div class="stat-icon">
-                    <i data-feather="clock"></i>
-                </div>
+            
+            {% if latest_gossip %}
+            <div class="space-y-4">
+                {% for gossip in latest_gossip %}
+                {% include 'partials/_gossip_card.html' %}
+                {% endfor %}
             </div>
-        </div>
-        
-        <div>
-            <div class="modern-stat-card watchlist-card">
-                <div class="stat-content">
-                    <div class="stat-number">{{ library_stats.confirmed + library_stats.in_progress }}</div>
-                    <div class="stat-label">Watch List</div>
-                </div>
-                <div class="stat-icon">
-                    <i data-feather="bookmark"></i>
-                </div>
+            {% else %}
+            <div class="text-center py-12 bg-card/30 rounded-xl border border-white/5">
+                <i data-lucide="newspaper" class="w-12 h-12 text-muted-foreground mx-auto mb-4"></i>
+                <h3 class="font-display font-semibold text-lg mb-2">No gossip yet</h3>
+                <p class="text-sm text-muted-foreground mb-4">Our AI agents are scanning the web for the latest entertainment news.</p>
+                <form method="POST" action="/gossip/refresh">
+                    <button type="submit" class="btn btn-primary">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        Start Scanning
+                    </button>
+                </form>
             </div>
+            {% endif %}
         </div>
         
+        <!-- AI Recommendations Section -->
         <div>
-            <div class="modern-stat-card accuracy-card">
-                <div class="stat-content">
-                    <div class="stat-number">87%</div>
-                    <div class="stat-label">AI Accuracy</div>
-                </div>
-                <div class="stat-icon">
-                    <i data-feather="target"></i>
-                </div>
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-display font-bold flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-primary"></i>
+                    Recommended For You
+                </h2>
+                <form method="POST" action="/discover">
+                    <button type="submit" class="btn btn-sm btn-outline">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        Discover More
+                    </button>
+                </form>
             </div>
+            
+            {% if recommendations %}
+            <div class="grid gap-4">
+                {% for rec in recommendations %}
+                {% include 'partials/_recommendation_card.html' %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-12 bg-card/30 rounded-xl border border-white/5">
+                <i data-lucide="wand-2" class="w-12 h-12 text-muted-foreground mx-auto mb-4"></i>
+                <h3 class="font-display font-semibold text-lg mb-2">No recommendations yet</h3>
+                <p class="text-sm text-muted-foreground mb-4">Start a discovery search to get personalized recommendations.</p>
+                <form method="POST" action="/discover">
+                    <button type="submit" class="btn btn-primary">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        Start Discovery
+                    </button>
+                </form>
+            </div>
+            {% endif %}
         </div>
     </div>
     
-    <!-- Content Tabs -->
-    <div class="modern-tabs-container">
-        <div class="modern-tabs flex gap-2" id="content-tabs" role="tablist">
-            <button class="nav-link active" id="movies-tab" data-target="#movies" type="button" role="tab">
-                <i data-feather="film" class="mr-2"></i>Movies
-            </button>
-            <button class="nav-link" id="tv-shows-tab" data-target="#tv-shows" type="button" role="tab">
-                <i data-feather="tv" class="mr-2"></i>TV Shows
-            </button>
-            <button class="nav-link" id="books-tab" data-target="#books" type="button" role="tab">
-                <i data-feather="book" class="mr-2"></i>Books
-            </button>
-        </div>
-    </div>
-    
-    <!-- Tab Content -->
-    <div class="tab-content" id="content-tab-content">
-        <!-- Movies Tab -->
-        <div class="tab-pane active" id="movies" role="tabpanel">
-            <div class="content-section-modern">
-                <div class="section-title">
-                    <i data-feather="film" class="mr-2"></i>New Movie Recommendations
+    <!-- Sidebar Widgets -->
+    <div class="space-y-8">
+        <div class="sticky top-24 space-y-8">
+            <!-- AI Status (larger version) -->
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-card/50 border border-white/5 backdrop-blur-md">
+                <div class="relative">
+                    <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
+                    </div>
+                    <div class="absolute inset-0 rounded-full border border-primary/30 animate-spin" style="animation-duration: 4s;"></div>
                 </div>
-                
-                {% set movie_recommendations = recommendations|selectattr("content.content_type", "equalto", "movie")|list %}
-                
-                {% if movie_recommendations %}
-                    <div class="recommendations-grid-modern">
-                        {% for rec in movie_recommendations[:6] %}
-                        <div class="recommendation-card-modern">
-                            <div class="card-poster">
-                                {% if rec.content.poster_url %}
-                                    <img src="{{ rec.content.poster_url }}" alt="{{ rec.content.title }}" class="poster-image">
-                                {% else %}
-                                    <div class="poster-placeholder">
-                                        <i data-feather="film"></i>
-                                    </div>
-                                {% endif %}
-                                <div class="confidence-badge">{{ (rec.confidence_score * 100) | round | int }}%</div>
-                            </div>
-                            
-                            <div class="card-content">
-                                <h6 class="content-title">{{ rec.content.title }}</h6>
-                                {% if rec.content.release_date %}
-                                    <p class="content-year">{{ rec.content.release_date[:4] }}</p>
-                                {% endif %}
-                                <p class="content-description">{{ rec.reasoning[:100] }}...</p>
-                                
-                                <div class="card-actions">
-                                    <form method="POST" action="{{ url_for('add_to_library') }}" class="action-form">
-                                        <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
-                                        <button type="submit" name="status" value="confirmed" class="btn btn-sm btn-success">
-                                            <i data-feather="plus"></i>
-                                        </button>
-                                        <button type="submit" name="status" value="maybe" class="btn btn-sm btn-warning">
-                                            <i data-feather="bookmark"></i>
-                                        </button>
-                                        <button type="submit" name="status" value="in_progress" class="btn btn-sm btn-primary">
-                                            <i data-feather="play"></i>
-                                        </button>
-                                    </form>
-                                </div>
+                <div>
+                    <div class="text-xs font-bold text-white mb-0.5">AI Agents Active</div>
+                    <div class="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                        Scraping variety.com...
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Trending Now -->
+            <div class="rounded-xl bg-card border border-white/5 p-6 shadow-lg">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="trending-up" class="w-5 h-5 text-primary"></i>
+                    <h3 class="font-display font-bold">Trending Now</h3>
+                </div>
+                <div class="space-y-4">
+                    {% if trending %}
+                        {% for item in trending %}
+                        {% set rank = loop.index %}
+                        {% include 'partials/_trending_item.html' %}
+                        {% endfor %}
+                    {% else %}
+                        {% for i in range(5) %}
+                        <div class="flex items-center gap-3 group cursor-pointer">
+                            <div class="font-display font-bold text-2xl text-white/10">{{ "%02d"|format(i + 1) }}</div>
+                            <div>
+                                <div class="font-medium text-sm text-muted-foreground">Coming soon...</div>
+                                <div class="text-xs text-muted-foreground/50">Add content to see trends</div>
                             </div>
                         </div>
                         {% endfor %}
-                    </div>
-                {% else %}
-                    <div class="empty-state-modern">
-                        <i data-feather="film" class="empty-icon"></i>
-                        <h5>No movie recommendations yet</h5>
-                        <p>Our AI agents are searching for movies you'll love</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-        
-        <!-- TV Shows Tab -->
-        <div class="tab-pane hidden" id="tv-shows" role="tabpanel">
-            <div class="content-section-modern">
-                <div class="section-title">
-                    <i data-feather="tv" class="mr-2"></i>New TV Show Recommendations
+                    {% endif %}
                 </div>
-                
-                {% set tv_recommendations = recommendations|selectattr("content.content_type", "equalto", "tv_show")|list %}
-                
-                {% if tv_recommendations %}
-                    <div class="recommendations-grid-modern">
-                        {% for rec in tv_recommendations[:6] %}
-                        <div class="recommendation-card-modern">
-                            <div class="card-poster">
-                                {% if rec.content.poster_url %}
-                                    <img src="{{ rec.content.poster_url }}" alt="{{ rec.content.title }}" class="poster-image">
-                                {% else %}
-                                    <div class="poster-placeholder">
-                                        <i data-feather="tv"></i>
-                                    </div>
-                                {% endif %}
-                                <div class="confidence-badge">{{ (rec.confidence_score * 100) | round | int }}%</div>
-                            </div>
-                            
-                            <div class="card-content">
-                                <h6 class="content-title">{{ rec.content.title }}</h6>
-                                {% if rec.content.release_date %}
-                                    <p class="content-year">{{ rec.content.release_date[:4] }}</p>
-                                {% endif %}
-                                <p class="content-description">{{ rec.reasoning[:100] }}...</p>
-                                
-                                <div class="card-actions">
-                                    <form method="POST" action="{{ url_for('add_to_library') }}" class="action-form">
-                                        <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
-                                        <button type="submit" name="status" value="confirmed" class="btn btn-sm btn-success">
-                                            <i data-feather="plus"></i>
-                                        </button>
-                                        <button type="submit" name="status" value="maybe" class="btn btn-sm btn-warning">
-                                            <i data-feather="bookmark"></i>
-                                        </button>
-                                        <button type="submit" name="status" value="in_progress" class="btn btn-sm btn-primary">
-                                            <i data-feather="play"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                {% else %}
-                    <div class="empty-state-modern">
-                        <i data-feather="tv" class="empty-icon"></i>
-                        <h5>No TV show recommendations yet</h5>
-                        <p>Our AI agents are searching for shows you'll love</p>
-                    </div>
-                {% endif %}
             </div>
-        </div>
-        
-        <!-- Books Tab -->
-        <div class="tab-pane hidden" id="books" role="tabpanel">
-            <div class="content-section-modern">
-                <div class="section-title">
-                    <i data-feather="book" class="mr-2"></i>New Book Recommendations
+            
+            <!-- Library Stats -->
+            <div class="rounded-xl bg-gradient-to-br from-primary/20 to-accent/10 border border-white/5 p-6 relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-4 opacity-20">
+                    <i data-lucide="library" class="w-12 h-12"></i>
                 </div>
-                
-                {% set book_recommendations = recommendations|selectattr("content.content_type", "equalto", "book")|list %}
-                
-                {% if book_recommendations %}
-                    <div class="recommendations-grid-modern">
-                        {% for rec in book_recommendations[:6] %}
-                        <div class="recommendation-card-modern">
-                            <div class="card-poster">
-                                {% if rec.content.poster_url %}
-                                    <img src="{{ rec.content.poster_url }}" alt="{{ rec.content.title }}" class="poster-image">
-                                {% else %}
-                                    <div class="poster-placeholder">
-                                        <i data-feather="book"></i>
-                                    </div>
-                                {% endif %}
-                                <div class="confidence-badge">{{ (rec.confidence_score * 100) | round | int }}%</div>
-                            </div>
-                            
-                            <div class="card-content">
-                                <h6 class="content-title">{{ rec.content.title }}</h6>
-                                {% if rec.content.author %}
-                                    <p class="content-year">by {{ rec.content.author }}</p>
-                                {% endif %}
-                                <p class="content-description">{{ rec.reasoning[:100] }}...</p>
-                                
-                                <div class="card-actions">
-                                    <form method="POST" action="{{ url_for('add_to_library') }}" class="action-form">
-                                        <input type="hidden" name="recommendation_id" value="{{ rec.id }}">
-                                        <button type="submit" name="status" value="confirmed" class="btn btn-sm btn-success">
-                                            <i data-feather="plus"></i>
-                                        </button>
-                                        <button type="submit" name="status" value="maybe" class="btn btn-sm btn-warning">
-                                            <i data-feather="bookmark"></i>
-                                        </button>
-                                        <button type="submit" name="status" value="in_progress" class="btn btn-sm btn-primary">
-                                            <i data-feather="play"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
+                <h3 class="font-display font-bold mb-4">Your Library</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="p-3 rounded-lg bg-white/5">
+                        <div class="text-2xl font-bold text-primary">{{ library_stats.watching }}</div>
+                        <div class="text-xs text-muted-foreground">Watching</div>
                     </div>
-                {% else %}
-                    <div class="empty-state-modern">
-                        <i data-feather="book" class="empty-icon"></i>
-                        <h5>No book recommendations yet</h5>
-                        <p>Our AI agents are searching for books you'll love</p>
+                    <div class="p-3 rounded-lg bg-white/5">
+                        <div class="text-2xl font-bold text-blue-400">{{ library_stats.planned }}</div>
+                        <div class="text-xs text-muted-foreground">Planned</div>
                     </div>
-                {% endif %}
+                    <div class="p-3 rounded-lg bg-white/5">
+                        <div class="text-2xl font-bold text-emerald-400">{{ library_stats.completed }}</div>
+                        <div class="text-xs text-muted-foreground">Completed</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-white/5">
+                        <div class="text-2xl font-bold text-yellow-400">{{ library_stats.maybe }}</div>
+                        <div class="text-xs text-muted-foreground">Maybe</div>
+                    </div>
+                </div>
+                <a href="/library" class="btn btn-secondary w-full mt-4">View Library</a>
             </div>
+            
+            <!-- Upcoming Reminders -->
+            {% if upcoming_reminders %}
+            <div class="rounded-xl bg-card border border-white/5 p-6 shadow-lg">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="calendar" class="w-5 h-5 text-accent"></i>
+                    <h3 class="font-display font-bold">Coming Soon</h3>
+                </div>
+                <div class="space-y-3">
+                    {% for reminder in upcoming_reminders %}
+                    <div class="flex items-start gap-3 p-3 rounded-lg bg-white/5">
+                        <i data-lucide="bell" class="w-4 h-4 text-accent mt-0.5"></i>
+                        <div>
+                            <div class="text-sm font-medium">{{ reminder.message[:50] }}...</div>
+                            <div class="text-xs text-muted-foreground">{{ reminder.scheduled_time.strftime('%b %d, %Y') }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -290,66 +250,5 @@
 setTimeout(() => {
     location.reload();
 }, 300000);
-
-// Initialize tabs (vanilla JS)
-document.addEventListener('DOMContentLoaded', function() {
-    const tabs = document.querySelectorAll('.modern-tabs .nav-link');
-    const panes = {
-        movies: document.querySelector('#movies'),
-        'tv-shows': document.querySelector('#tv-shows'),
-        books: document.querySelector('#books')
-    };
-
-    tabs.forEach(btn => {
-        btn.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            Object.values(panes).forEach(p => p.classList.add('hidden'));
-            btn.classList.add('active');
-            const target = btn.getAttribute('data-target');
-            if (target && document.querySelector(target)) {
-                document.querySelector(target).classList.remove('hidden');
-            }
-        });
-    });
-
-    // Handle force discovery with progress indicator
-    const discoveryForm = document.getElementById('discovery-form');
-    const discoveryBtn = document.getElementById('discovery-btn');
-    const discoveryIcon = document.getElementById('discovery-icon');
-    const discoveryText = document.getElementById('discovery-text');
-    
-    if (discoveryForm && discoveryBtn) {
-        discoveryForm.addEventListener('submit', function(e) {
-            // Show loading state
-            discoveryBtn.disabled = true;
-            discoveryIcon.setAttribute('data-feather', 'loader');
-            discoveryIcon.classList.add('spinner');
-            discoveryText.textContent = 'Discovering...';
-            
-            // Re-initialize feather icons to show the new loader icon
-            feather.replace();
-            
-            // Add CSS animation for spinner
-            const style = document.createElement('style');
-            style.textContent = `
-                .spinner {
-                    animation: spin 1s linear infinite;
-                }
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-            `;
-            document.head.appendChild(style);
-            
-            // Add a timeout to handle potential long operations
-            setTimeout(() => {
-                if (discoveryBtn.disabled) {
-                    discoveryText.textContent = 'Still processing...';
-                }
-            }, 10000);
-        });
-    }
-});
 </script>
 {% endblock %}

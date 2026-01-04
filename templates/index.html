@@ -1,305 +1,200 @@
-{% extends "base.html" %}
-
-{% block title %}AI Entertainment Hub - Discover Your Next Favorite{% endblock %}
-
-{% block content %}
-<!-- Hero Section -->
-<section class="hero-section-modern">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="grid lg:grid-cols-2 items-center min-h-screen gap-8">
-            <div class="w-full">
-                <div class="hero-badge">
-                    <span class="badge-icon">🤖</span>
-                    <span>AI-Powered Discovery</span>
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MovieMind - AI-Powered Entertainment Discovery</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: 'hsl(240 10% 4%)',
+                        foreground: 'hsl(0 0% 98%)',
+                        card: 'hsl(240 10% 7%)',
+                        primary: { DEFAULT: 'hsl(270 70% 60%)', foreground: 'hsl(0 0% 100%)' },
+                        accent: { DEFAULT: 'hsl(320 80% 60%)', foreground: 'hsl(0 0% 100%)' },
+                        muted: { DEFAULT: 'hsl(240 5% 15%)', foreground: 'hsl(240 5% 65%)' },
+                    },
+                    fontFamily: {
+                        sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="bg-background text-foreground font-sans antialiased">
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 px-4 py-4">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-white"></i>
                 </div>
-                
-                <h1 class="hero-title">
-                    Discover Your Next
-                    <span class="gradient-text">Entertainment</span>
-                    Obsession
-                </h1>
-                
-                <p class="hero-description">
-                    Our AI agents work 24/7 to find movies, TV shows, and books perfectly tailored to your taste. 
-                    Never run out of amazing content to enjoy.
-                </p>
-                
-                <div class="hero-stats">
-                    <div class="stat-item">
-                        <div class="stat-number">10K+</div>
-                        <div class="stat-label">Happy Users</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">50M+</div>
-                        <div class="stat-label">Recommendations</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">95%</div>
-                        <div class="stat-label">Accuracy Rate</div>
-                    </div>
-                </div>
-                
-                <div class="hero-actions">
-                    <a href="{{ url_for('register') }}" class="inline-flex items-center px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow hero-cta">
-                        Start Free Trial
-                        <i data-feather="arrow-right" class="ml-2"></i>
-                    </a>
-                    <a href="#how-it-works" class="inline-flex items-center px-6 py-3 rounded-lg border border-white/30 text-white hover:bg-white/10">
-                        See How It Works
-                    </a>
-                </div>
-                
-                <div class="hero-trust">
-                    <span class="trust-text">Trusted by entertainment enthusiasts worldwide</span>
-                    <div class="trust-avatars">
-                        <div class="avatar"></div>
-                        <div class="avatar"></div>
-                        <div class="avatar"></div>
-                        <div class="avatar-more">+10K</div>
-                    </div>
-                </div>
+                <span class="font-display font-bold text-2xl tracking-tight">MovieMind</span>
             </div>
-            
-            <div class="w-full">
-                <div class="hero-visual">
-                    <div class="floating-card card-1">
-                        <div class="card-content">
-                            <div class="movie-poster"></div>
-                            <div class="card-info">
-                                <h6>Inception</h6>
-                                <div class="match-score">97% Match</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="floating-card card-2">
-                        <div class="card-content">
-                            <div class="movie-poster show"></div>
-                            <div class="card-info">
-                                <h6>Stranger Things</h6>
-                                <div class="match-score">92% Match</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="floating-card card-3">
-                        <div class="card-content">
-                            <div class="movie-poster book"></div>
-                            <div class="card-info">
-                                <h6>Dune</h6>
-                                <div class="match-score">89% Match</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="ai-pulse">
-                        <div class="pulse-ring"></div>
-                        <div class="pulse-ring"></div>
-                        <div class="pulse-core">
-                            <i data-feather="zap"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- Features Section -->
-<section id="features" class="features-section-modern">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="text-center mb-12">
-            <div class="section-badge">
-                <span>🎯 Features</span>
-            </div>
-            <h2 class="section-title">Intelligent Entertainment Discovery</h2>
-            <p class="section-description">
-                Advanced AI technology meets personalized recommendations for the ultimate entertainment experience.
-            </p>
-        </div>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-                <div class="feature-card-modern">
-                    <div class="feature-icon-modern">
-                        <i data-feather="search"></i>
-                    </div>
-                    <h4>24/7 AI Discovery</h4>
-                    <p>Our AI agents continuously search across thousands of sources to find content perfectly matched to your preferences.</p>
-                    <div class="feature-stats">
-                        <span class="feature-stat">
-                            <i data-feather="clock"></i>
-                            Real-time updates
-                        </span>
-                    </div>
-                </div>
-            </div>
-            
-            <div>
-                <div class="feature-card-modern">
-                    <div class="feature-icon-modern">
-                        <i data-feather="target"></i>
-                    </div>
-                    <h4>Smart Categorization</h4>
-                    <p>Automatically organize your discoveries into watchlists, maybe lists, in-progress, and completed with intelligent tracking.</p>
-                    <div class="feature-stats">
-                        <span class="feature-stat">
-                            <i data-feather="layers"></i>
-                            Auto-organize
-                        </span>
-                    </div>
-                </div>
-            </div>
-            
-            <div>
-                <div class="feature-card-modern">
-                    <div class="feature-icon-modern">
-                        <i data-feather="bell"></i>
-                    </div>
-                    <h4>Intelligent Reminders</h4>
-                    <p>Get notified about new episodes, sequel releases, and perfect timing suggestions for your entertainment schedule.</p>
-                    <div class="feature-stats">
-                        <span class="feature-stat">
-                            <i data-feather="calendar"></i>
-                            Smart timing
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- How It Works Section -->
-<section id="how-it-works" class="how-it-works-modern">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="text-center mb-12">
-            <div class="section-badge">
-                <span>⚡ Process</span>
-            </div>
-            <h2 class="section-title">How It Works</h2>
-            <p class="section-description">
-                Get personalized entertainment recommendations in three simple steps.
-            </p>
-        </div>
-        
-        <div class="steps-container-modern">
-            <div class="step-modern">
-                <div class="step-number">1</div>
-                <div class="step-content">
-                    <h4>Tell Us Your Taste</h4>
-                    <p>Share your favorite genres, rate some content, and let our AI understand your unique preferences.</p>
-                </div>
-                <div class="step-visual">
-                    <div class="step-icon">
-                        <i data-feather="heart"></i>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="step-modern">
-                <div class="step-number">2</div>
-                <div class="step-content">
-                    <h4>AI Agents Search</h4>
-                    <p>Our intelligent agents continuously scan the web, reviews, and databases to find perfect matches.</p>
-                </div>
-                <div class="step-visual">
-                    <div class="step-icon">
-                        <i data-feather="cpu"></i>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="step-modern">
-                <div class="step-number">3</div>
-                <div class="step-content">
-                    <h4>Discover & Enjoy</h4>
-                    <p>Review curated recommendations, organize your entertainment, and never run out of amazing content.</p>
-                </div>
-                <div class="step-visual">
-                    <div class="step-icon">
-                        <i data-feather="play"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- Social Proof Section -->
-<section class="social-proof-modern">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="text-center mb-12">
-            <h3>Loved by Entertainment Enthusiasts</h3>
-        </div>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-                <div class="testimonial-card">
-                    <div class="testimonial-content">
-                        "This AI found shows I never would have discovered on my own. It's like having a personal entertainment curator!"
-                    </div>
-                    <div class="testimonial-author">
-                        <div class="author-avatar"></div>
-                        <div>
-                            <div class="author-name">Sarah Chen</div>
-                            <div class="author-title">Film Enthusiast</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div>
-                <div class="testimonial-card">
-                    <div class="testimonial-content">
-                        "Finally, an app that actually understands my taste. The recommendations are spot-on every time."
-                    </div>
-                    <div class="testimonial-author">
-                        <div class="author-avatar"></div>
-                        <div>
-                            <div class="author-name">Marcus Rodriguez</div>
-                            <div class="author-title">TV Series Addict</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div>
-                <div class="testimonial-card">
-                    <div class="testimonial-content">
-                        "The weekly reminders and progress tracking keep me engaged with my entertainment goals."
-                    </div>
-                    <div class="testimonial-author">
-                        <div class="author-avatar"></div>
-                        <div>
-                            <div class="author-name">Emily Johnson</div>
-                            <div class="author-title">Book Lover</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- CTA Section -->
-<section class="cta-section-modern">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="cta-content">
-            <h2>Ready to Transform Your Entertainment Experience?</h2>
-            <p>Join thousands of users who never run out of amazing content to enjoy.</p>
-            
-            <div class="cta-actions">
-                <a href="{{ url_for('register') }}" class="inline-flex items-center px-6 py-3 rounded-lg bg-white text-gray-900 hover:bg-gray-100 font-medium">
-                    Start Free Trial
-                    <i data-feather="arrow-right" class="ml-2"></i>
+            <div class="flex items-center gap-4">
+                <a href="/login" class="px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Sign in</a>
+                <a href="/register" class="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40">
+                    Get Started
                 </a>
-                <div class="cta-note">
-                    <i data-feather="check"></i>
-                    <span>No credit card required • 14-day free trial</span>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Hero Section -->
+    <section class="min-h-screen flex items-center justify-center px-4 pt-20 relative overflow-hidden">
+        <!-- Background Effects -->
+        <div class="absolute inset-0 overflow-hidden">
+            <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl"></div>
+            <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl"></div>
+        </div>
+        
+        <div class="max-w-4xl mx-auto text-center relative z-10">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8 backdrop-blur-md">
+                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <span class="text-sm text-muted-foreground">AI Agents scanning entertainment news...</span>
+            </div>
+            
+            <h1 class="text-5xl md:text-7xl font-display font-bold mb-6 leading-tight">
+                Your Personal
+                <span class="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Entertainment HQ</span>
+            </h1>
+            
+            <p class="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
+                AI-powered discovery of movies, TV shows, and books. Get the latest gossip, personalized recommendations, and track everything you love in one place.
+            </p>
+            
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+                <a href="/register" class="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary/90 text-white rounded-full text-lg font-medium transition-all shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 flex items-center justify-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    Start Discovering
+                </a>
+                <a href="#features" class="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-foreground rounded-full text-lg font-medium transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="play" class="w-5 h-5"></i>
+                    See How It Works
+                </a>
+            </div>
+            
+            <!-- Feature Preview Cards -->
+            <div class="grid md:grid-cols-3 gap-6 text-left">
+                <div class="p-6 rounded-2xl bg-card/50 border border-white/5 backdrop-blur-md hover:border-primary/30 transition-all group">
+                    <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                        <i data-lucide="flame" class="w-6 h-6 text-primary"></i>
+                    </div>
+                    <h3 class="font-display font-bold text-lg mb-2">Entertainment Gossip</h3>
+                    <p class="text-sm text-muted-foreground">AI agents scrape the web 24/7 for the latest news, casting rumors, and production updates.</p>
+                </div>
+                
+                <div class="p-6 rounded-2xl bg-card/50 border border-white/5 backdrop-blur-md hover:border-accent/30 transition-all group">
+                    <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-4 group-hover:bg-accent/20 transition-colors">
+                        <i data-lucide="sparkles" class="w-6 h-6 text-accent"></i>
+                    </div>
+                    <h3 class="font-display font-bold text-lg mb-2">Smart Recommendations</h3>
+                    <p class="text-sm text-muted-foreground">Personalized suggestions based on your taste, mood, and viewing history using advanced AI.</p>
+                </div>
+                
+                <div class="p-6 rounded-2xl bg-card/50 border border-white/5 backdrop-blur-md hover:border-primary/30 transition-all group">
+                    <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                        <i data-lucide="library" class="w-6 h-6 text-primary"></i>
+                    </div>
+                    <h3 class="font-display font-bold text-lg mb-2">Track Everything</h3>
+                    <p class="text-sm text-muted-foreground">Keep track of what you're watching, plan your next binge, and never miss a premiere.</p>
                 </div>
             </div>
         </div>
-    </div>
-</section>
-{% endblock %}
+    </section>
+    
+    <!-- Features Section -->
+    <section id="features" class="py-24 px-4">
+        <div class="max-w-6xl mx-auto">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-display font-bold mb-4">Built for Entertainment Enthusiasts</h2>
+                <p class="text-lg text-muted-foreground max-w-2xl mx-auto">
+                    Whether you love book adaptations like Percy Jackson or binge-worthy series like Lockwood & Co, MovieMind has you covered.
+                </p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="p-8 rounded-2xl bg-gradient-to-br from-primary/10 to-transparent border border-white/5">
+                    <i data-lucide="bot" class="w-10 h-10 text-primary mb-4"></i>
+                    <h3 class="font-display font-bold text-xl mb-3">AI-Powered Discovery</h3>
+                    <p class="text-muted-foreground mb-4">Our AI agents continuously scan entertainment news sources like Variety, Deadline, and Hollywood Reporter to bring you the freshest updates.</p>
+                    <ul class="space-y-2 text-sm text-muted-foreground">
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-primary"></i> LangGraph orchestrated agents</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-primary"></i> Real-time web scraping</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-primary"></i> Personalized recommendations</li>
+                    </ul>
+                </div>
+                
+                <div class="p-8 rounded-2xl bg-gradient-to-br from-accent/10 to-transparent border border-white/5">
+                    <i data-lucide="book-open" class="w-10 h-10 text-accent mb-4"></i>
+                    <h3 class="font-display font-bold text-xl mb-3">Book-to-Screen Tracking</h3>
+                    <p class="text-muted-foreground mb-4">Track your favorite book adaptations from announcement to premiere. Never miss when your beloved stories come to screen.</p>
+                    <ul class="space-y-2 text-sm text-muted-foreground">
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-accent"></i> Adaptation announcements</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-accent"></i> Casting news alerts</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-accent"></i> Production updates</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- CTA Section -->
+    <section class="py-24 px-4">
+        <div class="max-w-4xl mx-auto text-center">
+            <div class="p-12 rounded-3xl bg-gradient-to-br from-primary/20 to-accent/10 border border-white/5 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-3xl"></div>
+                <div class="relative z-10">
+                    <h2 class="text-4xl font-display font-bold mb-4">Ready to discover your next obsession?</h2>
+                    <p class="text-lg text-muted-foreground mb-8 max-w-xl mx-auto">
+                        Join thousands of entertainment enthusiasts who use MovieMind to stay ahead of the curve.
+                    </p>
+                    <a href="/register" class="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-white rounded-full text-lg font-medium transition-all shadow-lg shadow-primary/30">
+                        <i data-lucide="sparkles" class="w-5 h-5"></i>
+                        Get Started for Free
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Footer -->
+    <footer class="py-12 px-4 border-t border-white/5">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-white"></i>
+                </div>
+                <span class="font-display font-bold">MovieMind</span>
+            </div>
+            <p class="text-sm text-muted-foreground">
+                © 2024 MovieMind. AI-powered entertainment discovery.
+            </p>
+        </div>
+    </footer>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

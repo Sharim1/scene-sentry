@@ -1,289 +1,258 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Entertainment Discovery{% endblock %}</title>
-    
-    <!-- Tailwind CSS (CDN) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = { darkMode: 'class' };
-    </script>
-    
-    <!-- Feather Icons -->
-    <script src="https://unpkg.com/feather-icons"></script>
+    <title>{% block title %}MovieMind{% endblock %}</title>
     
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: 'hsl(240 10% 4%)',
+                        foreground: 'hsl(0 0% 98%)',
+                        card: 'hsl(240 10% 7%)',
+                        'card-foreground': 'hsl(0 0% 98%)',
+                        primary: {
+                            DEFAULT: 'hsl(270 70% 60%)',
+                            foreground: 'hsl(0 0% 100%)',
+                        },
+                        secondary: {
+                            DEFAULT: 'hsl(240 5% 15%)',
+                            foreground: 'hsl(0 0% 98%)',
+                        },
+                        muted: {
+                            DEFAULT: 'hsl(240 5% 15%)',
+                            foreground: 'hsl(240 5% 65%)',
+                        },
+                        accent: {
+                            DEFAULT: 'hsl(320 80% 60%)',
+                            foreground: 'hsl(0 0% 100%)',
+                        },
+                        destructive: {
+                            DEFAULT: 'hsl(0 62% 30%)',
+                            foreground: 'hsl(0 0% 98%)',
+                        },
+                        border: 'hsl(240 5% 15%)',
+                        sidebar: {
+                            DEFAULT: 'hsl(240 10% 3%)',
+                            foreground: 'hsl(240 5% 90%)',
+                        },
+                    },
+                    fontFamily: {
+                        sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- Alpine.js for interactivity -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    
+    {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-950 text-gray-100">
-    <!-- Modern Navigation -->
-    <nav class="modern-navbar">
-        <div class="navbar-glass">
-            <div class="max-w-7xl mx-auto px-4">
-                <div class="navbar-content">
-                    <div class="navbar-brand-modern">
-                        <a href="{{ url_for('index') }}" class="brand-link">
-                            <div class="brand-icon">
-                                <i data-feather="zap"></i>
-                            </div>
-                            <div class="brand-text">
-                                <span class="brand-name">Entertainment</span>
-                                <span class="brand-accent">AI</span>
-                            </div>
-                        </a>
-                    </div>
-                    
-                    {% if session.user_id %}
-                    <div class="navbar-nav-modern">
-                        <a href="{{ url_for('dashboard') }}" class="nav-item-modern {% if request.endpoint == 'dashboard' %}active{% endif %}">
-                            <i data-feather="home" class="nav-icon"></i>
-                            <span>Dashboard</span>
-                        </a>
-                        <a href="{{ url_for('library') }}" class="nav-item-modern {% if request.endpoint == 'library' %}active{% endif %}">
-                            <i data-feather="bookmark" class="nav-icon"></i>
-                            <span>Library</span>
-                        </a>
-                    </div>
-                    {% endif %}
-                    
-                    <div class="navbar-actions">
-                        {% if session.user_id %}
-                            <div class="user-menu-modern">
-                                <button class="user-button" id="userMenuButton" aria-expanded="false" aria-haspopup="true">
-                                    <div class="user-avatar">
-                                        <i data-feather="user"></i>
-                                    </div>
-                                    <div class="user-info">
-                                        <span class="user-name">{{ session.username }}</span>
-                                        <span class="user-label">Account</span>
-                                    </div>
-                                    <i data-feather="chevron-down" class="dropdown-icon"></i>
-                                </button>
-                                <div class="dropdown-menu dropdown-menu-modern hidden" id="userDropdownMenu">
-                                    <div class="dropdown-header">
-                                        <div class="user-avatar-large">
-                                            <i data-feather="user"></i>
-                                        </div>
-                                        <div class="user-details">
-                                            <div class="user-name-large">{{ session.username }}</div>
-                                            <div class="user-email">Free Plan</div>
-                                        </div>
-                                    </div>
-                                    <div class="dropdown-divider"></div>
-                                    <a class="dropdown-item-modern" href="{{ url_for('settings') }}">
-                                        <i data-feather="settings" class="dropdown-icon"></i>
-                                        <span>Settings</span>
-                                        <i data-feather="arrow-right" class="dropdown-arrow"></i>
-                                    </a>
-                                    <a class="dropdown-item-modern" href="#" onclick="showUpgradeModal()">
-                                        <i data-feather="star" class="dropdown-icon"></i>
-                                        <span>Upgrade to Pro</span>
-                                        <div class="pro-badge">Pro</div>
-                                    </a>
-                                    <div class="dropdown-divider"></div>
-                                    <a class="dropdown-item-modern danger" href="{{ url_for('logout') }}">
-                                        <i data-feather="log-out" class="dropdown-icon"></i>
-                                        <span>Sign out</span>
-                                    </a>
-                                </div>
-                            </div>
-                        {% else %}
-                            <div class="auth-buttons">
-                                <a href="{{ url_for('login') }}" class="btn-modern btn-secondary">Sign in</a>
-                                <a href="{{ url_for('register') }}" class="btn-modern btn-primary">Get started</a>
-                            </div>
-                        {% endif %}
-                        
-                        <!-- Mobile menu toggle -->
-                        <button class="mobile-menu-toggle lg:hidden" id="mobileMenuButton" aria-controls="mobileNav" aria-expanded="false">
-                            <span class="hamburger"></span>
-                            <span class="hamburger"></span>
-                            <span class="hamburger"></span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+<body class="bg-background text-foreground font-sans antialiased" x-data="{ mobileMenuOpen: false }">
+    <div class="min-h-screen flex overflow-hidden">
         
-        <!-- Mobile Navigation -->
-        {% if session.user_id %}
-        <div class="lg:hidden hidden" id="mobileNav">
-            <div class="mobile-nav">
-                <a href="{{ url_for('dashboard') }}" class="mobile-nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
-                    <i data-feather="home"></i>
-                    <span>Dashboard</span>
-                </a>
-                <a href="{{ url_for('library') }}" class="mobile-nav-item {% if request.endpoint == 'library' %}active{% endif %}">
-                    <i data-feather="bookmark"></i>
-                    <span>Library</span>
-                </a>
-                <a href="{{ url_for('settings') }}" class="mobile-nav-item">
-                    <i data-feather="settings"></i>
-                    <span>Settings</span>
-                </a>
-                <div class="mobile-nav-divider"></div>
-                <a href="{{ url_for('logout') }}" class="mobile-nav-item danger">
-                    <i data-feather="log-out"></i>
-                    <span>Sign out</span>
-                </a>
-            </div>
-        </div>
-        {% endif %}
-    </nav>
-    
-    <!-- Flash Messages -->
-    <div class="flash-messages">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert-modern alert-{{ 'danger' if category == 'error' else category }}" role="alert">
-                        <div class="alert-content">
-                            {% if category == 'success' %}
-                                <i data-feather="check-circle" class="alert-icon"></i>
-                            {% elif category == 'error' or category == 'danger' %}
-                                <i data-feather="alert-circle" class="alert-icon"></i>
-                            {% elif category == 'warning' %}
-                                <i data-feather="alert-triangle" class="alert-icon"></i>
-                            {% else %}
-                                <i data-feather="info" class="alert-icon"></i>
-                            {% endif %}
-                            <span>{{ message }}</span>
-                        </div>
-                        <button type="button" class="alert-close" onclick="this.parentElement.remove()">
-                            <i data-feather="x"></i>
-                        </button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-    
-    <!-- Main Content -->
-    <main class="main-content">
-        {% block content %}{% endblock %}
-    </main>
-    
-    <!-- Modern Footer -->
-    <footer class="modern-footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <div class="footer-brand">
-                        <div class="brand-icon small">
-                            <i data-feather="zap"></i>
-                        </div>
-                        <span class="footer-brand-text">EntertainmentAI</span>
-                    </div>
-                    <p class="footer-description">
-                        AI-powered entertainment discovery platform that helps you find your next favorite movie, show, or book.
-                    </p>
+        <!-- Desktop Sidebar -->
+        <aside class="hidden md:flex w-64 flex-col border-r border-white/5 bg-sidebar p-4 gap-6 sticky top-0 h-screen">
+            <!-- Logo -->
+            <div class="flex items-center gap-2 px-2">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
                 </div>
-                
-                <div class="footer-links">
-                    <div class="footer-column">
-                        <h6>Product</h6>
-                        <a href="#features">Features</a>
-                        <a href="#pricing">Pricing</a>
-                        <a href="#api">API</a>
-                    </div>
-                    <div class="footer-column">
-                        <h6>Support</h6>
-                        <a href="#help">Help Center</a>
-                        <a href="#contact">Contact</a>
-                        <a href="#status">Status</a>
-                    </div>
-                    <div class="footer-column">
-                        <h6>Company</h6>
-                        <a href="#about">About</a>
-                        <a href="#blog">Blog</a>
-                        <a href="#careers">Careers</a>
-                    </div>
-                </div>
+                <span class="font-display font-bold text-xl tracking-tight">MovieMind</span>
             </div>
             
-            <div class="footer-bottom">
-                <div class="footer-legal">
-                    <span>&copy; 2024 EntertainmentAI. All rights reserved.</span>
-                    <div class="legal-links">
-                        <a href="#privacy">Privacy</a>
-                        <a href="#terms">Terms</a>
-                        <a href="#cookies">Cookies</a>
+            <!-- Navigation -->
+            <nav class="flex flex-col gap-1">
+                <div class="text-xs font-medium text-muted-foreground px-3 mb-2 uppercase tracking-wider">Menu</div>
+                
+                <a href="/dashboard" class="sidebar-nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+                    <i data-lucide="home" class="w-5 h-5"></i>
+                    <span>Home</span>
+                </a>
+                
+                <a href="/gossip" class="sidebar-nav-item {% if '/gossip' in request.url.path %}active{% endif %}">
+                    <i data-lucide="flame" class="w-5 h-5"></i>
+                    <span>Gossip Feed</span>
+                </a>
+                
+                <a href="/library" class="sidebar-nav-item {% if '/library' in request.url.path %}active{% endif %}">
+                    <i data-lucide="library" class="w-5 h-5"></i>
+                    <span>My Library</span>
+                </a>
+                
+                <a href="/library?type=movie" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=movie' in request.url.query %}active{% endif %}">
+                    <i data-lucide="film" class="w-5 h-5"></i>
+                    <span>Movies</span>
+                </a>
+                
+                <a href="/library?type=tv_show" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=tv_show' in request.url.query %}active{% endif %}">
+                    <i data-lucide="tv" class="w-5 h-5"></i>
+                    <span>TV Shows</span>
+                </a>
+            </nav>
+            
+            <!-- AI Status Widget -->
+            <div class="mt-auto">
+                {% include 'partials/_ai_status.html' %}
+                
+                <!-- User Profile -->
+                {% if user %}
+                <div class="flex items-center gap-3 mt-6 px-2 py-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors" x-data="{ userMenu: false }" @click="userMenu = !userMenu">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-sm font-bold">
+                        {{ user.username[0].upper() }}
                     </div>
-                </div>
-                <div class="footer-social">
-                    <a href="#" class="social-link">
-                        <i data-feather="twitter"></i>
-                    </a>
-                    <a href="#" class="social-link">
-                        <i data-feather="github"></i>
-                    </a>
-                    <a href="#" class="social-link">
-                        <i data-feather="linkedin"></i>
+                    <div class="flex-1 overflow-hidden">
+                        <div class="text-sm font-medium truncate">{{ user.username }}</div>
+                        <div class="text-xs text-muted-foreground truncate">{{ user.email }}</div>
+                    </div>
+                    <a href="/logout" class="p-1 hover:text-destructive transition-colors" title="Sign out">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
                     </a>
                 </div>
+                {% endif %}
             </div>
+        </aside>
+        
+        <!-- Mobile Header -->
+        <div class="md:hidden fixed top-0 left-0 right-0 h-16 border-b border-white/5 bg-background/80 backdrop-blur-xl z-50 flex items-center justify-between px-4">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                </div>
+                <span class="font-display font-bold text-lg">MovieMind</span>
+            </div>
+            <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                <i data-lucide="menu" class="w-6 h-6" x-show="!mobileMenuOpen"></i>
+                <i data-lucide="x" class="w-6 h-6" x-show="mobileMenuOpen" x-cloak></i>
+            </button>
         </div>
-    </footer>
+        
+        <!-- Mobile Menu Overlay -->
+        <div x-show="mobileMenuOpen" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0"
+             class="md:hidden fixed inset-0 bg-black/60 z-40"
+             @click="mobileMenuOpen = false">
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div x-show="mobileMenuOpen" x-cloak
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="-translate-x-full"
+             x-transition:enter-end="translate-x-0"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="translate-x-0"
+             x-transition:leave-end="-translate-x-full"
+             class="md:hidden fixed top-0 left-0 bottom-0 w-72 bg-sidebar border-r border-white/10 p-4 z-50 flex flex-col gap-6">
+            
+            <div class="flex items-center gap-2 px-2">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                </div>
+                <span class="font-display font-bold text-xl">MovieMind</span>
+            </div>
+            
+            <nav class="flex flex-col gap-1">
+                <a href="/dashboard" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="home" class="w-5 h-5"></i>
+                    <span>Home</span>
+                </a>
+                <a href="/gossip" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="flame" class="w-5 h-5"></i>
+                    <span>Gossip Feed</span>
+                </a>
+                <a href="/library" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="library" class="w-5 h-5"></i>
+                    <span>My Library</span>
+                </a>
+                <a href="/settings" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="settings" class="w-5 h-5"></i>
+                    <span>Settings</span>
+                </a>
+                
+                {% if user %}
+                <div class="border-t border-white/5 mt-4 pt-4">
+                    <a href="/logout" class="sidebar-nav-item py-3 text-destructive hover:bg-destructive/10">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                        <span>Sign out</span>
+                    </a>
+                </div>
+                {% endif %}
+            </nav>
+        </div>
+        
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto overflow-x-hidden md:p-6 p-4 pt-20 md:pt-6">
+            <div class="max-w-7xl mx-auto space-y-8 animate-in">
+                
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="space-y-2">
+                            {% for category, message in messages %}
+                            <div class="toast {% if category == 'error' %}toast-error{% elif category == 'success' %}toast-success{% elif category == 'warning' %}toast-warning{% else %}{% endif %} relative"
+                                 x-data="{ show: true }"
+                                 x-show="show"
+                                 x-init="setTimeout(() => show = false, 5000)">
+                                <div class="flex items-center gap-3">
+                                    {% if category == 'success' %}
+                                    <i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>
+                                    {% elif category == 'error' %}
+                                    <i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>
+                                    {% elif category == 'warning' %}
+                                    <i data-lucide="alert-triangle" class="w-5 h-5 text-yellow-400"></i>
+                                    {% else %}
+                                    <i data-lucide="info" class="w-5 h-5 text-blue-400"></i>
+                                    {% endif %}
+                                    <span class="text-sm">{{ message }}</span>
+                                    <button @click="show = false" class="ml-auto p-1 hover:bg-white/10 rounded transition-colors">
+                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+                
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
     
-    <!-- Custom JS -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    
-    <!-- Initialize Feather Icons -->
+    <!-- Initialize Lucide Icons -->
     <script>
-        feather.replace();
-        
-        // Upgrade modal placeholder
-        function showUpgradeModal() {
-            alert('Upgrade to Pro for unlimited AI discoveries, priority support, and exclusive features!');
-        }
-        
-        // Auto-hide alerts
         document.addEventListener('DOMContentLoaded', function() {
-            const alerts = document.querySelectorAll('.alert-modern');
-            alerts.forEach(alert => {
-                setTimeout(() => {
-                    alert.style.opacity = '0';
-                    alert.style.transform = 'translateX(100%)';
-                    setTimeout(() => alert.remove(), 300);
-                }, 5000);
-            });
-            // Mobile nav toggle
-            const mobileBtn = document.getElementById('mobileMenuButton');
-            const mobileNav = document.getElementById('mobileNav');
-            if (mobileBtn && mobileNav) {
-                mobileBtn.addEventListener('click', () => {
-                    const isHidden = mobileNav.classList.contains('hidden');
-                    mobileNav.classList.toggle('hidden');
-                    mobileBtn.setAttribute('aria-expanded', String(isHidden));
-                });
-            }
-
-            // User dropdown toggle
-            const userBtn = document.getElementById('userMenuButton');
-            const userMenu = document.getElementById('userDropdownMenu');
-            if (userBtn && userMenu) {
-                userBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    userMenu.classList.toggle('hidden');
-                    userBtn.setAttribute('aria-expanded', String(!userMenu.classList.contains('hidden')));
-                });
-                document.addEventListener('click', (e) => {
-                    if (!userMenu.classList.contains('hidden')) {
-                        const target = e.target;
-                        if (!userMenu.contains(target) && !userBtn.contains(target)) {
-                            userMenu.classList.add('hidden');
-                            userBtn.setAttribute('aria-expanded', 'false');
-                        }
-                    }
-                });
-            }
+            lucide.createIcons();
         });
     </script>
+    
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     
     {% block scripts %}{% endblock %}
 </body>

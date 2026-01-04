@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Gossip Feed - MovieMind{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div>
+        <h1 class="text-3xl font-display font-bold mb-1 flex items-center gap-3">
+            <i data-lucide="flame" class="w-8 h-8 text-accent"></i>
+            Gossip Feed
+        </h1>
+        <p class="text-muted-foreground">AI-scraped entertainment news from across the web.</p>
+    </div>
+    <form method="POST" action="/gossip/refresh">
+        <button type="submit" class="btn btn-primary">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            Refresh Feed
+        </button>
+    </form>
+</div>
+
+<!-- Tag Filters -->
+{% if tag_counts %}
+<div class="flex flex-wrap gap-2 mb-8">
+    <a href="/gossip" class="px-4 py-2 rounded-full text-sm font-medium transition-all {% if not current_tag %}bg-primary text-white{% else %}bg-white/5 text-muted-foreground hover:bg-white/10{% endif %}">
+        All
+    </a>
+    {% for tag, count in tag_counts.items() %}
+    <a href="/gossip?tag={{ tag }}" class="px-4 py-2 rounded-full text-sm font-medium transition-all {% if current_tag == tag %}bg-primary text-white{% else %}bg-white/5 text-muted-foreground hover:bg-white/10{% endif %}">
+        {{ tag|title }}
+        <span class="ml-1 opacity-60">({{ count }})</span>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Gossip Grid -->
+{% if gossip_items %}
+<div class="space-y-4">
+    {% for gossip in gossip_items %}
+    {% include 'partials/_gossip_card.html' %}
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
+    <i data-lucide="newspaper" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
+    <h2 class="font-display font-semibold text-xl mb-2">No gossip found</h2>
+    <p class="text-muted-foreground mb-6 max-w-md mx-auto">
+        {% if current_tag %}
+        No gossip with tag "{{ current_tag }}" found. Try a different filter.
+        {% else %}
+        Our AI agents haven't scraped any gossip yet. Click refresh to start!
+        {% endif %}
+    </p>
+    <form method="POST" action="/gossip/refresh">
+        <button type="submit" class="btn btn-primary">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            Scan for Gossip
+        </button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
+

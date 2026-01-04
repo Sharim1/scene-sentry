@@ -1,0 +1,25 @@
+<!-- AI Status Widget -->
+<div class="p-4 rounded-xl bg-gradient-to-br from-primary/10 to-accent/5 border border-white/5 relative overflow-hidden group">
+    <div class="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+    <div class="relative z-10">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="relative">
+                <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
+                </div>
+                <div class="absolute inset-0 rounded-full border border-primary/30 animate-spin" style="animation-duration: 4s;"></div>
+            </div>
+            <div>
+                <h4 class="font-medium text-sm">AI Agent Active</h4>
+                <p class="text-xs text-muted-foreground flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                    Scraping latest gossip...
+                </p>
+            </div>
+        </div>
+        <div class="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+            <div class="h-full bg-primary w-2/3 rounded-full progress-shimmer"></div>
+        </div>
+    </div>
+</div>
+

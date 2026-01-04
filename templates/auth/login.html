@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - MovieMind</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: 'hsl(240 10% 4%)',
+                        foreground: 'hsl(0 0% 98%)',
+                        card: 'hsl(240 10% 7%)',
+                        primary: { DEFAULT: 'hsl(270 70% 60%)', foreground: 'hsl(0 0% 100%)' },
+                        accent: { DEFAULT: 'hsl(320 80% 60%)', foreground: 'hsl(0 0% 100%)' },
+                        muted: { DEFAULT: 'hsl(240 5% 15%)', foreground: 'hsl(240 5% 65%)' },
+                        destructive: { DEFAULT: 'hsl(0 84% 60%)', foreground: 'hsl(0 0% 98%)' },
+                    },
+                    fontFamily: {
+                        sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="bg-background text-foreground font-sans antialiased min-h-screen flex">
+    <!-- Left Side - Form -->
+    <div class="flex-1 flex flex-col items-center justify-center p-8 relative z-10">
+        <div class="w-full max-w-sm space-y-8 animate-in">
+            <div class="text-center">
+                <a href="/" class="inline-block">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/30">
+                        <i data-lucide="sparkles" class="w-6 h-6 text-white"></i>
+                    </div>
+                </a>
+                <h1 class="text-3xl font-display font-bold mb-2">Welcome Back</h1>
+                <p class="text-muted-foreground">Enter your details to access your personalized feed.</p>
+            </div>
+            
+            {% if error %}
+            <div class="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center gap-2">
+                <i data-lucide="alert-circle" class="w-5 h-5"></i>
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <form method="POST" action="/login" class="space-y-4">
+                <div class="space-y-2">
+                    <input 
+                        type="text" 
+                        name="username"
+                        placeholder="Username"
+                        class="w-full h-12 px-4 bg-card/50 border border-white/10 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                        required
+                    >
+                </div>
+                <div class="space-y-2">
+                    <input 
+                        type="password" 
+                        name="password"
+                        placeholder="Password"
+                        class="w-full h-12 px-4 bg-card/50 border border-white/10 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                        required
+                    >
+                </div>
+                <button type="submit" class="w-full h-12 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-primary/20">
+                    Sign In
+                </button>
+            </form>
+            
+            <div class="relative">
+                <div class="absolute inset-0 flex items-center">
+                    <span class="w-full border-t border-white/10"></span>
+                </div>
+                <div class="relative flex justify-center text-xs uppercase">
+                    <span class="bg-background px-2 text-muted-foreground">Or</span>
+                </div>
+            </div>
+            
+            <p class="text-center text-sm text-muted-foreground">
+                Don't have an account? 
+                <a href="/register" class="text-primary hover:underline">Sign up</a>
+            </p>
+        </div>
+    </div>
+    
+    <!-- Right Side - Visual -->
+    <div class="hidden lg:flex flex-1 relative bg-sidebar items-center justify-center overflow-hidden">
+        <div class="absolute inset-0">
+            <div class="absolute inset-0 bg-gradient-to-br from-primary/30 to-accent/20"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-background to-transparent"></div>
+        </div>
+        <div class="relative z-10 max-w-md p-12 text-center">
+            <h2 class="text-4xl font-display font-bold mb-6 text-white" style="text-shadow: 0 0 40px hsl(270 70% 60% / 0.5);">
+                Your Personal<br>Entertainment HQ
+            </h2>
+            <p class="text-lg text-white/70 leading-relaxed">
+                "The only app that brings all my favorite show rumors and updates into one place. The AI predictions are scary accurate!"
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
+

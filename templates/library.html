@@ -1,289 +1,133 @@
 {% extends "base.html" %}
 
-{% block title %}My Library - EntertainmentAI{% endblock %}
+{% block title %}My Library - MovieMind{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-4">
-    <!-- Header -->
-    <div class="mb-4">
-        <div>
-            <h1 class="h3 mb-3">
-                <i data-feather="bookmark" class="mr-2"></i>My Library
-            </h1>
-            
-            <!-- Filters -->
-            <div class="filters-section">
-                <div class="grid md:grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-sm mb-1">Content Type</label>
-                        <select class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500" id="typeFilter" onchange="updateFilters()">
-                            <option value="all" {{ 'selected' if current_type == 'all' else '' }}>All Types</option>
-                            <option value="movie" {{ 'selected' if current_type == 'movie' else '' }}>Movies</option>
-                            <option value="tv_show" {{ 'selected' if current_type == 'tv_show' else '' }}>TV Shows</option>
-                            <option value="book" {{ 'selected' if current_type == 'book' else '' }}>Books</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm mb-1">Status</label>
-                        <select class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500" id="statusFilter" onchange="updateFilters()">
-                            <option value="all" {{ 'selected' if current_status == 'all' else '' }}>All Status</option>
-                            <option value="confirmed" {{ 'selected' if current_status == 'confirmed' else '' }}>To Watch/Read</option>
-                            <option value="in_progress" {{ 'selected' if current_status == 'in_progress' else '' }}>In Progress</option>
-                            <option value="maybe" {{ 'selected' if current_status == 'maybe' else '' }}>Maybe Later</option>
-                            <option value="finished" {{ 'selected' if current_status == 'finished' else '' }}>Finished</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm mb-1">Sort By</label>
-                        <select class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500" id="sortFilter">
-                            <option value="updated">Recently Updated</option>
-                            <option value="added">Recently Added</option>
-                            <option value="title">Title A-Z</option>
-                            <option value="rating">Rating</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
+<!-- Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div>
+        <h1 class="text-3xl font-display font-bold mb-1">My Library</h1>
+        <p class="text-muted-foreground">Track your watch history and future plans.</p>
     </div>
-    
-    <!-- Library Items -->
-    {% if library_items %}
-        <div class="library-grid">
-            {% for item in library_items %}
-            <div class="library-item" data-type="{{ item.content.content_type }}" data-status="{{ item.status }}">
-                <div class="item-header">
-                    <div class="item-meta">
-                        <span class="content-type-badge type-{{ item.content.content_type }}">
-                            {% if item.content.content_type == 'movie' %}
-                                <i data-feather="film"></i> Movie
-                            {% elif item.content.content_type == 'tv_show' %}
-                                <i data-feather="tv"></i> TV Show
-                            {% else %}
-                                <i data-feather="book"></i> Book
-                            {% endif %}
-                        </span>
-                        
-                        <span class="status-badge status-{{ item.status }}">
-                            {% if item.status == 'confirmed' %}
-                                <i data-feather="check-circle"></i> To Watch/Read
-                            {% elif item.status == 'in_progress' %}
-                                <i data-feather="play-circle"></i> In Progress
-                            {% elif item.status == 'maybe' %}
-                                <i data-feather="bookmark"></i> Maybe
-                            {% elif item.status == 'finished' %}
-                                <i data-feather="check"></i> Finished
-                            {% endif %}
-                        </span>
-                    </div>
-                    
-                    <div class="item-date">
-                        {{ item.updated_at.strftime('%m/%d/%Y') }}
-                    </div>
-                </div>
-                
-                <div class="item-content">
-                    <div class="item-poster">
-                        {% if item.content.poster_url %}
-                            <img src="{{ item.content.poster_url }}" alt="{{ item.content.title }}" class="poster-img">
-                        {% else %}
-                            <div class="poster-placeholder">
-                                {% if item.content.content_type == 'movie' %}
-                                    <i data-feather="film"></i>
-                                {% elif item.content.content_type == 'tv_show' %}
-                                    <i data-feather="tv"></i>
-                                {% else %}
-                                    <i data-feather="book"></i>
-                                {% endif %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    
-                    <div class="item-details">
-                        <h5>{{ item.content.title }}</h5>
-                        
-                        {% if item.content.release_date %}
-                            <p class="text-muted small">{{ item.content.release_date }}</p>
-                        {% endif %}
-                        
-                        {% if item.content.author %}
-                            <p class="text-muted small">by {{ item.content.author }}</p>
-                        {% elif item.content.director %}
-                            <p class="text-muted small">directed by {{ item.content.director }}</p>
-                        {% endif %}
-                        
-                        {% if item.content.description %}
-                            <p class="item-description">{{ item.content.description[:200] }}...</p>
-                        {% endif %}
-                        
-                        {% if item.content.genres %}
-                            <div class="genres mb-2">
-                                {% set genres = item.content.genres | from_json %}
-                                {% for genre in genres[:3] %}
-                                    <span class="genre-tag">{{ genre }}</span>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
-                        
-                        {% if item.progress and item.content.content_type == 'tv_show' %}
-                            <div class="progress-info">
-                                <small class="text-muted">Episode {{ item.progress }}</small>
-                            </div>
-                        {% endif %}
-                        
-                        {% if item.rating %}
-                            <div class="user-rating">
-                                <small class="text-muted">Your rating: </small>
-                                {% for i in range(1, 6) %}
-                                    <i data-feather="star" class="star {{ 'filled' if i <= item.rating else '' }}"></i>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-                
-                <div class="item-actions">
-                    <div class="status-actions">
-                        <form method="POST" action="{{ url_for('update_library_item') }}" class="d-inline">
-                            <input type="hidden" name="item_id" value="{{ item.id }}">
-                            
-                            <div class="btn-group" role="group">
-                                <button type="submit" name="status" value="confirmed" 
-                                        class="btn btn-sm {{ 'btn-success' if item.status == 'confirmed' else 'btn-outline-success' }}">
-                                    <i data-feather="check"></i>
-                                </button>
-                                
-                                <button type="submit" name="status" value="in_progress" 
-                                        class="btn btn-sm {{ 'btn-primary' if item.status == 'in_progress' else 'btn-outline-primary' }}">
-                                    <i data-feather="play"></i>
-                                </button>
-                                
-                                <button type="submit" name="status" value="maybe" 
-                                        class="btn btn-sm {{ 'btn-warning' if item.status == 'maybe' else 'btn-outline-warning' }}">
-                                    <i data-feather="bookmark"></i>
-                                </button>
-                                
-                                <button type="submit" name="status" value="finished" 
-                                        class="btn btn-sm {{ 'btn-info' if item.status == 'finished' else 'btn-outline-info' }}">
-                                    <i data-feather="check-circle"></i>
-                                </button>
-                            </div>
-                            
-                            {% if item.content.content_type == 'tv_show' and item.status == 'in_progress' %}
-                                <div class="form-check form-check-inline ml-2">
-                                    <input class="form-check-input" type="checkbox" name="weekly_release" 
-                                           id="weekly_{{ item.id }}" {{ 'checked' if item.weekly_release else '' }}>
-                                    <label class="form-check-label small" for="weekly_{{ item.id }}">
-                                        Weekly episodes
-                                    </label>
-                                </div>
-                            {% endif %}
-                        </form>
-                    </div>
-                    
-                    <div class="additional-actions">
-                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" 
-                                data-bs-target="#ratingModal{{ item.id }}">
-                            <i data-feather="star"></i> Rate
-                        </button>
-                    </div>
+    <div class="flex items-center gap-3">
+        <button class="btn btn-outline" onclick="document.getElementById('filterModal').classList.remove('hidden')">
+            <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+            Filter
+        </button>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="mb-8">
+    <div class="tabs inline-flex">
+        <a href="/library?status=all&type={{ current_type }}" class="tab {% if current_status == 'all' %}active{% endif %}">
+            All Content
+            <span class="ml-1 text-xs opacity-60">({{ counts.all }})</span>
+        </a>
+        <a href="/library?status=watching&type={{ current_type }}" class="tab {% if current_status == 'watching' %}active{% endif %}">
+            Watching
+            <span class="ml-1 text-xs opacity-60">({{ counts.watching }})</span>
+        </a>
+        <a href="/library?status=planned&type={{ current_type }}" class="tab {% if current_status == 'planned' %}active{% endif %}">
+            Planned
+            <span class="ml-1 text-xs opacity-60">({{ counts.planned }})</span>
+        </a>
+        <a href="/library?status=completed&type={{ current_type }}" class="tab {% if current_status == 'completed' %}active{% endif %}">
+            Completed
+            <span class="ml-1 text-xs opacity-60">({{ counts.completed }})</span>
+        </a>
+        <a href="/library?status=dropped&type={{ current_type }}" class="tab {% if current_status == 'dropped' %}active{% endif %}">
+            Dropped
+            <span class="ml-1 text-xs opacity-60">({{ counts.dropped }})</span>
+        </a>
+    </div>
+</div>
+
+<!-- Content Grid -->
+{% if library_items %}
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 animate-in">
+    {% for item in library_items %}
+    {% set content = item.content %}
+    {% set status = item.status.value %}
+    {% include 'partials/_movie_card.html' %}
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
+    <i data-lucide="library" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
+    <h2 class="font-display font-semibold text-xl mb-2">Your library is empty</h2>
+    <p class="text-muted-foreground mb-6 max-w-md mx-auto">
+        {% if current_status == 'all' %}
+        Start adding content to track what you're watching, planning to watch, or have completed.
+        {% else %}
+        No content with status "{{ current_status }}" found.
+        {% endif %}
+    </p>
+    <div class="flex items-center justify-center gap-4">
+        <a href="/dashboard" class="btn btn-primary">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            Discover Content
+        </a>
+        <a href="/gossip" class="btn btn-outline">
+            <i data-lucide="flame" class="w-4 h-4"></i>
+            Browse Gossip
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Filter Modal -->
+<div id="filterModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('filterModal').classList.add('hidden')"></div>
+    <div class="relative bg-card rounded-xl border border-white/10 p-6 w-full max-w-md shadow-2xl animate-in">
+        <div class="flex items-center justify-between mb-6">
+            <h3 class="font-display font-bold text-xl">Filter Library</h3>
+            <button onclick="document.getElementById('filterModal').classList.add('hidden')" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        
+        <form action="/library" method="GET" class="space-y-6">
+            <!-- Content Type -->
+            <div>
+                <label class="block text-sm font-medium mb-2">Content Type</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if current_type == 'all' %}ring-2 ring-primary{% endif %}">
+                        <input type="radio" name="type" value="all" {% if current_type == 'all' %}checked{% endif %} class="hidden">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                        <span class="text-sm">All</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if current_type == 'movie' %}ring-2 ring-primary{% endif %}">
+                        <input type="radio" name="type" value="movie" {% if current_type == 'movie' %}checked{% endif %} class="hidden">
+                        <i data-lucide="film" class="w-4 h-4"></i>
+                        <span class="text-sm">Movies</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if current_type == 'tv_show' %}ring-2 ring-primary{% endif %}">
+                        <input type="radio" name="type" value="tv_show" {% if current_type == 'tv_show' %}checked{% endif %} class="hidden">
+                        <i data-lucide="tv" class="w-4 h-4"></i>
+                        <span class="text-sm">TV Shows</span>
+                    </label>
                 </div>
             </div>
             
-            <!-- Rating Modal -->
-            <div id="ratingModal{{ item.id }}" class="hidden fixed inset-0 z-50 overflow-y-auto">
-                <div class="flex items-center justify-center min-h-screen px-4">
-                    <div class="fixed inset-0 bg-black/60" data-close-modal></div>
-                    <div class="relative bg-slate-900 border border-white/10 rounded-xl w-full max-w-sm mx-auto p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <h6 class="text-sm font-semibold">Rate {{ item.content.title }}</h6>
-                            <button type="button" class="text-gray-400 hover:text-gray-200" data-close-modal>
-                                <i data-feather="x"></i>
-                            </button>
-                        </div>
-                        <div class="text-center">
-                            <form method="POST" action="{{ url_for('update_library_item') }}" class="space-y-3">
-                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                <input type="hidden" name="status" value="{{ item.status }}">
-                                
-                                <div class="rating-stars mb-3 inline-flex gap-2">
-                                    {% for i in range(1, 6) %}
-                                        <label class="star-label cursor-pointer">
-                                            <input type="radio" name="rating" value="{{ i }}" class="hidden"
-                                                   {{ 'checked' if item.rating == i else '' }}>
-                                            <i data-feather="star" class="star-input"></i>
-                                        </label>
-                                    {% endfor %}
-                                </div>
-                                
-                                <button type="submit" class="inline-flex items-center px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Save Rating</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
+            <!-- Status -->
+            <div>
+                <label class="block text-sm font-medium mb-2">Status</label>
+                <select name="status" class="input">
+                    <option value="all" {% if current_status == 'all' %}selected{% endif %}>All Statuses</option>
+                    <option value="watching" {% if current_status == 'watching' %}selected{% endif %}>Watching</option>
+                    <option value="planned" {% if current_status == 'planned' %}selected{% endif %}>Planned</option>
+                    <option value="completed" {% if current_status == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="dropped" {% if current_status == 'dropped' %}selected{% endif %}>Dropped</option>
+                    <option value="maybe" {% if current_status == 'maybe' %}selected{% endif %}>Maybe</option>
+                </select>
             </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="empty-state">
-            <div class="empty-icon">
-                <i data-feather="bookmark"></i>
+            
+            <div class="flex gap-3">
+                <button type="submit" class="btn btn-primary flex-1">Apply Filters</button>
+                <a href="/library" class="btn btn-outline">Reset</a>
             </div>
-            <h5>Your library is empty</h5>
-            <p class="text-muted">
-                Start adding content from your dashboard recommendations, or search for something specific.
-            </p>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">
-                <i data-feather="home" class="mr-2"></i>Go to Dashboard
-            </a>
-        </div>
-    {% endif %}
+        </form>
+    </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function updateFilters() {
-    const typeFilter = document.getElementById('typeFilter').value;
-    const statusFilter = document.getElementById('statusFilter').value;
-    
-    const url = new URL(window.location);
-    url.searchParams.set('type', typeFilter);
-    url.searchParams.set('status', statusFilter);
-    
-    window.location.href = url.toString();
-}
-
-// Modal open/close (replace Bootstrap)
-document.addEventListener('click', (e) => {
-    const openBtn = e.target.closest('[data-bs-target]');
-    if (openBtn) {
-        const target = openBtn.getAttribute('data-bs-target');
-        const modal = document.querySelector(target);
-        if (modal) {
-            modal.classList.remove('hidden');
-            feather.replace();
-        }
-    }
-    if (e.target.closest('[data-close-modal]')) {
-        const overlay = e.target.closest('.fixed.inset-0') || document.querySelector('.fixed.inset-0');
-        if (overlay) overlay.classList.add('hidden');
-    }
-});
-
-// Star rating interaction
-document.querySelectorAll('.star-label').forEach(label => {
-    label.addEventListener('mouseover', function() {
-        const rating = Number(this.querySelector('input').value);
-        const container = this.closest('.rating-stars');
-        const stars = container.querySelectorAll('.star-input');
-        
-        stars.forEach((star, index) => {
-            star.style.color = index < rating ? '#ffc107' : '#6c757d';
-        });
-    });
-});
-</script>
 {% endblock %}
