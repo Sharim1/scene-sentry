@@ -29,9 +29,8 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    # Drop and recreate tables in development to fix schema issues
-    # TODO: Remove drop_all=True once schema is stable
-    # init_db(drop_all=settings.debug)
+    # Initialize database tables (create if not exist)
+    init_db(drop_all=False)
     logger.info("Database initialized")
     
     # Start background task scheduler
@@ -165,6 +164,7 @@ async def health_check():
 # Error handlers
 from fastapi.exceptions import HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
+import traceback
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -180,6 +180,20 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         "errors/error.html",
         {"request": request, "error": str(exc.detail), "status_code": exc.status_code},
         status_code=exc.status_code
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions"""
+    # Log the full traceback
+    logger.error(f"Unhandled exception: {exc}")
+    logger.error(traceback.format_exc())
+    
+    return templates.TemplateResponse(
+        "errors/error.html",
+        {"request": request, "error": str(exc), "status_code": 500},
+        status_code=500
     )
 
 
