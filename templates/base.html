@@ -64,7 +64,7 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
     
     {% block head %}{% endblock %}
 </head>
@@ -90,30 +90,30 @@
                     <span>Home</span>
                 </a>
                 
-                <a href="/gossip" class="sidebar-nav-item {% if '/gossip' in request.url.path %}active{% endif %}">
-                    <i data-lucide="flame" class="w-5 h-5"></i>
-                    <span>Gossip Feed</span>
+                <a href="/search" class="sidebar-nav-item {% if '/search' in request.url.path %}active{% endif %}">
+                    <i data-lucide="search" class="w-5 h-5"></i>
+                    <span>Search & AI</span>
                 </a>
                 
-                <a href="/library" class="sidebar-nav-item {% if '/library' in request.url.path %}active{% endif %}">
+                <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=' not in (request.url.query or '') %}active{% endif %}">
                     <i data-lucide="library" class="w-5 h-5"></i>
                     <span>My Library</span>
                 </a>
                 
-                <a href="/library?type=movie" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=movie' in request.url.query %}active{% endif %}">
+                <a href="/movies" class="sidebar-nav-item {% if '/movies' in request.url.path %}active{% endif %}">
                     <i data-lucide="film" class="w-5 h-5"></i>
                     <span>Movies</span>
                 </a>
                 
-                <a href="/library?type=tv_show" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=tv_show' in request.url.query %}active{% endif %}">
+                <a href="/tv-shows" class="sidebar-nav-item {% if '/tv-shows' in request.url.path %}active{% endif %}">
                     <i data-lucide="tv" class="w-5 h-5"></i>
                     <span>TV Shows</span>
                 </a>
             </nav>
             
-            <!-- AI Status Widget -->
+            <!-- User Profile Section -->
             <div class="mt-auto">
-                {% include 'partials/_ai_status.html' %}
+                <!-- AI Status moved to right sidebar only -->
                 
                 <!-- User Profile -->
                 {% if user %}
@@ -181,17 +181,21 @@
                     <i data-lucide="home" class="w-5 h-5"></i>
                     <span>Home</span>
                 </a>
-                <a href="/gossip" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="flame" class="w-5 h-5"></i>
-                    <span>Gossip Feed</span>
+                <a href="/search" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="search" class="w-5 h-5"></i>
+                    <span>Search & AI</span>
                 </a>
                 <a href="/library" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="library" class="w-5 h-5"></i>
                     <span>My Library</span>
                 </a>
-                <a href="/settings" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="settings" class="w-5 h-5"></i>
-                    <span>Settings</span>
+                <a href="/movies" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="film" class="w-5 h-5"></i>
+                    <span>Movies</span>
+                </a>
+                <a href="/tv-shows" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="tv" class="w-5 h-5"></i>
+                    <span>TV Shows</span>
                 </a>
                 
                 {% if user %}
@@ -252,7 +256,7 @@
     </script>
     
     <!-- Custom JS -->
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ static_url('js/app.js') }}"></script>
     
     {% block scripts %}{% endblock %}
 </body>

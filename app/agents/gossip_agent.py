@@ -5,21 +5,36 @@ This agent scrapes entertainment news and gossip from various sources,
 extracts relevant information, and matches it to user-tracked content.
 """
 
-import os
 import json
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
-from tavily import TavilyClient
+logger = logging.getLogger(__name__)
+
+# Try to import LLM - may fail due to protobuf issues
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_core.messages import HumanMessage
+    LLM_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"LLM imports failed: {e}. Will use basic analysis.")
+    ChatGoogleGenerativeAI = None
+    HumanMessage = None
+    LLM_AVAILABLE = False
+
+# Try to import Tavily
+try:
+    from tavily import TavilyClient
+    TAVILY_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Tavily import failed: {e}")
+    TavilyClient = None
+    TAVILY_AVAILABLE = False
 
 from app.database import db_session
 from app.models import Gossip, Content
 from app.models.gossip import GossipTag
-
-logger = logging.getLogger(__name__)
 
 
 class GossipScraperAgent:
@@ -59,26 +74,44 @@ class GossipScraperAgent:
         
     def _initialize_llm(self):
         """Initialize the Google Gemini LLM"""
-        api_key = os.environ.get("GEMINI_API_KEY")
+        if not LLM_AVAILABLE or ChatGoogleGenerativeAI is None:
+            logger.warning("LLM not available due to import errors, gossip analysis will be limited")
+            return None
+            
+        from app.config import settings
+        api_key = settings.gemini_api_key
         if not api_key:
             logger.warning("GEMINI_API_KEY not found, gossip analysis will be limited")
             return None
         
-        return ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
-            google_api_key=api_key,
-            temperature=0.3,  # Lower temperature for more factual extraction
-            max_output_tokens=2048,
-        )
+        try:
+            return ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash-exp",
+                google_api_key=api_key,
+                temperature=0.3,  # Lower temperature for more factual extraction
+                max_output_tokens=2048,
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM: {e}")
+            return None
     
     def _initialize_tavily(self):
         """Initialize Tavily search client"""
-        api_key = os.environ.get("TAVILY_API_KEY")
+        if not TAVILY_AVAILABLE or TavilyClient is None:
+            logger.warning("Tavily not available due to import errors")
+            return None
+            
+        from app.config import settings
+        api_key = settings.tavily_api_key
         if not api_key:
             logger.warning("TAVILY_API_KEY not found, gossip scraping will be limited")
             return None
         
-        return TavilyClient(api_key=api_key)
+        try:
+            return TavilyClient(api_key=api_key)
+        except Exception as e:
+            logger.error(f"Failed to initialize Tavily: {e}")
+            return None
     
     async def scrape_gossip(self, tracked_titles: List[str] = None) -> List[Dict[str, Any]]:
         """
@@ -373,6 +406,37 @@ class GossipScraperAgent:
             return []
 
 
-# Global instance
-gossip_agent = GossipScraperAgent()
+# Lazy-loaded global instance
+_gossip_agent = None
+
+def get_gossip_agent():
+    """Get or create the gossip agent instance (lazy loading)"""
+    global _gossip_agent
+    if _gossip_agent is None:
+        try:
+            _gossip_agent = GossipScraperAgent()
+            logger.info("GossipScraperAgent initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to create GossipScraperAgent: {e}")
+            # Return a minimal agent that can still work without LLM
+            _gossip_agent = GossipScraperAgent.__new__(GossipScraperAgent)
+            _gossip_agent.llm = None
+            _gossip_agent.tavily = None
+            # Try to initialize Tavily at least
+            try:
+                if TAVILY_AVAILABLE and TavilyClient:
+                    from app.config import settings
+                    if settings.tavily_api_key:
+                        _gossip_agent.tavily = TavilyClient(api_key=settings.tavily_api_key)
+                        logger.info("Tavily initialized in fallback mode")
+            except Exception as tavily_error:
+                logger.error(f"Failed to initialize Tavily in fallback: {tavily_error}")
+    return _gossip_agent
+
+# For backward compatibility - create a simple wrapper
+class _GossipAgentProxy:
+    def __getattr__(self, name):
+        return getattr(get_gossip_agent(), name)
+
+gossip_agent = _GossipAgentProxy()
 

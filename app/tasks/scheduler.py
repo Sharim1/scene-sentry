@@ -72,7 +72,7 @@ async def gossip_scraping_task():
     logger.info("Running gossip scraping task...")
     
     try:
-        from app.agents.gossip_agent import gossip_agent
+        from app.agents.gossip_agent import get_gossip_agent
         from app.database import db_session
         from app.models import User, LibraryItem
         from app.models.library import WatchStatus
@@ -90,7 +90,8 @@ async def gossip_scraping_task():
                     tracked_titles.add(item.content.title)
         
         # Run gossip scraper
-        results = await gossip_agent.scrape_gossip(list(tracked_titles)[:20])
+        agent = get_gossip_agent()
+        results = await agent.scrape_gossip(list(tracked_titles)[:20])
         
         logger.info(f"Gossip scraping completed: {len(results)} items")
         

@@ -1,11 +1,13 @@
 """
 Dashboard routes
 """
+import os
 import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import get_db
 from app.models import User, Recommendation, LibraryItem, Reminder, Gossip, Content
@@ -14,6 +16,35 @@ from app.routes.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def get_ai_agent_status():
+    """Get the current AI agent status based on configuration"""
+    tavily_key = os.environ.get("TAVILY_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    
+    if not tavily_key:
+        return {
+            "status": "inactive",
+            "message": "Tavily API key not configured",
+            "details": "Add TAVILY_API_KEY to .env to enable gossip scraping",
+            "color": "yellow"
+        }
+    
+    if not gemini_key:
+        return {
+            "status": "limited",
+            "message": "Gossip scraping enabled",
+            "details": "Add GEMINI_API_KEY for AI-powered analysis",
+            "color": "blue"
+        }
+    
+    return {
+        "status": "active",
+        "message": "AI agents fully operational",
+        "details": "Scraping variety.com, deadline.com...",
+        "color": "green"
+    }
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -73,8 +104,11 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     trending = db.query(Content).join(LibraryItem).filter(
         LibraryItem.added_at >= datetime.utcnow() - timedelta(days=7)
     ).group_by(Content.id).order_by(
-        db.func.count(LibraryItem.id).desc()
+        func.count(LibraryItem.id).desc()
     ).limit(5).all()
+    
+    # Get AI agent status
+    ai_status = get_ai_agent_status()
     
     return templates.TemplateResponse(
         "dashboard.html",
@@ -86,7 +120,8 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             "upcoming_reminders": upcoming_reminders,
             "latest_gossip": latest_gossip,
             "featured_gossip": featured_gossip,
-            "trending": trending
+            "trending": trending,
+            "ai_status": ai_status
         }
     )
 

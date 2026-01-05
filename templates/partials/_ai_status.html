@@ -1,25 +1,62 @@
 <!-- AI Status Widget -->
+{% set status = get_ai_status() if get_ai_status is defined else (ai_status if ai_status is defined else {'status': 'unknown', 'message': 'Loading...', 'details': 'Checking agent status'}) %}
 <div class="p-4 rounded-xl bg-gradient-to-br from-primary/10 to-accent/5 border border-white/5 relative overflow-hidden group">
     <div class="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
     <div class="relative z-10">
         <div class="flex items-center gap-3 mb-2">
             <div class="relative">
-                <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
-                    <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
+                {% if status.status == 'active' %}
+                <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center animate-pulse">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-green-400"></i>
                 </div>
-                <div class="absolute inset-0 rounded-full border border-primary/30 animate-spin" style="animation-duration: 4s;"></div>
+                <div class="absolute inset-0 rounded-full border border-green-500/30 animate-spin" style="animation-duration: 4s;"></div>
+                {% elif status.status == 'limited' %}
+                <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-blue-400"></i>
+                </div>
+                <div class="absolute inset-0 rounded-full border border-blue-500/30"></div>
+                {% else %}
+                <div class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 text-yellow-400"></i>
+                </div>
+                <div class="absolute inset-0 rounded-full border border-yellow-500/30"></div>
+                {% endif %}
             </div>
             <div>
-                <h4 class="font-medium text-sm">AI Agent Active</h4>
+                {% if status.status == 'active' %}
+                <h4 class="font-medium text-sm text-green-400">AI Agents Active</h4>
+                {% elif status.status == 'limited' %}
+                <h4 class="font-medium text-sm text-blue-400">AI Agents Limited</h4>
+                {% else %}
+                <h4 class="font-medium text-sm text-yellow-400">AI Agents Inactive</h4>
+                {% endif %}
                 <p class="text-xs text-muted-foreground flex items-center gap-1">
+                    {% if status.status == 'active' %}
                     <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                    Scraping latest gossip...
+                    {% elif status.status == 'limited' %}
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    {% else %}
+                    <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                    {% endif %}
+                    {{ status.message }}
                 </p>
             </div>
         </div>
+        
+        {% if status.status == 'active' %}
         <div class="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-            <div class="h-full bg-primary w-2/3 rounded-full progress-shimmer"></div>
+            <div class="h-full bg-green-500 w-2/3 rounded-full progress-shimmer"></div>
         </div>
+        <p class="text-xs text-muted-foreground mt-2">{{ status.details }}</p>
+        {% elif status.status == 'limited' %}
+        <div class="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+            <div class="h-full bg-blue-500 w-1/2 rounded-full"></div>
+        </div>
+        <p class="text-xs text-muted-foreground mt-2">{{ status.details }}</p>
+        {% else %}
+        <div class="mt-2 p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+            <p class="text-xs text-yellow-300">{{ status.details }}</p>
+        </div>
+        {% endif %}
     </div>
 </div>
-

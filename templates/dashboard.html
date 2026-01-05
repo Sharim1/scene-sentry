@@ -5,39 +5,82 @@
 {% block content %}
 <!-- Hero Section -->
 {% if featured_gossip %}
-<div class="relative rounded-2xl overflow-hidden min-h-[400px] flex items-end p-8 md:p-12 mb-12">
+<div class="relative rounded-3xl overflow-hidden min-h-[450px] flex items-end mb-12">
+    <!-- Background with gradient overlay -->
     <div class="absolute inset-0">
         {% if featured_gossip.image_url %}
         <img src="{{ featured_gossip.image_url }}" alt="Featured" class="w-full h-full object-cover">
         {% else %}
-        <div class="w-full h-full bg-gradient-to-br from-primary/30 to-accent/20"></div>
+        <!-- Default gradient background with animated waves -->
+        <div class="w-full h-full bg-gradient-to-br from-purple-900/80 via-blue-900/60 to-cyan-900/40"></div>
+        <div class="absolute inset-0 opacity-30">
+            <svg class="w-full h-full" viewBox="0 0 1440 320" preserveAspectRatio="none">
+                <path fill="url(#gradient1)" d="M0,160L48,170.7C96,181,192,203,288,192C384,181,480,139,576,128C672,117,768,139,864,170.7C960,203,1056,245,1152,256C1248,267,1344,245,1392,234.7L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z">
+                </path>
+                <defs>
+                    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" style="stop-color:rgba(139,92,246,0.3)"/>
+                        <stop offset="100%" style="stop-color:rgba(6,182,212,0.3)"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
         {% endif %}
-        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent"></div>
-        <div class="absolute inset-0 bg-gradient-to-r from-background via-transparent to-transparent"></div>
+        <!-- Gradient overlays for text readability -->
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent"></div>
+        <div class="absolute inset-0 bg-gradient-to-r from-background/80 via-transparent to-transparent"></div>
     </div>
     
-    <div class="relative z-10 max-w-2xl">
-        <div class="flex items-center gap-2 mb-4 animate-in" style="animation-delay: 0.1s;">
-            <span class="px-2 py-1 rounded-md bg-primary text-white text-xs font-bold uppercase tracking-wider">Featured</span>
-            <span class="text-white/80 text-sm font-medium">{{ featured_gossip.source_name }}</span>
-        </div>
-        <h1 class="text-4xl md:text-5xl font-display font-bold text-white mb-4 leading-tight animate-in" style="animation-delay: 0.2s;">
+    <!-- Content -->
+    <div class="relative z-10 max-w-3xl p-8 md:p-12">
+        <h1 class="text-5xl md:text-6xl font-display font-bold text-white mb-4 leading-tight tracking-tight animate-in" style="animation-delay: 0.1s;">
             {{ featured_gossip.title }}
         </h1>
-        <p class="text-lg text-white/70 mb-8 line-clamp-2 animate-in" style="animation-delay: 0.3s;">
-            {{ featured_gossip.summary or featured_gossip.content[:150] }}...
+        <p class="text-lg md:text-xl text-white/70 mb-8 line-clamp-2 animate-in" style="animation-delay: 0.2s;">
+            {{ featured_gossip.summary or featured_gossip.content[:180] }}...
         </p>
-        <div class="flex flex-wrap gap-4 animate-in" style="animation-delay: 0.4s;">
-            <a href="/gossip/{{ featured_gossip.id }}" class="btn btn-lg btn-primary rounded-full px-8 shadow-lg shadow-primary/30">
-                <i data-lucide="flame" class="w-5 h-5"></i>
+        <div class="flex flex-wrap gap-4 animate-in" style="animation-delay: 0.3s;" x-data="{ showWatchlist: false }">
+            <a href="/gossip/{{ featured_gossip.id }}" class="inline-flex items-center gap-2 px-8 py-3 bg-white text-black font-semibold rounded-full hover:bg-white/90 transition-all duration-200 shadow-lg">
                 Read Gossip
             </a>
-            {% if featured_gossip.related_content %}
-            <a href="/library/add?content_id={{ featured_gossip.related_content_id }}" class="btn btn-lg btn-outline rounded-full px-8 bg-white/5 border-white/10 hover:bg-white/10 text-white backdrop-blur-md">
-                <i data-lucide="plus" class="w-5 h-5"></i>
-                Add to Watchlist
-            </a>
-            {% endif %}
+            <div class="relative">
+                <button 
+                    @click="showWatchlist = !showWatchlist"
+                    class="inline-flex items-center gap-2 px-8 py-3 bg-white/10 text-white font-semibold rounded-full border border-white/20 hover:bg-white/20 transition-all duration-200 backdrop-blur-sm"
+                >
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Add to Watchlist
+                </button>
+                <!-- Status Dropdown -->
+                <div 
+                    x-show="showWatchlist" 
+                    @click.away="showWatchlist = false"
+                    x-transition
+                    class="absolute left-0 mt-2 w-48 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30"
+                >
+                    <div class="p-2 border-b border-white/10">
+                        <p class="text-xs font-medium text-muted-foreground px-2">Select Status</p>
+                    </div>
+                    <a href="/search" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 transition-colors">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="search" class="w-4 h-4 text-primary"></i>
+                            Search Content
+                        </span>
+                    </a>
+                    <a href="/movies" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 transition-colors">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="film" class="w-4 h-4 text-blue-400"></i>
+                            Browse Movies
+                        </span>
+                    </a>
+                    <a href="/tv-shows" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 transition-colors">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="tv" class="w-4 h-4 text-purple-400"></i>
+                            Browse TV Shows
+                        </span>
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -78,10 +121,14 @@
                     <i data-lucide="flame" class="w-6 h-6 text-accent"></i>
                     Fresh Gossip
                 </h2>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-muted-foreground">AI Refreshing in 5m</span>
+                <div class="flex items-center gap-3">
+                    {% if latest_gossip and latest_gossip|length > 0 %}
+                    <span class="text-xs text-muted-foreground">
+                        Last updated: {{ latest_gossip[0].scraped_at.strftime('%I:%M %p') if latest_gossip[0].scraped_at else 'Never' }}
+                    </span>
+                    {% endif %}
                     <form method="POST" action="/gossip/refresh">
-                        <button type="submit" class="btn btn-sm btn-ghost">
+                        <button type="submit" class="btn btn-sm btn-ghost" title="Refresh gossip">
                             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                         </button>
                     </form>
@@ -150,19 +197,46 @@
     <div class="space-y-8">
         <div class="sticky top-24 space-y-8">
             <!-- AI Status (larger version) -->
+            {% set dash_status = get_ai_status() %}
             <div class="flex items-center gap-3 p-3 rounded-lg bg-card/50 border border-white/5 backdrop-blur-md">
                 <div class="relative">
-                    <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
-                        <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
+                    {% if dash_status.status == 'active' %}
+                    <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center animate-pulse">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-green-400"></i>
                     </div>
-                    <div class="absolute inset-0 rounded-full border border-primary/30 animate-spin" style="animation-duration: 4s;"></div>
+                    <div class="absolute inset-0 rounded-full border border-green-500/30 animate-spin" style="animation-duration: 4s;"></div>
+                    {% elif dash_status.status == 'limited' %}
+                    <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-blue-400"></i>
+                    </div>
+                    <div class="absolute inset-0 rounded-full border border-blue-500/30"></div>
+                    {% else %}
+                    <div class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-yellow-400"></i>
+                    </div>
+                    <div class="absolute inset-0 rounded-full border border-yellow-500/30"></div>
+                    {% endif %}
                 </div>
                 <div>
-                    <div class="text-xs font-bold text-white mb-0.5">AI Agents Active</div>
+                    {% if dash_status.status == 'active' %}
+                    <div class="text-xs font-bold text-green-400 mb-0.5">AI Agents Active</div>
                     <div class="text-[10px] text-muted-foreground flex items-center gap-1">
                         <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                        Scraping variety.com...
+                        {{ dash_status.details }}
                     </div>
+                    {% elif dash_status.status == 'limited' %}
+                    <div class="text-xs font-bold text-blue-400 mb-0.5">AI Agents Limited</div>
+                    <div class="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                        {{ dash_status.details }}
+                    </div>
+                    {% else %}
+                    <div class="text-xs font-bold text-yellow-400 mb-0.5">AI Agents Inactive</div>
+                    <div class="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                        {{ dash_status.message }}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
             

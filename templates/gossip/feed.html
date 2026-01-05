@@ -12,12 +12,19 @@
         </h1>
         <p class="text-muted-foreground">AI-scraped entertainment news from across the web.</p>
     </div>
-    <form method="POST" action="/gossip/refresh">
-        <button type="submit" class="btn btn-primary">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-            Refresh Feed
-        </button>
-    </form>
+    <div class="flex items-center gap-4">
+        {% if gossip_items and gossip_items|length > 0 %}
+        <span class="text-sm text-muted-foreground">
+            Last updated: {{ gossip_items[0].scraped_at.strftime('%I:%M %p') if gossip_items[0].scraped_at else 'Never' }}
+        </span>
+        {% endif %}
+        <form method="POST" action="/gossip/refresh">
+            <button type="submit" class="btn btn-primary">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                Refresh Feed
+            </button>
+        </form>
+    </div>
 </div>
 
 <!-- Tag Filters -->

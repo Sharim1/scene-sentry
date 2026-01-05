@@ -34,22 +34,13 @@ def require_auth(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
-@router.get("/login", response_class=HTMLResponse)
+@router.get("/login", response_class=HTMLResponse, name="login")
 async def login_page(request: Request):
     """Login page"""
     from app.main import templates
     
-    # If Clerk is configured, redirect to Clerk sign-in
-    if settings.clerk_publishable_key:
-        return templates.TemplateResponse(
-            "auth/clerk_login.html",
-            {
-                "request": request,
-                "clerk_publishable_key": settings.clerk_publishable_key
-            }
-        )
-    
-    # Otherwise show traditional login form
+    # Show traditional login form
+    # TODO: Add Clerk integration when templates are ready
     return templates.TemplateResponse(
         "auth/login.html",
         {"request": request, "error": None}
@@ -86,21 +77,13 @@ async def login(
     )
 
 
-@router.get("/register", response_class=HTMLResponse)
+@router.get("/register", response_class=HTMLResponse, name="register")
 async def register_page(request: Request):
     """Registration page"""
     from app.main import templates
     
-    # If Clerk is configured, redirect to Clerk sign-up
-    if settings.clerk_publishable_key:
-        return templates.TemplateResponse(
-            "auth/clerk_register.html",
-            {
-                "request": request,
-                "clerk_publishable_key": settings.clerk_publishable_key
-            }
-        )
-    
+    # Show traditional registration form
+    # TODO: Add Clerk integration when templates are ready
     return templates.TemplateResponse(
         "auth/register.html",
         {"request": request, "error": None}
@@ -153,7 +136,7 @@ async def register(
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
-@router.get("/logout")
+@router.get("/logout", name="logout")
 async def logout(request: Request):
     """Logout user"""
     request.session.clear()
@@ -218,7 +201,7 @@ async def clerk_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/settings", response_class=HTMLResponse)
+@router.get("/settings", response_class=HTMLResponse, name="settings")
 async def settings_page(
     request: Request,
     db: Session = Depends(get_db)

@@ -20,13 +20,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Reduce SQLAlchemy engine noise (removes ROLLBACK/COMMIT logs)
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    init_db()
+    # Drop and recreate tables in development to fix schema issues
+    # TODO: Remove drop_all=True once schema is stable
+    # init_db(drop_all=settings.debug)
     logger.info("Database initialized")
     
     # Start background task scheduler
@@ -68,7 +73,8 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 templates_path = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=templates_path)
 
-# Add custom template filters
+# Add custom template filters and globals
+import os
 import json
 
 def from_json_filter(value):
@@ -78,17 +84,61 @@ def from_json_filter(value):
     except:
         return []
 
+def static_url(filename: str) -> str:
+    """Generate static file URL for templates"""
+    return f"/static/{filename}"
+
+def get_flashed_messages(with_categories: bool = False):
+    """Placeholder for Flask-style flash messages (returns empty list for now)"""
+    # In FastAPI, flash messages can be implemented via session
+    # For now, return empty list as placeholder
+    return []
+
+def get_ai_status():
+    """Get the current AI agent status based on configuration"""
+    # Use settings which loads from .env file
+    tavily_key = settings.tavily_api_key
+    gemini_key = settings.gemini_api_key
+    
+    if not tavily_key:
+        return {
+            "status": "inactive",
+            "message": "Tavily API key not configured",
+            "details": "Add TAVILY_API_KEY to .env to enable gossip scraping",
+            "color": "yellow"
+        }
+    
+    if not gemini_key:
+        return {
+            "status": "limited",
+            "message": "Gossip scraping enabled",
+            "details": "Add GEMINI_API_KEY for AI-powered analysis",
+            "color": "blue"
+        }
+    
+    return {
+        "status": "active",
+        "message": "AI agents fully operational",
+        "details": "Scraping variety.com, deadline.com...",
+        "color": "green"
+    }
+
 templates.env.filters["from_json"] = from_json_filter
+templates.env.globals["static_url"] = static_url
+templates.env.globals["get_flashed_messages"] = get_flashed_messages
+templates.env.globals["get_ai_status"] = get_ai_status
 
 
 # Include routers
-from app.routes import auth, dashboard, library, gossip, api
+from app.routes import auth, dashboard, library, gossip, api, search, content
 
 app.include_router(auth.router, tags=["auth"])
 app.include_router(dashboard.router, tags=["dashboard"])
 app.include_router(library.router, prefix="/library", tags=["library"])
 app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
 app.include_router(api.router, prefix="/api", tags=["api"])
+app.include_router(search.router, prefix="/search", tags=["search"])
+app.include_router(content.router, tags=["content"])
 
 
 @app.get("/", response_class=HTMLResponse)

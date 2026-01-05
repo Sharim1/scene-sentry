@@ -9,18 +9,19 @@ from typing import Generator
 from app.config import settings
 
 # Create engine with appropriate settings for SQLite/PostgreSQL
+# Note: echo=False to reduce log noise (ROLLBACK/COMMIT messages)
 if settings.database_url.startswith("sqlite"):
     engine = create_engine(
         settings.database_url,
         connect_args={"check_same_thread": False},
-        echo=settings.debug
+        echo=False  # Disabled to reduce log noise
     )
 else:
     engine = create_engine(
         settings.database_url,
         pool_pre_ping=True,
         pool_recycle=300,
-        echo=settings.debug
+        echo=False  # Disabled to reduce log noise
     )
 
 # Session factory
@@ -57,9 +58,17 @@ def db_session() -> Generator[Session, None, None]:
         db.close()
 
 
-def init_db():
-    """Initialize database tables"""
+def init_db(drop_all: bool = False):
+    """Initialize database tables
+    
+    Args:
+        drop_all: If True, drops all tables before creating (use only in development)
+    """
     # Import all models to register them with Base
     from app.models import user, content, library, recommendation, gossip  # noqa: F401
+    
+    if drop_all:
+        Base.metadata.drop_all(bind=engine)
+    
     Base.metadata.create_all(bind=engine)
 

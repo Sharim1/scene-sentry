@@ -54,7 +54,8 @@ class EntertainmentDiscoveryGraph:
         
     def _initialize_llm(self):
         """Initialize the Google Gemini LLM"""
-        api_key = os.environ.get("GEMINI_API_KEY")
+        from app.config import settings
+        api_key = settings.gemini_api_key
         if not api_key:
             logger.warning("GEMINI_API_KEY not found, AI features will be limited")
             return None
@@ -68,7 +69,8 @@ class EntertainmentDiscoveryGraph:
     
     def _initialize_tavily(self):
         """Initialize Tavily search client"""
-        api_key = os.environ.get("TAVILY_API_KEY")
+        from app.config import settings
+        api_key = settings.tavily_api_key
         if not api_key:
             logger.warning("TAVILY_API_KEY not found, search functionality will be limited")
             return None

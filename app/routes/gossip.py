@@ -134,7 +134,7 @@ async def refresh_gossip(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/login", status_code=303)
     
     try:
-        from app.agents.gossip_agent import gossip_agent
+        from app.agents.gossip_agent import get_gossip_agent
         
         # Get user's tracked content for personalized gossip
         from app.models import LibraryItem
@@ -151,8 +151,10 @@ async def refresh_gossip(request: Request, db: Session = Depends(get_db)):
                 tracked_titles.append(item.content.title)
         
         # Run gossip scraper
+        agent = get_gossip_agent()
+        
         async def scrape():
-            return await gossip_agent.scrape_gossip(tracked_titles[:10])
+            return await agent.scrape_gossip(tracked_titles[:10])
         
         results = await asyncio.wait_for(scrape(), timeout=30.0)
         
