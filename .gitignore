@@ -5,3 +5,4 @@ attached_assets/
 .replit
 *.db
 .DS_Store
+.cursor/
