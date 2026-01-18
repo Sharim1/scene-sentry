@@ -3,7 +3,7 @@ Gossip routes for entertainment news
 """
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Request, Depends, Query, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -125,45 +125,69 @@ async def gossip_detail(
 
 
 @router.post("/refresh")
-async def refresh_gossip(request: Request, db: Session = Depends(get_db)):
-    """Manually trigger gossip refresh"""
-    import asyncio
+async def refresh_gossip(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Manually trigger gossip refresh using background task"""
+    from app.services.task_manager import get_task_manager, TaskType
+    from app.models import LibraryItem
+    from app.models.library import WatchStatus
     
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
     
-    try:
+    task_manager = get_task_manager()
+    
+    # Check if user already has an active gossip task
+    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
+    for existing in existing_tasks:
+        if existing.type == TaskType.GOSSIP_SCRAPE:
+            logger.info(f"Gossip scrape already running for user {user.id}")
+            return RedirectResponse(url="/gossip", status_code=303)
+    
+    # Get user's tracked content for personalized gossip
+    tracked_titles = []
+    library_items = db.query(LibraryItem).filter(
+        LibraryItem.user_id == user.id,
+        LibraryItem.status.in_([WatchStatus.WATCHING, WatchStatus.PLANNED])
+    ).all()
+    
+    for item in library_items:
+        if item.content:
+            tracked_titles.append(item.content.title)
+    
+    # Create and run task
+    task = await task_manager.create_task(
+        task_type=TaskType.GOSSIP_SCRAPE,
+        user_id=user.id,
+        name="Scanning for Gossip"
+    )
+    
+    async def run_gossip_scrape(task, tm):
         from app.agents.gossip_agent import get_gossip_agent
         
-        # Get user's tracked content for personalized gossip
-        from app.models import LibraryItem
-        from app.models.library import WatchStatus
+        await tm.update_task(task.id, progress=10, message=f"Scanning news for {len(tracked_titles)} tracked titles...")
         
-        tracked_titles = []
-        library_items = db.query(LibraryItem).filter(
-            LibraryItem.user_id == user.id,
-            LibraryItem.status.in_([WatchStatus.WATCHING, WatchStatus.PLANNED])
-        ).all()
-        
-        for item in library_items:
-            if item.content:
-                tracked_titles.append(item.content.title)
-        
-        # Run gossip scraper
-        agent = get_gossip_agent()
-        
-        async def scrape():
-            return await agent.scrape_gossip(tracked_titles[:10])
-        
-        results = await asyncio.wait_for(scrape(), timeout=30.0)
-        
-        logger.info(f"Gossip refresh completed: {len(results)} items")
-        
-    except asyncio.TimeoutError:
-        logger.warning("Gossip refresh timeout")
-    except Exception as e:
-        logger.error(f"Error refreshing gossip: {e}")
+        try:
+            agent = get_gossip_agent()
+            
+            await tm.update_task(task.id, progress=30, message="Searching entertainment news sources...")
+            
+            results = await agent.scrape_gossip(tracked_titles[:10])
+            
+            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
+            
+            return {"scraped": len(results), "tracked_titles": len(tracked_titles)}
+            
+        except Exception as e:
+            logger.error(f"Gossip scrape error: {e}")
+            raise
+    
+    background_tasks.add_task(task_manager.run_task, task.id, run_gossip_scrape)
+    logger.info(f"Started gossip scrape task {task.id} for user {user.id}")
     
     return RedirectResponse(url="/gossip", status_code=303)
 

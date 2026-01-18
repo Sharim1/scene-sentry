@@ -4,8 +4,9 @@
  */
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Lucide icons
-    if (typeof lucide !== 'undefined') {
+    // Initialize Lucide icons - with guard to prevent double initialization
+    if (typeof lucide !== 'undefined' && !window.lucideInitialized) {
+        window.lucideInitialized = true;
         lucide.createIcons();
     }
 
@@ -16,6 +17,194 @@ document.addEventListener('DOMContentLoaded', function() {
     initGenreSelector();
     initCardInteractions();
 });
+
+/**
+ * Task Notifications Alpine.js Component
+ * Handles real-time task status updates via SSE
+ * SSE connection starts immediately when a task is created
+ */
+function taskNotifications() {
+    return {
+        tasks: [],
+        eventSource: null,
+        sseConnected: false,
+        connectionAttempts: 0,
+        maxAttempts: 5,
+        
+        init() {
+            // Load any existing tasks from sessionStorage
+            const stored = sessionStorage.getItem('activeTasks');
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    // Only keep non-completed tasks
+                    this.tasks = parsed.filter(t => t.status !== 'completed' && t.status !== 'failed');
+                } catch (e) {
+                    this.tasks = [];
+                }
+            }
+            
+            // Connect to SSE immediately if there are active tasks
+            if (this.tasks.length > 0) {
+                this.connectSSE();
+            }
+            
+            // Listen for custom events to add tasks
+            window.addEventListener('taskCreated', (e) => {
+                this.addTask(e.detail);
+                // Connect to SSE immediately when a task is created
+                if (!this.sseConnected) {
+                    this.connectSSE();
+                }
+            });
+            
+            // Re-initialize Lucide icons after Alpine renders
+            this.$nextTick(() => {
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            });
+        },
+        
+        connectSSE() {
+            // Don't reconnect if already connected or too many attempts
+            if (this.sseConnected || typeof EventSource === 'undefined') return;
+            if (this.connectionAttempts >= this.maxAttempts) {
+                console.warn('Max SSE connection attempts reached');
+                return;
+            }
+            
+            this.connectionAttempts++;
+            
+            try {
+                this.eventSource = new EventSource('/api/tasks/stream');
+                this.sseConnected = true;
+                
+                this.eventSource.onopen = () => {
+                    this.connectionAttempts = 0; // Reset on successful connection
+                };
+                
+                this.eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        // Skip keepalive and connected messages
+                        if (data.type === 'keepalive' || data.type === 'connected') return;
+                        this.handleTaskUpdate(data);
+                    } catch (e) {
+                        // Ignore parse errors for non-JSON messages
+                    }
+                };
+                
+                this.eventSource.onerror = (error) => {
+                    this.sseConnected = false;
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    // Retry with exponential backoff if there are still active tasks
+                    const activeTasks = this.tasks.filter(t => t.status === 'running' || t.status === 'pending');
+                    if (activeTasks.length > 0) {
+                        const delay = Math.min(1000 * Math.pow(2, this.connectionAttempts), 30000);
+                        setTimeout(() => this.connectSSE(), delay);
+                    }
+                };
+            } catch (e) {
+                this.sseConnected = false;
+            }
+        },
+        
+        handleTaskUpdate(data) {
+            const existingIndex = this.tasks.findIndex(t => t.id === data.id);
+            
+            if (existingIndex >= 0) {
+                // Update existing task
+                this.tasks[existingIndex] = { ...this.tasks[existingIndex], ...data };
+            } else {
+                // Add new task
+                this.tasks.push(data);
+            }
+            
+            // Save to sessionStorage
+            sessionStorage.setItem('activeTasks', JSON.stringify(this.tasks));
+            
+            // Auto-dismiss completed tasks after 5 seconds
+            if (data.status === 'completed') {
+                const idx = existingIndex >= 0 ? existingIndex : this.tasks.length - 1;
+                this.tasks[idx].showCompleted = true;
+                setTimeout(() => {
+                    this.dismissTask(data.id);
+                    // Reload page to show new content after discovery completes
+                    if (data.type === 'movie_discovery' || data.type === 'tv_discovery') {
+                        window.location.reload();
+                    }
+                }, 3000);
+            }
+            
+            // Handle failed tasks
+            if (data.status === 'failed') {
+                setTimeout(() => {
+                    this.dismissTask(data.id);
+                }, 8000);
+            }
+            
+            // Re-initialize Lucide icons
+            this.$nextTick(() => {
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            });
+        },
+        
+        addTask(task) {
+            // Check if task already exists
+            const existing = this.tasks.find(t => t.id === task.id);
+            if (existing) return;
+            
+            // Manually add a task (for optimistic UI)
+            this.tasks.push({
+                id: task.id || Date.now().toString(),
+                name: task.name,
+                message: task.message || 'Starting...',
+                status: 'pending',
+                progress: 0,
+                ...task
+            });
+            
+            sessionStorage.setItem('activeTasks', JSON.stringify(this.tasks));
+            
+            this.$nextTick(() => {
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            });
+        },
+        
+        dismissTask(taskId) {
+            this.tasks = this.tasks.filter(t => t.id !== taskId);
+            sessionStorage.setItem('activeTasks', JSON.stringify(this.tasks));
+            
+            // Disconnect SSE if no more active tasks
+            if (this.tasks.length === 0 && this.eventSource) {
+                this.eventSource.close();
+                this.eventSource = null;
+                this.sseConnected = false;
+            }
+        },
+        
+        clearAll() {
+            this.tasks = [];
+            sessionStorage.removeItem('activeTasks');
+            if (this.eventSource) {
+                this.eventSource.close();
+                this.eventSource = null;
+                this.sseConnected = false;
+            }
+        }
+    };
+}
+
+// Make taskNotifications available globally
+window.taskNotifications = taskNotifications;
 
 /**
  * Toast Notifications
@@ -69,6 +258,9 @@ function showToast(message, type = 'info') {
     }, 5000);
 }
 
+// Make showToast available globally
+window.showToast = showToast;
+
 /**
  * Tab Navigation
  */
@@ -118,8 +310,8 @@ function initForms() {
         });
     });
     
-    // Discovery form specific handling
-    const discoveryForms = document.querySelectorAll('form[action*="/discover"], form[action*="/search"]');
+    // Discovery form specific handling - now with background task support
+    const discoveryForms = document.querySelectorAll('form[action*="/discover"], form[action*="/refresh"]');
     discoveryForms.forEach(form => {
         form.addEventListener('submit', function(e) {
             const button = form.querySelector('button[type="submit"]');
@@ -131,8 +323,17 @@ function initForms() {
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>Processing...</span>
+                    <span>Starting...</span>
                 `;
+                
+                // Re-enable button after 2 seconds for background tasks
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = originalHTML;
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }, 2000);
             }
         });
     });
@@ -146,6 +347,7 @@ function initGenreSelector() {
     
     genreLabels.forEach(label => {
         const checkbox = label.querySelector('input[type="checkbox"]');
+        if (!checkbox) return;
         
         checkbox.addEventListener('change', () => {
             label.classList.toggle('ring-2', checkbox.checked);
@@ -304,3 +506,82 @@ async function updateProgress(itemId, progress, season = null, episode = null) {
     }
 }
 
+/**
+ * Start a background task
+ */
+async function startBackgroundTask(taskType, options = {}) {
+    try {
+        const response = await fetch(`/api/tasks/${taskType}/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(options)
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.task) {
+                // Dispatch custom event for taskNotifications to pick up
+                window.dispatchEvent(new CustomEvent('taskCreated', { detail: data.task }));
+                showToast(`Task started: ${data.task.name}`, 'info');
+            } else if (!data.success) {
+                showToast(data.message || 'Task already running', 'warning');
+            }
+            return data;
+        } else {
+            const error = await response.json();
+            showToast(error.detail || 'Failed to start task', 'error');
+            return null;
+        }
+    } catch (error) {
+        showToast('Failed to start task', 'error');
+        return null;
+    }
+}
+
+/**
+ * Start a discovery task (movies or TV shows)
+ * Called by the "Discover New" buttons
+ */
+async function startDiscoveryTask(taskType, buttonElement) {
+    // Disable button and show loading state
+    const originalHTML = buttonElement.innerHTML;
+    buttonElement.disabled = true;
+    buttonElement.innerHTML = `
+        <svg class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>Starting...</span>
+    `;
+    
+    try {
+        const result = await startBackgroundTask(taskType);
+        
+        // Re-enable button after a short delay
+        setTimeout(() => {
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = originalHTML;
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }, 1000);
+        
+    } catch (error) {
+        // Re-enable button on error
+        buttonElement.disabled = false;
+        buttonElement.innerHTML = originalHTML;
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    }
+}
+
+// Make functions available globally
+window.startBackgroundTask = startBackgroundTask;
+window.startDiscoveryTask = startDiscoveryTask;
+window.updateStatus = updateStatus;
+window.updateProgress = updateProgress;
+window.copyToClipboard = copyToClipboard;
+window.confirmAction = confirmAction;

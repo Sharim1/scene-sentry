@@ -5,7 +5,7 @@
 {% block content %}
 <div class="min-h-[80vh] flex flex-col items-center justify-center px-4">
     <!-- Powered by badge -->
-    <div class="mb-8 animate-in" style="animation-delay: 0.1s;">
+    <div class="mb-8">
         <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm">
             <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
             <span>Powered by Multi-Agent AI System</span>
@@ -13,16 +13,16 @@
     </div>
     
     <!-- Main heading -->
-    <h1 class="text-4xl md:text-6xl font-display font-bold text-center mb-6 italic animate-in" style="animation-delay: 0.2s;">
+    <h1 class="text-4xl md:text-6xl font-display font-bold text-center mb-6 italic">
         What do you want to know?
     </h1>
     
-    <p class="text-lg text-muted-foreground text-center mb-10 max-w-2xl animate-in" style="animation-delay: 0.3s;">
+    <p class="text-lg text-muted-foreground text-center mb-10 max-w-2xl">
         Ask about casting rumors, production updates, or find your next obsession.
     </p>
     
     <!-- Search form -->
-    <form action="/search" method="GET" class="w-full max-w-3xl animate-in" style="animation-delay: 0.4s;">
+    <form action="/search" method="GET" class="w-full max-w-3xl">
         <div class="relative flex items-center gap-3 bg-card/80 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl shadow-black/20">
             <input 
                 type="text" 
@@ -42,7 +42,7 @@
     </form>
     
     <!-- Quick suggestions -->
-    <div class="flex flex-wrap items-center justify-center gap-3 mt-8 animate-in" style="animation-delay: 0.5s;">
+    <div class="flex flex-wrap items-center justify-center gap-3 mt-8">
         <a href="/search?q=Is+Lockwood+%26+Co+cancelled%3F" class="px-5 py-2.5 bg-primary/20 hover:bg-primary/30 text-white rounded-full text-sm font-medium transition-all border border-primary/30">
             Is Lockwood & Co cancelled?
         </a>

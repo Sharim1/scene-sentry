@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
+from typing import List, Tuple
 
 from app.config import settings
 from app.database import init_db
@@ -54,7 +55,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add session middleware
+# Add Clerk authentication middleware first so it wraps session middleware
+# Middleware order: Request -> ClerkAuth -> Session -> Route
+# (middleware added last executes first)
+from app.middleware.clerk import ClerkAuthMiddleware
+app.add_middleware(ClerkAuthMiddleware)
+
+# Add session middleware after Clerk so session is available when Clerk middleware runs
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.secret_key,
@@ -87,11 +94,25 @@ def static_url(filename: str) -> str:
     """Generate static file URL for templates"""
     return f"/static/{filename}"
 
+# Flash message storage (request-scoped via context var)
+from contextvars import ContextVar
+_flash_messages: ContextVar[List[Tuple[str, str]]] = ContextVar('flash_messages', default=[])
+
+
+def flash(message: str, category: str = "info"):
+    """Add a flash message to be displayed on next page load"""
+    messages = _flash_messages.get()
+    messages.append((category, message))
+    _flash_messages.set(messages)
+
+
 def get_flashed_messages(with_categories: bool = False):
-    """Placeholder for Flask-style flash messages (returns empty list for now)"""
-    # In FastAPI, flash messages can be implemented via session
-    # For now, return empty list as placeholder
-    return []
+    """Get and clear flash messages"""
+    messages = _flash_messages.get()
+    _flash_messages.set([])
+    if with_categories:
+        return messages
+    return [msg for _, msg in messages]
 
 def get_ai_status():
     """Get the current AI agent status based on configuration"""
@@ -126,6 +147,11 @@ templates.env.filters["from_json"] = from_json_filter
 templates.env.globals["static_url"] = static_url
 templates.env.globals["get_flashed_messages"] = get_flashed_messages
 templates.env.globals["get_ai_status"] = get_ai_status
+templates.env.globals["flash"] = flash
+
+# Clerk configuration for frontend
+templates.env.globals["clerk_publishable_key"] = settings.clerk_publishable_key or ""
+templates.env.globals["clerk_enabled"] = bool(settings.clerk_publishable_key and settings.clerk_issuer)
 
 
 # Include routers
@@ -143,7 +169,23 @@ app.include_router(content.router, tags=["content"])
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Landing page"""
-    user = getattr(request.state, "user", None)
+    from app.routes.auth import get_current_user
+    from app.database import get_db
+    
+    # Get user from middleware-set user_id (avoids detached session issues)
+    user = None
+    clerk_user_id = getattr(request.state, "clerk_user_id", None)
+    session_user_id = getattr(request.state, "session_user_id", None)
+    
+    if clerk_user_id or session_user_id:
+        db = next(get_db())
+        try:
+            from app.models.user import User
+            user_id = clerk_user_id or session_user_id
+            user = db.query(User).filter(User.id == user_id).first()
+        finally:
+            db.close()
+    
     if user:
         return templates.TemplateResponse(
             "dashboard.html",
@@ -159,6 +201,25 @@ async def index(request: Request):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "version": settings.app_version}
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve favicon or return 204 No Content if not available"""
+    from fastapi.responses import FileResponse, Response
+    
+    # Check if favicon exists in static folder
+    favicon_path = static_path / "favicon.ico"
+    if favicon_path.exists():
+        return FileResponse(favicon_path)
+    
+    # Check for PNG favicon
+    favicon_png_path = static_path / "images" / "favicon.png"
+    if favicon_png_path.exists():
+        return FileResponse(favicon_png_path, media_type="image/png")
+    
+    # Return 204 No Content to prevent repeated requests
+    return Response(status_code=204)
 
 
 # Error handlers

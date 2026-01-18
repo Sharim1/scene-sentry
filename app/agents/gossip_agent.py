@@ -7,10 +7,21 @@ extracts relevant information, and matches it to user-tracked content.
 
 import json
 import logging
+import re
+import httpx
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# Try to import trafilatura for content cleaning
+try:
+    import trafilatura
+    TRAFILATURA_AVAILABLE = True
+except ImportError:
+    logger.warning("trafilatura not available, content cleaning will be limited")
+    TRAFILATURA_AVAILABLE = False
 
 # Try to import LLM - may fail due to protobuf issues
 try:
@@ -113,6 +124,94 @@ class GossipScraperAgent:
             logger.error(f"Failed to initialize Tavily: {e}")
             return None
     
+    async def _fetch_og_image(self, url: str) -> Optional[str]:
+        """Fetch og:image meta tag from a URL"""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, follow_redirects=True)
+                if response.status_code != 200:
+                    return None
+                
+                html = response.text
+                
+                # Try to find og:image
+                og_patterns = [
+                    r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']',
+                    r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:image["\']',
+                    r'<meta\s+name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']',
+                ]
+                
+                for pattern in og_patterns:
+                    match = re.search(pattern, html, re.IGNORECASE)
+                    if match:
+                        image_url = match.group(1)
+                        # Validate URL
+                        if image_url.startswith('http'):
+                            return image_url
+                
+        except Exception as e:
+            logger.debug(f"Failed to fetch og:image from {url}: {e}")
+        
+        return None
+    
+    def _clean_content(self, content: str, url: str = None) -> str:
+        """Clean and extract main content from raw HTML or text"""
+        if not content:
+            return ""
+        
+        # If content is HTML and trafilatura is available, use it
+        if TRAFILATURA_AVAILABLE and ('<html' in content.lower() or '<body' in content.lower()):
+            try:
+                cleaned = trafilatura.extract(content)
+                if cleaned:
+                    return cleaned
+            except Exception as e:
+                logger.debug(f"trafilatura extraction failed: {e}")
+        
+        # Basic cleaning
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', content)
+        # Remove extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        # Remove common boilerplate phrases
+        boilerplate = [
+            r'Sign up for our newsletter',
+            r'Subscribe to .+? newsletter',
+            r'Get the latest news',
+            r'Follow us on .+',
+            r'Share this article',
+            r'READ MORE:',
+            r'RELATED:',
+            r'SEE ALSO:',
+        ]
+        for pattern in boilerplate:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        return text.strip()
+    
+    def _validate_article_url(self, url: str) -> bool:
+        """Check if URL is a valid article URL (not just a domain)"""
+        if not url:
+            return False
+        
+        parsed = urlparse(url)
+        path = parsed.path.strip('/')
+        
+        # A valid article URL should have a path with some content
+        if not path:
+            return False
+        
+        # Should have more than just one segment
+        segments = path.split('/')
+        if len(segments) < 1:
+            return False
+        
+        # Should not be a category or section page (usually shorter paths)
+        if len(path) < 10:
+            return False
+        
+        return True
+    
     async def scrape_gossip(self, tracked_titles: List[str] = None) -> List[Dict[str, Any]]:
         """
         Scrape latest entertainment gossip
@@ -177,7 +276,9 @@ class GossipScraperAgent:
                 query=query,
                 max_results=5,
                 search_depth="advanced",
-                include_domains=self.SOURCES
+                include_domains=self.SOURCES,
+                include_images=True,  # Request images in results
+                include_raw_content=False  # We'll fetch content separately if needed
             )
             return response.get("results", [])
         except Exception as e:
@@ -198,6 +299,11 @@ class GossipScraperAgent:
             if not title or not content:
                 return None
             
+            # Validate URL is an actual article
+            if not self._validate_article_url(url):
+                logger.debug(f"Skipping non-article URL: {url}")
+                return None
+            
             # Check if already exists
             with db_session() as db:
                 existing = db.query(Gossip).filter(
@@ -210,21 +316,40 @@ class GossipScraperAgent:
             # Extract source name from URL
             source_name = self._extract_source_name(url)
             
+            # Get image - try multiple sources
+            image_url = None
+            
+            # 1. Try images array from Tavily
+            images = result.get("images", [])
+            if images and isinstance(images, list) and len(images) > 0:
+                image_url = images[0] if isinstance(images[0], str) else images[0].get("url")
+            
+            # 2. Try image_url field directly
+            if not image_url:
+                image_url = result.get("image_url")
+            
+            # 3. Fetch og:image from the article page
+            if not image_url:
+                image_url = await self._fetch_og_image(url)
+            
+            # Clean content before processing
+            cleaned_content = self._clean_content(content, url)
+            
             # Use LLM to analyze and structure the gossip
             if self.llm:
-                analysis = await self._analyze_gossip(title, content, tracked_titles)
+                analysis = await self._analyze_gossip(title, cleaned_content, tracked_titles)
             else:
-                analysis = self._basic_analysis(title, content)
+                analysis = self._basic_analysis(title, cleaned_content)
             
             # Create gossip record
             with db_session() as db:
                 gossip = Gossip(
-                    title=analysis.get("title", title),
-                    content=content[:2000],  # Limit content length
+                    title=analysis.get("title", title)[:200],
+                    content=cleaned_content[:2000],  # Limit content length
                     summary=analysis.get("summary"),
-                    source_url=url,
+                    source_url=url,  # Use the full article URL
                     source_name=source_name,
-                    image_url=result.get("image_url"),
+                    image_url=image_url,
                     tag=self._map_tag(analysis.get("tag", "rumor")),
                     confidence_score=analysis.get("confidence", 0.5),
                     sentiment=analysis.get("sentiment", "neutral"),
@@ -250,7 +375,8 @@ class GossipScraperAgent:
                     "id": gossip.id,
                     "title": gossip.title,
                     "source": source_name,
-                    "tag": gossip.tag.value if gossip.tag else "rumor"
+                    "tag": gossip.tag.value if gossip.tag else "rumor",
+                    "image_url": image_url
                 }
                 
         except Exception as e:
@@ -284,48 +410,50 @@ class GossipScraperAgent:
         tracked_titles: List[str] = None
     ) -> Dict[str, Any]:
         """Use LLM to analyze and structure gossip"""
-        prompt = f"""
-        Analyze this entertainment news article and extract structured information:
+        # Truncate content for token efficiency
+        truncated_content = content[:1200] if len(content) > 1200 else content
         
-        Title: {title}
-        Content: {content[:1500]}
-        
-        User is tracking these shows/movies: {tracked_titles[:10] if tracked_titles else "None specified"}
-        
-        Please extract:
-        1. A compelling headline (max 100 chars)
-        2. A brief summary (2-3 sentences)
-        3. Category tag: one of [exclusive, casting, production, rumor, renewal, cancellation, release, adaptation, behind_scenes, interview, review, trending]
-        4. Sentiment: positive, negative, or neutral
-        5. Confidence score (0-1) - how reliable does this news seem?
-        6. Keywords (up to 5)
-        7. Mentioned TV shows/movies/books (titles only)
-        8. Is this featured-worthy (major breaking news)?
-        
-        Respond in JSON format:
-        {{
-            "title": "...",
-            "summary": "...",
-            "tag": "...",
-            "sentiment": "...",
-            "confidence": 0.8,
-            "keywords": ["...", "..."],
-            "mentioned_titles": ["...", "..."],
-            "is_featured": false
-        }}
-        """
+        prompt = f"""Analyze this entertainment news article and provide a structured summary.
+
+Title: {title}
+
+Content: {truncated_content}
+
+{"User is tracking: " + ", ".join(tracked_titles[:5]) if tracked_titles else ""}
+
+Provide a response in this exact JSON format:
+{{
+    "title": "A concise, compelling headline (max 100 characters)",
+    "summary": "A human-friendly 2-3 sentence summary of the key news. Write it as if you're telling a friend about this story.",
+    "tag": "one of: exclusive, casting, production, rumor, renewal, cancellation, release, adaptation, behind_scenes, interview, review, trending",
+    "sentiment": "positive, negative, or neutral",
+    "confidence": 0.8,
+    "keywords": ["keyword1", "keyword2"],
+    "mentioned_titles": ["Show Name", "Movie Name"],
+    "is_featured": false
+}}
+
+Important:
+- Write the summary in a natural, conversational tone
+- Focus on the most newsworthy aspect
+- Include specific names/titles when relevant
+- Keep the headline punchy and engaging"""
         
         try:
             messages = [HumanMessage(content=prompt)]
             response = await self.llm.ainvoke(messages)
             
-            content = response.content
-            if "```json" in content:
-                json_start = content.find("```json") + 7
-                json_end = content.find("```", json_start)
-                json_str = content[json_start:json_end].strip()
+            response_content = response.content
+            if "```json" in response_content:
+                json_start = response_content.find("```json") + 7
+                json_end = response_content.find("```", json_start)
+                json_str = response_content[json_start:json_end].strip()
+            elif "```" in response_content:
+                json_start = response_content.find("```") + 3
+                json_end = response_content.find("```", json_start)
+                json_str = response_content[json_start:json_end].strip()
             else:
-                json_str = content.strip()
+                json_str = response_content.strip()
             
             return json.loads(json_str)
             
@@ -340,22 +468,32 @@ class GossipScraperAgent:
         
         lower_content = (title + " " + content).lower()
         
-        if any(word in lower_content for word in ["cast", "casting", "star"]):
+        if any(word in lower_content for word in ["cast", "casting", "star", "join"]):
             tag = "casting"
-        elif any(word in lower_content for word in ["renew", "season", "pickup"]):
+        elif any(word in lower_content for word in ["renew", "season", "pickup", "order"]):
             tag = "renewal"
-        elif any(word in lower_content for word in ["cancel", "ended", "final"]):
+        elif any(word in lower_content for word in ["cancel", "ended", "final", "axed"]):
             tag = "cancellation"
-        elif any(word in lower_content for word in ["production", "filming", "set"]):
+        elif any(word in lower_content for word in ["production", "filming", "set", "wrap"]):
             tag = "production"
-        elif any(word in lower_content for word in ["exclusive", "first look"]):
+        elif any(word in lower_content for word in ["exclusive", "first look", "sneak peek"]):
             tag = "exclusive"
-        elif any(word in lower_content for word in ["release", "premiere", "trailer"]):
+        elif any(word in lower_content for word in ["release", "premiere", "trailer", "teaser"]):
             tag = "release"
+        elif any(word in lower_content for word in ["adapt", "based on", "book"]):
+            tag = "adaptation"
+        
+        # Create a basic summary from first sentences
+        sentences = re.split(r'[.!?]+', content)
+        summary = '. '.join(sentences[:2]).strip()
+        if summary and not summary.endswith('.'):
+            summary += '.'
+        if len(summary) > 300:
+            summary = summary[:297] + '...'
         
         return {
             "title": title[:100],
-            "summary": content[:200] + "...",
+            "summary": summary or "Read the full article for details.",
             "tag": tag,
             "sentiment": "neutral",
             "confidence": 0.5,
@@ -439,4 +577,3 @@ class _GossipAgentProxy:
         return getattr(get_gossip_agent(), name)
 
 gossip_agent = _GossipAgentProxy()
-

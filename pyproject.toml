@@ -22,6 +22,7 @@ dependencies = [
     
     # Auth
     "werkzeug>=3.1.3",
+    "python-jose[cryptography]>=3.3.0",
     
     # AI and LangChain
     "langchain>=0.3.27",

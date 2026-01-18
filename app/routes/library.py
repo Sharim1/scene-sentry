@@ -22,9 +22,10 @@ async def library(
     request: Request,
     type: str = Query("all", alias="type"),
     status: str = Query("all"),
+    q: str = Query(None),
     db: Session = Depends(get_db)
 ):
-    """Library page with filtering"""
+    """Library page with filtering and search"""
     from app.main import templates
     
     user = get_current_user(request, db)
@@ -34,9 +35,20 @@ async def library(
     # Build query
     query = db.query(LibraryItem).filter(LibraryItem.user_id == user.id)
     
+    # Always join Content for search and type filter
+    query = query.join(Content)
+    
+    # Search by title
+    search_query = q
+    if q:
+        query = query.filter(
+            Content.title.ilike(f"%{q}%") |
+            Content.description.ilike(f"%{q}%")
+        )
+    
     # Filter by content type
     if type != "all":
-        query = query.join(Content).filter(Content.content_type == type)
+        query = query.filter(Content.content_type == type)
     
     # Filter by status
     if status != "all":
@@ -81,6 +93,7 @@ async def library(
             "library_items": library_items,
             "current_type": type,
             "current_status": status,
+            "search_query": search_query,
             "counts": counts
         }
     )

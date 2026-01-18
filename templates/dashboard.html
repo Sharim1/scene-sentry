@@ -127,11 +127,9 @@
                         Last updated: {{ latest_gossip[0].scraped_at.strftime('%I:%M %p') if latest_gossip[0].scraped_at else 'Never' }}
                     </span>
                     {% endif %}
-                    <form method="POST" action="/gossip/refresh">
-                        <button type="submit" class="btn btn-sm btn-ghost" title="Refresh gossip">
-                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                        </button>
-                    </form>
+                    <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-sm btn-ghost" title="Refresh gossip">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    </button>
                 </div>
             </div>
             
@@ -146,12 +144,10 @@
                 <i data-lucide="newspaper" class="w-12 h-12 text-muted-foreground mx-auto mb-4"></i>
                 <h3 class="font-display font-semibold text-lg mb-2">No gossip yet</h3>
                 <p class="text-sm text-muted-foreground mb-4">Our AI agents are scanning the web for the latest entertainment news.</p>
-                <form method="POST" action="/gossip/refresh">
-                    <button type="submit" class="btn btn-primary">
-                        <i data-lucide="sparkles" class="w-4 h-4"></i>
-                        Start Scanning
-                    </button>
-                </form>
+                <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-primary">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    Start Scanning
+                </button>
             </div>
             {% endif %}
         </div>
@@ -163,12 +159,10 @@
                     <i data-lucide="sparkles" class="w-6 h-6 text-primary"></i>
                     Recommended For You
                 </h2>
-                <form method="POST" action="/discover">
-                    <button type="submit" class="btn btn-sm btn-outline">
-                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                        Discover More
-                    </button>
-                </form>
+                <button type="button" onclick="startDiscoveryTask('content_recommendation', this)" class="btn btn-sm btn-outline">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    Discover More
+                </button>
             </div>
             
             {% if recommendations %}
@@ -182,12 +176,10 @@
                 <i data-lucide="wand-2" class="w-12 h-12 text-muted-foreground mx-auto mb-4"></i>
                 <h3 class="font-display font-semibold text-lg mb-2">No recommendations yet</h3>
                 <p class="text-sm text-muted-foreground mb-4">Start a discovery search to get personalized recommendations.</p>
-                <form method="POST" action="/discover">
-                    <button type="submit" class="btn btn-primary">
-                        <i data-lucide="sparkles" class="w-4 h-4"></i>
-                        Start Discovery
-                    </button>
-                </form>
+                <button type="button" onclick="startDiscoveryTask('content_recommendation', this)" class="btn btn-primary">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    Start Discovery
+                </button>
             </div>
             {% endif %}
         </div>

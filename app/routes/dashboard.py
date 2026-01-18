@@ -4,7 +4,7 @@ Dashboard routes
 import os
 import logging
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -129,58 +129,106 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 @router.post("/search")
 async def search_content(
     request: Request,
+    background_tasks: BackgroundTasks,
     query: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    """Search for content using AI"""
-    import asyncio
+    """Search for content using AI with background task"""
+    from app.services.task_manager import get_task_manager, TaskType
     
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
     
-    try:
+    task_manager = get_task_manager()
+    
+    # Check for existing AI search task
+    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
+    for existing in existing_tasks:
+        if existing.type == TaskType.AI_SEARCH:
+            logger.info(f"AI search already running for user {user.id}")
+            return RedirectResponse(url="/dashboard", status_code=303)
+    
+    # Create and run task
+    task = await task_manager.create_task(
+        task_type=TaskType.AI_SEARCH,
+        user_id=user.id,
+        name=f"Searching: {query[:30]}..."
+    )
+    
+    async def run_ai_search(task, tm):
         from app.agents.graph import discovery_graph
         
-        # Run discovery with search query
-        async def run_with_timeout():
-            return await discovery_graph.run_discovery(user.id, search_query=query)
+        await tm.update_task(task.id, progress=10, message="Analyzing your query...")
         
-        results = await asyncio.wait_for(run_with_timeout(), timeout=18.0)
-        
-        logger.info(f"Search completed for user {user.id}: {len(results)} results")
-        
-    except asyncio.TimeoutError:
-        logger.warning(f"Search timeout for user {user.id}, query: {query}")
-    except Exception as e:
-        logger.error(f"Error in search: {e}")
+        try:
+            await tm.update_task(task.id, progress=30, message="Searching web sources...")
+            
+            results = await discovery_graph.run_discovery(user.id, search_query=query)
+            
+            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} recommendations")
+            
+            return {"recommendations": len(results), "query": query}
+            
+        except Exception as e:
+            logger.error(f"AI search error: {e}")
+            raise
+    
+    background_tasks.add_task(task_manager.run_task, task.id, run_ai_search)
+    logger.info(f"Started AI search task {task.id} for user {user.id}")
     
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
 @router.post("/discover")
-async def force_discovery(request: Request, db: Session = Depends(get_db)):
-    """Force AI discovery for user"""
-    import asyncio
+async def force_discovery(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Force AI discovery for user with background task"""
+    from app.services.task_manager import get_task_manager, TaskType
     
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
     
-    try:
+    task_manager = get_task_manager()
+    
+    # Check for existing recommendation task
+    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
+    for existing in existing_tasks:
+        if existing.type == TaskType.CONTENT_RECOMMENDATION:
+            logger.info(f"Content recommendation already running for user {user.id}")
+            return RedirectResponse(url="/dashboard", status_code=303)
+    
+    # Create and run task
+    task = await task_manager.create_task(
+        task_type=TaskType.CONTENT_RECOMMENDATION,
+        user_id=user.id,
+        name="Generating Recommendations"
+    )
+    
+    async def run_discovery(task, tm):
         from app.agents.graph import discovery_graph
         
-        async def run_with_timeout():
-            return await discovery_graph.run_discovery(user.id)
+        await tm.update_task(task.id, progress=10, message="Analyzing your preferences...")
         
-        results = await asyncio.wait_for(run_with_timeout(), timeout=20.0)
-        
-        logger.info(f"Discovery completed for user {user.id}: {len(results)} results")
-        
-    except asyncio.TimeoutError:
-        logger.warning(f"Discovery timeout for user {user.id}")
-    except Exception as e:
-        logger.error(f"Error in discovery: {e}")
+        try:
+            await tm.update_task(task.id, progress=30, message="Searching for content...")
+            
+            results = await discovery_graph.run_discovery(user.id)
+            
+            await tm.update_task(task.id, progress=90, message=f"Generated {len(results)} recommendations")
+            
+            return {"recommendations": len(results)}
+            
+        except Exception as e:
+            logger.error(f"Discovery error: {e}")
+            raise
+    
+    background_tasks.add_task(task_manager.run_task, task.id, run_discovery)
+    logger.info(f"Started discovery task {task.id} for user {user.id}")
     
     return RedirectResponse(url="/dashboard", status_code=303)
 

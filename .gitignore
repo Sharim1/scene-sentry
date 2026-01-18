@@ -4,3 +4,4 @@ __pycache__/
 attached_assets/
 .replit
 *.db
+.DS_Store

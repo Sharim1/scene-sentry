@@ -1,10 +1,12 @@
 """
 JSON API routes for AJAX interactions
 """
+import asyncio
 import logging
 from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, Request, Depends, HTTPException, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Request, Depends, HTTPException, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,7 @@ from app.database import get_db
 from app.models import User, Content, LibraryItem, Recommendation, Gossip
 from app.models.library import WatchStatus
 from app.routes.auth import get_current_user
+from app.services.task_manager import get_task_manager, TaskType, TaskStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -334,4 +337,283 @@ async def dismiss_recommendation(
     db.commit()
     
     return {"success": True}
+
+
+# ==================== TASK MANAGEMENT ENDPOINTS ====================
+
+class TaskStartRequest(BaseModel):
+    """Request body for starting a task"""
+    preferences: Optional[str] = None
+    query: Optional[str] = None
+
+
+@router.get("/tasks")
+async def get_user_tasks(
+    request: Request,
+    active_only: bool = Query(True),
+    db: Session = Depends(get_db)
+):
+    """Get all tasks for the current user"""
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    task_manager = get_task_manager()
+    tasks = await task_manager.get_user_tasks(user.id, active_only=active_only)
+    
+    return {"tasks": [task.to_dict() for task in tasks]}
+
+
+@router.get("/tasks/stream")
+async def task_stream(request: Request, db: Session = Depends(get_db)):
+    """
+    Server-Sent Events endpoint for real-time task updates.
+    Clients should connect to this endpoint to receive task status updates.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        # Return empty stream for unauthenticated users
+        async def empty_stream():
+            yield "data: {}\n\n"
+        return StreamingResponse(
+            empty_stream(),
+            media_type="text/event-stream"
+        )
+    
+    task_manager = get_task_manager()
+    queue = await task_manager.subscribe(user.id)
+    
+    async def event_generator():
+        """Generate SSE events from task updates"""
+        try:
+            # Send initial keepalive
+            yield "data: {\"type\": \"connected\"}\n\n"
+            
+            while True:
+                try:
+                    # Wait for task updates with timeout
+                    task_data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {__import__('json').dumps(task_data)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive to prevent connection timeout
+                    yield "data: {\"type\": \"keepalive\"}\n\n"
+                except asyncio.CancelledError:
+                    break
+        finally:
+            await task_manager.unsubscribe(user.id, queue)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
+
+
+@router.post("/tasks/{task_type}/start")
+async def start_task(
+    request: Request,
+    task_type: str,
+    background_tasks: BackgroundTasks,
+    body: TaskStartRequest = None,
+    db: Session = Depends(get_db)
+):
+    """Start a background task"""
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Map task type string to enum
+    task_type_map = {
+        "movie_discovery": TaskType.MOVIE_DISCOVERY,
+        "tv_discovery": TaskType.TV_DISCOVERY,
+        "gossip_scrape": TaskType.GOSSIP_SCRAPE,
+        "ai_search": TaskType.AI_SEARCH,
+        "content_recommendation": TaskType.CONTENT_RECOMMENDATION,
+    }
+    
+    if task_type not in task_type_map:
+        raise HTTPException(status_code=400, detail=f"Invalid task type: {task_type}")
+    
+    task_manager = get_task_manager()
+    
+    # Check if user already has an active task of this type
+    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
+    for existing in existing_tasks:
+        if existing.type == task_type_map[task_type]:
+            return {
+                "success": False,
+                "message": "A task of this type is already running",
+                "task": existing.to_dict()
+            }
+    
+    # Create the task
+    task = await task_manager.create_task(
+        task_type=task_type_map[task_type],
+        user_id=user.id
+    )
+    
+    # Define task functions for each type
+    async def run_movie_discovery(task, tm):
+        from app.services.content_scraper import get_content_scraper
+        from app.routes.content import save_scraped_content
+        
+        scraper = get_content_scraper()
+        preferences = body.preferences if body else user.preferred_genres or "popular"
+        
+        await tm.update_task(task.id, progress=10, message="Fetching movie data...")
+        
+        try:
+            movies = await scraper.discover_movies(preferences=preferences, limit=30)
+            await tm.update_task(task.id, progress=50, message=f"Found {len(movies)} movies, saving...")
+            
+            saved_count = 0
+            for i, movie_data in enumerate(movies):
+                try:
+                    with next(get_db()) as db_session:
+                        content = await save_scraped_content(db_session, movie_data, "movie")
+                        if content:
+                            saved_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save movie: {e}")
+                
+                progress = 50 + int((i / len(movies)) * 40)
+                await tm.update_task(task.id, progress=progress)
+            
+            return {"saved": saved_count, "total": len(movies)}
+            
+        except Exception as e:
+            logger.error(f"Movie discovery error: {e}")
+            raise
+    
+    async def run_tv_discovery(task, tm):
+        from app.services.content_scraper import get_content_scraper
+        from app.routes.content import save_scraped_content
+        
+        scraper = get_content_scraper()
+        preferences = body.preferences if body else user.preferred_genres or "popular"
+        
+        await tm.update_task(task.id, progress=10, message="Fetching TV show data...")
+        
+        try:
+            shows = await scraper.discover_tv_shows(preferences=preferences, limit=30)
+            await tm.update_task(task.id, progress=50, message=f"Found {len(shows)} TV shows, saving...")
+            
+            saved_count = 0
+            for i, show_data in enumerate(shows):
+                try:
+                    with next(get_db()) as db_session:
+                        content = await save_scraped_content(db_session, show_data, "tv_show")
+                        if content:
+                            saved_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save TV show: {e}")
+                
+                progress = 50 + int((i / len(shows)) * 40)
+                await tm.update_task(task.id, progress=progress)
+            
+            return {"saved": saved_count, "total": len(shows)}
+            
+        except Exception as e:
+            logger.error(f"TV discovery error: {e}")
+            raise
+    
+    async def run_gossip_scrape(task, tm):
+        from app.agents.gossip_agent import get_gossip_agent
+        from app.models import LibraryItem
+        from app.models.library import WatchStatus
+        
+        await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
+        
+        try:
+            # Get user's tracked titles
+            tracked_titles = []
+            with next(get_db()) as db_session:
+                items = db_session.query(LibraryItem).filter(
+                    LibraryItem.user_id == user.id,
+                    LibraryItem.status.in_([WatchStatus.WATCHING, WatchStatus.PLANNED])
+                ).all()
+                
+                for item in items:
+                    if item.content:
+                        tracked_titles.append(item.content.title)
+            
+            await tm.update_task(task.id, progress=30, message=f"Scanning news for {len(tracked_titles)} tracked titles...")
+            
+            agent = get_gossip_agent()
+            results = await agent.scrape_gossip(tracked_titles[:10])
+            
+            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
+            
+            return {"scraped": len(results), "tracked_titles": len(tracked_titles)}
+            
+        except Exception as e:
+            logger.error(f"Gossip scrape error: {e}")
+            raise
+    
+    async def run_ai_search(task, tm):
+        from app.agents.graph import discovery_graph
+        
+        query = body.query if body else None
+        
+        await tm.update_task(task.id, progress=10, message="Starting AI search...")
+        
+        try:
+            results = await discovery_graph.run_discovery(user.id, search_query=query)
+            
+            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} recommendations")
+            
+            return {"recommendations": len(results)}
+            
+        except Exception as e:
+            logger.error(f"AI search error: {e}")
+            raise
+    
+    # Map task types to functions
+    task_functions = {
+        TaskType.MOVIE_DISCOVERY: run_movie_discovery,
+        TaskType.TV_DISCOVERY: run_tv_discovery,
+        TaskType.GOSSIP_SCRAPE: run_gossip_scrape,
+        TaskType.AI_SEARCH: run_ai_search,
+        TaskType.CONTENT_RECOMMENDATION: run_ai_search,  # Same as AI search for now
+    }
+    
+    task_func = task_functions.get(task_type_map[task_type])
+    
+    # Run task in background
+    background_tasks.add_task(task_manager.run_task, task.id, task_func)
+    
+    return {
+        "success": True,
+        "message": f"Task started: {task.name}",
+        "task": task.to_dict()
+    }
+
+
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_task(
+    request: Request,
+    task_id: str,
+    db: Session = Depends(get_db)
+):
+    """Cancel a running task"""
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    task_manager = get_task_manager()
+    task = await task_manager.get_task(task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this task")
+    
+    success = await task_manager.cancel_task(task_id)
+    
+    return {"success": success}
 

@@ -18,12 +18,10 @@
             Last updated: {{ gossip_items[0].scraped_at.strftime('%I:%M %p') if gossip_items[0].scraped_at else 'Never' }}
         </span>
         {% endif %}
-        <form method="POST" action="/gossip/refresh">
-            <button type="submit" class="btn btn-primary">
-                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                Refresh Feed
-            </button>
-        </form>
+        <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-primary">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            Refresh Feed
+        </button>
     </div>
 </div>
 
@@ -60,12 +58,10 @@
         Our AI agents haven't scraped any gossip yet. Click refresh to start!
         {% endif %}
     </p>
-    <form method="POST" action="/gossip/refresh">
-        <button type="submit" class="btn btn-primary">
-            <i data-lucide="sparkles" class="w-4 h-4"></i>
-            Scan for Gossip
-        </button>
-    </form>
+    <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-primary">
+        <i data-lucide="sparkles" class="w-4 h-4"></i>
+        Scan for Gossip
+    </button>
 </div>
 {% endif %}
 {% endblock %}

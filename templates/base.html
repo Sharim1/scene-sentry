@@ -66,69 +66,159 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
     
+    {% if clerk_enabled %}
+    <!-- Clerk JavaScript SDK -->
+    <script
+        async
+        crossorigin="anonymous"
+        data-clerk-publishable-key="{{ clerk_publishable_key }}"
+        src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+        type="text/javascript"
+    ></script>
+    {% endif %}
+    
     {% block head %}{% endblock %}
 </head>
 <body class="bg-background text-foreground font-sans antialiased" x-data="{ mobileMenuOpen: false }">
     <div class="min-h-screen flex overflow-hidden">
         
-        <!-- Desktop Sidebar -->
-        <aside class="hidden md:flex w-64 flex-col border-r border-white/5 bg-sidebar p-4 gap-6 sticky top-0 h-screen">
-            <!-- Logo -->
-            <div class="flex items-center gap-2 px-2">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
-                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+        <!-- Desktop Sidebar - Fixed structure to prevent profile scrolling -->
+        <aside class="hidden md:flex w-64 flex-col border-r border-white/5 bg-sidebar fixed top-0 left-0 h-screen">
+            <!-- Logo Section (Fixed at top) -->
+            <div class="flex-shrink-0 p-4">
+                <div class="flex items-center gap-2 px-2">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                    </div>
+                    <span class="font-display font-bold text-xl tracking-tight">MovieMind</span>
                 </div>
-                <span class="font-display font-bold text-xl tracking-tight">MovieMind</span>
             </div>
             
-            <!-- Navigation -->
-            <nav class="flex flex-col gap-1">
+            <!-- Navigation Section (Scrollable if needed) -->
+            <nav class="flex-1 overflow-y-auto px-4 pb-4">
                 <div class="text-xs font-medium text-muted-foreground px-3 mb-2 uppercase tracking-wider">Menu</div>
                 
-                <a href="/dashboard" class="sidebar-nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
-                    <i data-lucide="home" class="w-5 h-5"></i>
-                    <span>Home</span>
-                </a>
-                
-                <a href="/search" class="sidebar-nav-item {% if '/search' in request.url.path %}active{% endif %}">
-                    <i data-lucide="search" class="w-5 h-5"></i>
-                    <span>Search & AI</span>
-                </a>
-                
-                <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=' not in (request.url.query or '') %}active{% endif %}">
-                    <i data-lucide="library" class="w-5 h-5"></i>
-                    <span>My Library</span>
-                </a>
-                
-                <a href="/movies" class="sidebar-nav-item {% if '/movies' in request.url.path %}active{% endif %}">
-                    <i data-lucide="film" class="w-5 h-5"></i>
-                    <span>Movies</span>
-                </a>
-                
-                <a href="/tv-shows" class="sidebar-nav-item {% if '/tv-shows' in request.url.path %}active{% endif %}">
-                    <i data-lucide="tv" class="w-5 h-5"></i>
-                    <span>TV Shows</span>
-                </a>
-            </nav>
-            
-            <!-- User Profile Section -->
-            <div class="mt-auto">
-                <!-- AI Status moved to right sidebar only -->
-                
-                <!-- User Profile -->
-                {% if user %}
-                <div class="flex items-center gap-3 mt-6 px-2 py-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors" x-data="{ userMenu: false }" @click="userMenu = !userMenu">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-sm font-bold">
-                        {{ user.username[0].upper() }}
-                    </div>
-                    <div class="flex-1 overflow-hidden">
-                        <div class="text-sm font-medium truncate">{{ user.username }}</div>
-                        <div class="text-xs text-muted-foreground truncate">{{ user.email }}</div>
-                    </div>
-                    <a href="/logout" class="p-1 hover:text-destructive transition-colors" title="Sign out">
-                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                <div class="flex flex-col gap-1">
+                    <a href="/dashboard" class="sidebar-nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+                        <i data-lucide="home" class="w-5 h-5"></i>
+                        <span>Home</span>
+                    </a>
+                    
+                    <a href="/search" class="sidebar-nav-item {% if '/search' in request.url.path %}active{% endif %}">
+                        <i data-lucide="search" class="w-5 h-5"></i>
+                        <span>Search & AI</span>
+                    </a>
+                    
+                    <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=' not in (request.url.query or '') %}active{% endif %}">
+                        <i data-lucide="library" class="w-5 h-5"></i>
+                        <span>My Library</span>
+                    </a>
+                    
+                    <a href="/movies" class="sidebar-nav-item {% if '/movies' in request.url.path %}active{% endif %}">
+                        <i data-lucide="film" class="w-5 h-5"></i>
+                        <span>Movies</span>
+                    </a>
+                    
+                    <a href="/tv-shows" class="sidebar-nav-item {% if '/tv-shows' in request.url.path %}active{% endif %}">
+                        <i data-lucide="tv" class="w-5 h-5"></i>
+                        <span>TV Shows</span>
+                    </a>
+                    
+                    <a href="/gossip" class="sidebar-nav-item {% if '/gossip' in request.url.path %}active{% endif %}">
+                        <i data-lucide="flame" class="w-5 h-5"></i>
+                        <span>Gossip Feed</span>
                     </a>
                 </div>
+                
+                <div class="text-xs font-medium text-muted-foreground px-3 mt-6 mb-2 uppercase tracking-wider">Account</div>
+                
+                <div class="flex flex-col gap-1">
+                    <a href="/settings" class="sidebar-nav-item {% if '/settings' in request.url.path %}active{% endif %}">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                        <span>Settings</span>
+                    </a>
+                </div>
+            </nav>
+            
+            <!-- User Profile Section (Fixed at bottom) -->
+            <div class="flex-shrink-0 p-4 border-t border-white/5">
+                {% if user %}
+                    {% if clerk_enabled %}
+                    <!-- Clerk UserButton -->
+                    <div id="clerk-user-button" class="flex items-center justify-center"></div>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', async function() {
+                            if (typeof Clerk !== 'undefined') {
+                                await Clerk.load();
+                                const userButtonDiv = document.getElementById('clerk-user-button');
+                                if (userButtonDiv && Clerk.user) {
+                                    Clerk.mountUserButton(userButtonDiv, {
+                                        appearance: {
+                                            baseTheme: 'dark',
+                                            variables: {
+                                                colorPrimary: 'hsl(270, 70%, 60%)',
+                                            }
+                                        },
+                                        afterSignOutUrl: '/',
+                                    });
+                                }
+                            }
+                        });
+                    </script>
+                    {% else %}
+                    <!-- Traditional User Profile with Dropdown -->
+                    <div x-data="{ profileOpen: false }" class="relative">
+                        <button @click="profileOpen = !profileOpen" 
+                                class="flex items-center gap-3 w-full px-2 py-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
+                            {% if user.avatar_url %}
+                            <img src="{{ user.avatar_url }}" alt="{{ user.username }}" class="w-10 h-10 rounded-full object-cover ring-2 ring-primary/30">
+                            {% else %}
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-sm font-bold ring-2 ring-primary/30">
+                                {{ user.username[0].upper() }}
+                            </div>
+                            {% endif %}
+                            <div class="flex-1 overflow-hidden text-left">
+                                <div class="text-sm font-medium truncate">{{ user.username }}</div>
+                                <div class="text-xs text-muted-foreground truncate">{{ user.email }}</div>
+                            </div>
+                            <i data-lucide="chevron-up" class="w-4 h-4 text-muted-foreground transition-transform"
+                               :class="{ 'rotate-180': profileOpen }"></i>
+                        </button>
+                        
+                        <!-- Profile Dropdown Menu -->
+                        <div x-show="profileOpen" 
+                             x-cloak
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-75"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             @click.away="profileOpen = false"
+                             class="absolute bottom-full left-0 right-0 mb-2 bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                            <div class="p-2">
+                                <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
+                                    <i data-lucide="user" class="w-4 h-4 text-muted-foreground"></i>
+                                    <span class="text-sm">My Profile</span>
+                                </a>
+                                <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
+                                    <i data-lucide="settings" class="w-4 h-4 text-muted-foreground"></i>
+                                    <span class="text-sm">Settings</span>
+                                </a>
+                                <div class="border-t border-white/5 my-1"></div>
+                                <a href="/logout" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors">
+                                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                                    <span class="text-sm">Sign out</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% else %}
+                <a href="/login" class="btn btn-primary w-full">
+                    <i data-lucide="log-in" class="w-4 h-4"></i>
+                    Sign In
+                </a>
                 {% endif %}
             </div>
         </aside>
@@ -176,7 +266,7 @@
                 <span class="font-display font-bold text-xl">MovieMind</span>
             </div>
             
-            <nav class="flex flex-col gap-1">
+            <nav class="flex flex-col gap-1 flex-1">
                 <a href="/dashboard" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="home" class="w-5 h-5"></i>
                     <span>Home</span>
@@ -197,9 +287,17 @@
                     <i data-lucide="tv" class="w-5 h-5"></i>
                     <span>TV Shows</span>
                 </a>
+                <a href="/gossip" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="flame" class="w-5 h-5"></i>
+                    <span>Gossip Feed</span>
+                </a>
                 
                 {% if user %}
-                <div class="border-t border-white/5 mt-4 pt-4">
+                <div class="border-t border-white/5 mt-auto pt-4">
+                    <a href="/settings" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                        <span>Settings</span>
+                    </a>
                     <a href="/logout" class="sidebar-nav-item py-3 text-destructive hover:bg-destructive/10">
                         <i data-lucide="log-out" class="w-5 h-5"></i>
                         <span>Sign out</span>
@@ -209,8 +307,8 @@
             </nav>
         </div>
         
-        <!-- Main Content -->
-        <main class="flex-1 overflow-y-auto overflow-x-hidden md:p-6 p-4 pt-20 md:pt-6">
+        <!-- Main Content - Add left margin to account for fixed sidebar -->
+        <main class="flex-1 overflow-y-auto overflow-x-hidden md:ml-64 md:p-6 p-4 pt-20 md:pt-6">
             <div class="max-w-7xl mx-auto space-y-8 animate-in">
                 
                 <!-- Flash Messages -->
@@ -248,11 +346,84 @@
         </main>
     </div>
     
-    <!-- Initialize Lucide Icons -->
+    <!-- Global Task Notifications Container - only show when tasks exist -->
+    <div id="task-notifications" 
+         class="fixed top-4 right-4 z-50 space-y-2 w-80"
+         x-data="taskNotifications()"
+         x-show="tasks.length > 0"
+         x-cloak>
+        <template x-for="task in tasks" :key="task.id">
+            <div class="bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl animate-in"
+                 x-show="task.status !== 'completed' || task.showCompleted"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 translate-x-4"
+                 x-transition:enter-end="opacity-100 translate-x-0"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0 translate-x-4">
+                <div class="flex items-start gap-3">
+                    <!-- Status Icon -->
+                    <div class="flex-shrink-0">
+                        <template x-if="task.status === 'running'">
+                            <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                                <svg class="w-4 h-4 text-primary animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                        </template>
+                        <template x-if="task.status === 'completed'">
+                            <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                                <i data-lucide="check" class="w-4 h-4 text-green-400"></i>
+                            </div>
+                        </template>
+                        <template x-if="task.status === 'failed'">
+                            <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center">
+                                <i data-lucide="x" class="w-4 h-4 text-red-400"></i>
+                            </div>
+                        </template>
+                        <template x-if="task.status === 'pending'">
+                            <div class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                                <i data-lucide="clock" class="w-4 h-4 text-yellow-400"></i>
+                            </div>
+                        </template>
+                    </div>
+                    
+                    <!-- Task Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between gap-2">
+                            <h4 class="text-sm font-semibold truncate" x-text="task.name"></h4>
+                            <button @click="dismissTask(task.id)" class="flex-shrink-0 p-1 hover:bg-white/10 rounded transition-colors">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-muted-foreground mt-0.5" x-text="task.message"></p>
+                        
+                        <!-- Progress Bar -->
+                        <template x-if="task.status === 'running' && task.progress !== undefined">
+                            <div class="mt-2">
+                                <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                    <div class="h-full bg-primary rounded-full transition-all duration-300"
+                                         :style="'width: ' + task.progress + '%'"></div>
+                                </div>
+                                <p class="text-[10px] text-muted-foreground mt-1" x-text="task.progress + '% complete'"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+    
+    <!-- Initialize Lucide Icons (only once) -->
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            lucide.createIcons();
-        });
+        // Prevent double initialization
+        if (!window.lucideInitialized) {
+            window.lucideInitialized = true;
+            document.addEventListener('DOMContentLoaded', function() {
+                lucide.createIcons();
+            });
+        }
     </script>
     
     <!-- Custom JS -->

@@ -40,13 +40,27 @@
                 <!-- AI Badge -->
                 <div class="flex items-center gap-2 mb-6 p-3 rounded-lg bg-primary/10 border border-primary/20">
                     <i data-lucide="sparkles" class="w-5 h-5 text-primary"></i>
-                    <span class="text-sm">This content was scraped and analyzed by our AI agents</span>
+                    <span class="text-sm">AI-curated news</span>
                     <span class="ml-auto text-sm font-bold text-primary">{{ (gossip.confidence_score * 100)|int }}% confidence</span>
                 </div>
                 
-                <!-- Content -->
+                <!-- Summary (AI-generated) -->
+                {% if gossip.summary %}
+                <div class="mb-6 p-4 bg-card border border-white/10 rounded-xl">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-primary"></i>
+                        <span class="text-xs font-medium uppercase tracking-wider text-muted-foreground">AI Summary</span>
+                    </div>
+                    <p class="text-lg leading-relaxed">
+                        {{ gossip.summary }}
+                    </p>
+                </div>
+                {% endif %}
+                
+                <!-- Full Content -->
                 <div class="prose prose-invert max-w-none">
-                    <p class="text-lg text-muted-foreground leading-relaxed whitespace-pre-line">
+                    <h4 class="text-sm font-medium uppercase tracking-wider text-muted-foreground mb-3">Full Article Excerpt</h4>
+                    <p class="text-muted-foreground leading-relaxed whitespace-pre-line">
                         {{ gossip.content }}
                     </p>
                 </div>

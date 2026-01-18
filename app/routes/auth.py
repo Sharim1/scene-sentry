@@ -16,13 +16,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Session-based auth helpers (fallback when Clerk is not configured)
+# Auth helpers - supports both Clerk and session-based auth
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
-    """Get current user from session or Clerk"""
-    # Check session first (fallback auth)
-    user_id = request.session.get("user_id") if hasattr(request, "session") else None
-    if user_id:
-        return db.query(User).filter(User.id == user_id).first()
+    """Get current user from Clerk middleware or session fallback"""
+    # Check if Clerk middleware identified a user (stored as user_id to avoid detached session issues)
+    clerk_user_id = getattr(request.state, "clerk_user_id", None)
+    if clerk_user_id:
+        user = db.query(User).filter(User.id == clerk_user_id).first()
+        if user:
+            # Also store the user object for this request's lifetime
+            request.state.user = user
+            return user
+    
+    # Check session-based auth from middleware
+    session_user_id = getattr(request.state, "session_user_id", None)
+    if session_user_id:
+        user = db.query(User).filter(User.id == session_user_id).first()
+        if user:
+            request.state.user = user
+            return user
+    
+    # Fallback to session-based auth (direct check)
+    if hasattr(request, "session"):
+        user_id = request.session.get("user_id")
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                request.state.user = user
+                return user
+    
     return None
 
 
@@ -36,15 +58,35 @@ def require_auth(request: Request, db: Session = Depends(get_db)) -> User:
 
 @router.get("/login", response_class=HTMLResponse, name="login")
 async def login_page(request: Request):
-    """Login page"""
+    """Login page - shows Clerk SignIn or traditional form"""
     from app.main import templates
     
-    # Show traditional login form
-    # TODO: Add Clerk integration when templates are ready
-    return templates.TemplateResponse(
+    # Check if already logged in (check for user_id set by middleware)
+    clerk_user_id = getattr(request.state, "clerk_user_id", None)
+    session_user_id = getattr(request.state, "session_user_id", None)
+    if clerk_user_id or session_user_id:
+        return RedirectResponse(url="/dashboard", status_code=303)
+    
+    # Check if Clerk is enabled
+    clerk_enabled = bool(settings.clerk_publishable_key and settings.clerk_issuer)
+    
+    # NOTE: We no longer clear Clerk cookies server-side.
+    # Clerk's frontend SDK handles session management and refresh.
+    # Clearing cookies here was causing issues with the handshake flow
+    # where valid sessions were being invalidated prematurely.
+    
+    response = templates.TemplateResponse(
         "auth/login.html",
-        {"request": request, "error": None}
+        {
+            "request": request,
+            "error": None,
+            "clerk_enabled": clerk_enabled,
+            "clerk_publishable_key": settings.clerk_publishable_key or "",
+            "clear_clerk_session": False  # Let Clerk SDK handle session management
+        }
     )
+    
+    return response
 
 
 @router.post("/login")
@@ -79,15 +121,33 @@ async def login(
 
 @router.get("/register", response_class=HTMLResponse, name="register")
 async def register_page(request: Request):
-    """Registration page"""
+    """Registration page - shows Clerk SignUp or traditional form"""
     from app.main import templates
     
-    # Show traditional registration form
-    # TODO: Add Clerk integration when templates are ready
-    return templates.TemplateResponse(
+    # Check if already logged in (check for user_id set by middleware)
+    clerk_user_id = getattr(request.state, "clerk_user_id", None)
+    session_user_id = getattr(request.state, "session_user_id", None)
+    if clerk_user_id or session_user_id:
+        return RedirectResponse(url="/dashboard", status_code=303)
+    
+    # Check if Clerk is enabled
+    clerk_enabled = bool(settings.clerk_publishable_key and settings.clerk_issuer)
+    
+    # NOTE: We no longer clear Clerk cookies server-side.
+    # Clerk's frontend SDK handles session management and refresh.
+    
+    response = templates.TemplateResponse(
         "auth/register.html",
-        {"request": request, "error": None}
+        {
+            "request": request,
+            "error": None,
+            "clerk_enabled": clerk_enabled,
+            "clerk_publishable_key": settings.clerk_publishable_key or "",
+            "clear_clerk_session": False  # Let Clerk SDK handle session management
+        }
     )
+    
+    return response
 
 
 @router.post("/register")
@@ -138,9 +198,16 @@ async def register(
 
 @router.get("/logout", name="logout")
 async def logout(request: Request):
-    """Logout user"""
+    """Logout user - clears both session and Clerk cookies"""
     request.session.clear()
-    return RedirectResponse(url="/", status_code=303)
+    
+    response = RedirectResponse(url="/", status_code=303)
+    
+    # Also clear Clerk cookies to ensure complete logout
+    response.delete_cookie("__session")
+    response.delete_cookie("__clerk_db_jwt")
+    
+    return response
 
 
 # Clerk webhook handler

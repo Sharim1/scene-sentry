@@ -21,45 +21,160 @@ router = APIRouter()
 
 
 def is_article_title(title: str) -> bool:
-    """Check if title looks like an article rather than actual movie/show"""
+    """Check if title looks like an article/news headline rather than actual movie/show title"""
     if not title:
         return True
     
-    article_patterns = [
+    title_lower = title.lower().strip()
+    
+    # List/ranking article patterns
+    list_patterns = [
         r'\d{4}\s+movies',
         r'\d{4}\s*-\s*$',  # "Best Films of 2024-"
-        r'best\s+(upcoming|new|films|movies|tv|of)',
+        r'best\s+(upcoming|new|films|movies|tv|shows?|of|series)',
         r'top\s+\d+',
         r'the\s+\d+\s+best',
-        r'the\s+(ten|twenty|best|top)\s+(best|movies)',
-        r'release\s+dates',
-        r'ranked\s+by',
-        r'updated\s+weekly',
-        r'school\s+year',
-        r'trailers?\s*\)',
-        r'so\s+far',
-        r'r/movies',
-        r'r/television',
-        r'winter\s+\d{4}',
-        r'letterboxd',
-        r'tomatometer',
+        r'the\s+(ten|twenty|best|top)\s+(best|movies|shows)',
+        r'^\d+\s+(best|top|new|great)',  # "10 Best Movies..."
         r'most\s+anticipated',
         r'new\s+and\s+upcoming',
         r'^\s*my\s+top\s+\d+',
         r'^\s*top\s+movies\s+of',
+        r'ranked\s+by',
+        r'updated\s+weekly',
+        r'so\s+far',
+        r'best\s+of\s+\d{4}',
+        r'movies?\s+to\s+watch',
+        r'shows?\s+to\s+watch',
+        r'must[\s-]watch',
+        r'what\s+to\s+watch',
+        r'streaming\s+now',
+        r'now\s+streaming',
+        r'available\s+(now|on)',
+        r'coming\s+soon',
+        r'worth\s+watching',
     ]
     
-    title_lower = title.lower()
-    for pattern in article_patterns:
+    # News/article patterns
+    news_patterns = [
+        r'cancel+ed\s+(after|at|by)',
+        r'renewed\s+(for|by)',
+        r'announces?',
+        r'announced',
+        r'confirms?',
+        r'confirmed',
+        r'exclusive:',
+        r'breaking:',
+        r'report:',
+        r'news:',
+        r'update:',
+        r'official:',
+        r'first\s+look',
+        r'sneak\s+peek',
+        r'behind\s+the\s+scenes',
+        r'interview',
+        r'premiere\s+date',
+        r'release\s+dates?',
+        r'streaming\s+on',
+        r'coming\s+to',
+        r'watch\s+the\s+trailer',
+        r'season\s+\d+\s+(premiere|finale|renewal|canceled)',
+        r'gets\s+(renewed|cancelled|canceled)',
+        r'will\s+(return|end|premiere)',
+        r'picked\s+up',
+        r'greenlit',
+        r'ordered\s+to\s+series',
+        r'adds\s+to\s+cast',
+        r'joins\s+(cast|series)',
+        r'set\s+to\s+star',
+        r'lands\s+role',
+        r'cast\s+in',
+        r'wraps\s+filming',
+        r'begins\s+production',
+        r'box\s+office',
+        r'opening\s+weekend',
+        r'streaming\s+numbers',
+        r'\bratings\b',
+        r'viewership',
+        r'review[s:]',
+        r'recap',
+        r'explained',
+        r'ending\s+explained',
+        r'spoilers?',
+        r'everything\s+(you\s+)?know',
+        r'everything\s+we\s+know',
+        r'what\s+we\s+know',
+        r'guide\s+to',
+        r'how\s+to\s+watch',
+        r'where\s+to\s+watch',
+        r'when\s+(does|is|will)',
+        r'who\s+(is|are|plays)',
+    ]
+    
+    # Platform/website indicators
+    platform_patterns = [
+        r'r/movies',
+        r'r/television',
+        r'letterboxd',
+        r'tomatometer',
+        r'rotten\s+tomatoes',
+        r'imdb\s+',
+        r'metacritic',
+        r'reddit',
+        r'twitter|x\.com',
+    ]
+    
+    # Date/time patterns often found in article titles
+    date_patterns = [
+        r'winter\s+\d{4}',
+        r'summer\s+\d{4}',
+        r'spring\s+\d{4}',
+        r'fall\s+\d{4}',
+        r'january|february|march|april|may|june|july|august|september|october|november|december',
+        r'school\s+year',
+        r'this\s+week',
+        r'this\s+month',
+        r'\d{1,2}/\d{1,2}/\d{2,4}',
+    ]
+    
+    # Combine and check all patterns
+    all_patterns = list_patterns + news_patterns + platform_patterns + date_patterns
+    for pattern in all_patterns:
         if re.search(pattern, title_lower):
             return True
     
-    # Title too long (likely an article)
-    if len(title) > 55:
+    # Title too long (likely an article headline)
+    if len(title) > 60:
         return True
     
     # Title is too short (might be garbage)
     if len(title) < 2:
+        return True
+    
+    # Contains quotes with extra text (usually news format: "'Show' Does Something")
+    if title_lower.startswith("'") or title_lower.startswith('"'):
+        # Find the closing quote
+        quote_char = title[0]
+        end_quote = title.find(quote_char, 1)
+        if end_quote > 0 and end_quote < len(title) - 2:
+            # There's text after the quoted title
+            after_quote = title[end_quote + 1:].strip()
+            if len(after_quote) > 3:  # Significant text after title
+                return True
+    
+    # Contains common article verbiage
+    article_words = [
+        'here are', "here's", 'check out', 'see the', 'look at',
+        'you need to', 'you should', 'we rank', 'we review',
+        'our picks', 'our top', 'our favorite', 'editor',
+    ]
+    for word in article_words:
+        if word in title_lower:
+            return True
+    
+    # Contains trailer/video indicators (often not actual titles)
+    if 'trailer' in title_lower and not title_lower.endswith('trailer'):
+        # "Movie Name Trailer" is OK, "Watch the Trailer for Movie" is not
         return True
     
     return False
@@ -128,9 +243,10 @@ async def fetch_missing_posters(db: Session, items: list, content_type: str):
 async def movies_page(
     request: Request,
     filter: str = Query("all"),
+    q: str = Query(None),
     db: Session = Depends(get_db)
 ):
-    """Movies page"""
+    """Movies page with search functionality"""
     from app.main import templates
     
     user = get_current_user(request, db)
@@ -139,6 +255,14 @@ async def movies_page(
     
     # Query movies from our database
     query = db.query(Content).filter(Content.content_type == "movie")
+    
+    # Apply search filter if query provided
+    search_query = q
+    if q:
+        query = query.filter(
+            Content.title.ilike(f"%{q}%") |
+            Content.description.ilike(f"%{q}%")
+        )
     
     if filter == "trending":
         query = query.order_by(Content.rating.desc().nullslast())
@@ -162,6 +286,7 @@ async def movies_page(
             "user": user,
             "movies": movies,
             "current_filter": filter,
+            "search_query": search_query,
             "library_status": library_status,
             "scraping_enabled": bool(settings.tavily_api_key or settings.gemini_api_key)
         }
@@ -174,39 +299,61 @@ async def refresh_movies(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Discover new movies by scraping entertainment websites"""
+    """Discover new movies using background task system"""
+    from app.services.task_manager import get_task_manager, TaskType
+    
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
     
-    scraper = get_content_scraper()
+    task_manager = get_task_manager()
     preferences = user.preferred_genres or "popular"
     
-    try:
-        logger.info(f"Starting movie discovery for user preferences: {preferences}")
+    # Check if user already has an active movie discovery task
+    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
+    for existing in existing_tasks:
+        if existing.type == TaskType.MOVIE_DISCOVERY:
+            logger.info(f"Movie discovery already running for user {user.id}")
+            return RedirectResponse(url="/movies", status_code=303)
+    
+    # Create and run task
+    task = await task_manager.create_task(
+        task_type=TaskType.MOVIE_DISCOVERY,
+        user_id=user.id,
+        name="Discovering Movies"
+    )
+    
+    async def run_movie_discovery(task, tm):
+        scraper = get_content_scraper()
         
-        # Scrape movies from various sources
-        scraped_movies = await scraper.discover_movies(preferences=preferences, limit=30)
+        await tm.update_task(task.id, progress=10, message="Fetching movie data...")
         
-        saved_items = []
-        for movie_data in scraped_movies:
-            try:
-                content = await save_scraped_content(db, movie_data, "movie")
-                if content:
-                    saved_items.append(content)
-            except Exception as e:
-                logger.warning(f"Failed to save movie {movie_data.get('title')}: {e}")
-                continue
-        
-        logger.info(f"Discovered and saved {len(saved_items)} movies")
-        
-        # Fetch missing posters in background
-        items_without_posters = [item for item in saved_items if not item.poster_url]
-        if items_without_posters:
-            background_tasks.add_task(fetch_missing_posters, db, items_without_posters, "movie")
-        
-    except Exception as e:
-        logger.error(f"Error discovering movies: {e}")
+        try:
+            scraped_movies = await scraper.discover_movies(preferences=preferences, limit=30)
+            await tm.update_task(task.id, progress=40, message=f"Found {len(scraped_movies)} movies, saving...")
+            
+            saved_count = 0
+            for i, movie_data in enumerate(scraped_movies):
+                try:
+                    with next(get_db()) as db_session:
+                        content = await save_scraped_content(db_session, movie_data, "movie")
+                        if content:
+                            saved_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save movie {movie_data.get('title')}: {e}")
+                
+                progress = 40 + int((i / max(len(scraped_movies), 1)) * 50)
+                if i % 5 == 0:  # Update every 5 items
+                    await tm.update_task(task.id, progress=progress, message=f"Saved {saved_count} movies...")
+            
+            return {"saved": saved_count, "total": len(scraped_movies)}
+            
+        except Exception as e:
+            logger.error(f"Movie discovery error: {e}")
+            raise
+    
+    background_tasks.add_task(task_manager.run_task, task.id, run_movie_discovery)
+    logger.info(f"Started movie discovery task {task.id} for user {user.id}")
     
     return RedirectResponse(url="/movies", status_code=303)
 
@@ -217,9 +364,10 @@ async def refresh_movies(
 async def tv_shows_page(
     request: Request,
     filter: str = Query("all"),
+    q: str = Query(None),
     db: Session = Depends(get_db)
 ):
-    """TV Shows page"""
+    """TV Shows page with search functionality"""
     from app.main import templates
     
     user = get_current_user(request, db)
@@ -228,6 +376,14 @@ async def tv_shows_page(
     
     # Query TV shows from our database
     query = db.query(Content).filter(Content.content_type == "tv_show")
+    
+    # Apply search filter if query provided
+    search_query = q
+    if q:
+        query = query.filter(
+            Content.title.ilike(f"%{q}%") |
+            Content.description.ilike(f"%{q}%")
+        )
     
     if filter == "trending":
         query = query.order_by(Content.rating.desc().nullslast())
@@ -251,6 +407,7 @@ async def tv_shows_page(
             "user": user,
             "tv_shows": tv_shows,
             "current_filter": filter,
+            "search_query": search_query,
             "library_status": library_status,
             "scraping_enabled": bool(settings.tavily_api_key or settings.gemini_api_key)
         }
@@ -263,39 +420,61 @@ async def refresh_tv_shows(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Discover new TV shows by scraping entertainment websites"""
+    """Discover new TV shows using background task system"""
+    from app.services.task_manager import get_task_manager, TaskType
+    
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
     
-    scraper = get_content_scraper()
+    task_manager = get_task_manager()
     preferences = user.preferred_genres or "popular"
     
-    try:
-        logger.info(f"Starting TV show discovery for user preferences: {preferences}")
+    # Check if user already has an active TV discovery task
+    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
+    for existing in existing_tasks:
+        if existing.type == TaskType.TV_DISCOVERY:
+            logger.info(f"TV discovery already running for user {user.id}")
+            return RedirectResponse(url="/tv-shows", status_code=303)
+    
+    # Create and run task
+    task = await task_manager.create_task(
+        task_type=TaskType.TV_DISCOVERY,
+        user_id=user.id,
+        name="Discovering TV Shows"
+    )
+    
+    async def run_tv_discovery(task, tm):
+        scraper = get_content_scraper()
         
-        # Scrape TV shows from various sources
-        scraped_shows = await scraper.discover_tv_shows(preferences=preferences, limit=30)
+        await tm.update_task(task.id, progress=10, message="Fetching TV show data...")
         
-        saved_items = []
-        for show_data in scraped_shows:
-            try:
-                content = await save_scraped_content(db, show_data, "tv_show")
-                if content:
-                    saved_items.append(content)
-            except Exception as e:
-                logger.warning(f"Failed to save TV show {show_data.get('title')}: {e}")
-                continue
-        
-        logger.info(f"Discovered and saved {len(saved_items)} TV shows")
-        
-        # Fetch missing posters in background
-        items_without_posters = [item for item in saved_items if not item.poster_url]
-        if items_without_posters:
-            background_tasks.add_task(fetch_missing_posters, db, items_without_posters, "tv_show")
-        
-    except Exception as e:
-        logger.error(f"Error discovering TV shows: {e}")
+        try:
+            scraped_shows = await scraper.discover_tv_shows(preferences=preferences, limit=30)
+            await tm.update_task(task.id, progress=40, message=f"Found {len(scraped_shows)} TV shows, saving...")
+            
+            saved_count = 0
+            for i, show_data in enumerate(scraped_shows):
+                try:
+                    with next(get_db()) as db_session:
+                        content = await save_scraped_content(db_session, show_data, "tv_show")
+                        if content:
+                            saved_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save TV show {show_data.get('title')}: {e}")
+                
+                progress = 40 + int((i / max(len(scraped_shows), 1)) * 50)
+                if i % 5 == 0:  # Update every 5 items
+                    await tm.update_task(task.id, progress=progress, message=f"Saved {saved_count} TV shows...")
+            
+            return {"saved": saved_count, "total": len(scraped_shows)}
+            
+        except Exception as e:
+            logger.error(f"TV discovery error: {e}")
+            raise
+    
+    background_tasks.add_task(task_manager.run_task, task.id, run_tv_discovery)
+    logger.info(f"Started TV discovery task {task.id} for user {user.id}")
     
     return RedirectResponse(url="/tv-shows", status_code=303)
 

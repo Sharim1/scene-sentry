@@ -235,7 +235,7 @@ class ContentScraper:
             from tavily import TavilyClient
             tavily = TavilyClient(api_key=self.tavily_api_key)
             
-            # Search with specific domains for better results
+            # Search with specific domains for better results - focus on content databases
             search_results = tavily.search(
                 query=query,
                 search_depth="advanced",
@@ -246,6 +246,20 @@ class ContentScraper:
                     "letterboxd.com",
                     "metacritic.com",
                     "themoviedb.org",
+                    "tvmaze.com",
+                    "thetvdb.com",
+                ],
+                exclude_domains=[
+                    "variety.com",
+                    "deadline.com",
+                    "hollywoodreporter.com",
+                    "collider.com",
+                    "screenrant.com",
+                    "cinemablend.com",
+                    "ew.com",
+                    "indiewire.com",
+                    "twitter.com",
+                    "reddit.com",
                 ]
             )
             
@@ -255,27 +269,63 @@ class ContentScraper:
                 title = result.get('title', '')
                 content = result.get('content', '')
                 
+                # Skip if URL looks like an article/list page
+                if self._is_article_url(url):
+                    continue
+                
                 # Try to extract from IMDb pages
                 if 'imdb.com/title/' in url:
                     item = await self._extract_from_imdb_url(url, content_type)
-                    if item:
+                    if item and self._is_valid_content_title(item.get('title', '')):
                         items.append(item)
                 
                 # Try to extract from Rotten Tomatoes
-                elif 'rottentomatoes.com' in url:
+                elif 'rottentomatoes.com' in url and ('/m/' in url or '/tv/' in url):
                     item = self._extract_from_rt_result(result, content_type)
-                    if item:
+                    if item and self._is_valid_content_title(item.get('title', '')):
                         items.append(item)
                 
-                # Use LLM to extract from other results
-                else:
+                # Skip LLM extraction for non-content pages
+                elif 'themoviedb.org' in url or 'tvmaze.com' in url or 'thetvdb.com' in url:
                     extracted = await self._extract_with_llm(result, content_type)
-                    items.extend(extracted)
+                    for item in extracted:
+                        if self._is_valid_content_title(item.get('title', '')):
+                            items.append(item)
                     
         except Exception as e:
             logger.error(f"Tavily scraping error: {e}")
         
         return items
+    
+    def _is_article_url(self, url: str) -> bool:
+        """Check if URL looks like an article/list page rather than a content page"""
+        article_indicators = [
+            '/news/', '/article/', '/blog/', '/list/', '/feature/',
+            '/best-', '/top-', '/guide/', '/review/', '/reviews/',
+            '/coming-soon', '/streaming-', '/what-to-watch',
+            'best-movies', 'best-shows', 'top-movies', 'top-shows',
+        ]
+        url_lower = url.lower()
+        return any(indicator in url_lower for indicator in article_indicators)
+    
+    def _is_valid_content_title(self, title: str) -> bool:
+        """Check if a title looks like a valid movie/TV show title"""
+        if not title or len(title) < 2:
+            return False
+        
+        # Import the is_article_title function for validation
+        try:
+            from app.routes.content import is_article_title
+            return not is_article_title(title)
+        except ImportError:
+            # Fallback basic validation
+            title_lower = title.lower()
+            invalid_patterns = [
+                'best ', 'top ', 'new ', 'upcoming ', 'guide',
+                'review', 'recap', 'explained', 'watch ', 'stream',
+                'exclusive', 'breaking', 'report', 'announce',
+            ]
+            return not any(p in title_lower for p in invalid_patterns)
     
     async def _extract_from_imdb_url(self, url: str, content_type: str) -> Optional[Dict[str, Any]]:
         """Extract movie/show data from an IMDb URL"""
@@ -376,20 +426,30 @@ class ContentScraper:
             if not content or len(content) < 100:
                 return items
             
-            prompt = f"""Extract individual {content_type.replace('_', ' ')}s from this text. 
-Return a JSON array of objects with these fields:
-- title: The exact title of the movie/show
-- rating: Numerical rating out of 10 (if mentioned)
-- release_date: Year or date (if mentioned)
-- description: Brief description (if available)
+            content_label = "movies" if content_type == "movie" else "TV shows/series"
+            
+            prompt = f"""Extract ONLY actual {content_label} titles from this text.
 
-Only include items that are clearly individual titles, not articles or lists about the industry.
-If no clear titles are found, return an empty array [].
+STRICT RULES:
+1. Only extract REAL, SPECIFIC {content_label} titles (e.g., "The Matrix", "Breaking Bad", "Oppenheimer")
+2. DO NOT include:
+   - Article headlines or list titles (e.g., "Best Movies of 2024", "Top 10 Shows to Watch")
+   - News about shows (e.g., "'Show Name' Gets Renewed", "Movie Announces Cast")
+   - Generic descriptions (e.g., "new thriller", "upcoming drama")
+   - Franchise/series names without specific entry (e.g., "Marvel movies" - too vague)
+3. Each title should be a standalone, released or announced {content_label.replace('s', '')} that someone could look up
 
-Text:
-{content[:3000]}
+Return a JSON array with ONLY valid titles:
+[
+  {{"title": "Exact Title Here", "rating": 8.5, "release_date": "2024", "description": "Brief plot description"}}
+]
 
-Return ONLY valid JSON array, no other text:"""
+If no valid {content_label} titles are found, return: []
+
+Text to analyze:
+{content[:2500]}
+
+Return ONLY the JSON array, nothing else:"""
 
             response = model.generate_content(prompt)
             response_text = response.text.strip()
@@ -403,14 +463,18 @@ Return ONLY valid JSON array, no other text:"""
             
             if isinstance(extracted, list):
                 for item in extracted[:5]:  # Limit per result
-                    if item.get('title') and len(item['title']) > 2:
-                        items.append({
-                            'title': item['title'],
-                            'rating': item.get('rating'),
-                            'release_date': str(item.get('release_date', '')) if item.get('release_date') else None,
-                            'description': item.get('description'),
-                            'content_type': content_type,
-                        })
+                    title = item.get('title', '').strip()
+                    # Additional validation
+                    if title and len(title) >= 2 and len(title) <= 60:
+                        # Check title doesn't look like an article
+                        if self._is_valid_content_title(title):
+                            items.append({
+                                'title': title,
+                                'rating': item.get('rating'),
+                                'release_date': str(item.get('release_date', '')) if item.get('release_date') else None,
+                                'description': item.get('description'),
+                                'content_type': content_type,
+                            })
                         
         except json.JSONDecodeError:
             logger.warning("Failed to parse LLM response as JSON")
