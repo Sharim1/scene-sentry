@@ -2,7 +2,7 @@
 Library routes for tracking content
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ async def library(
     db: Session = Depends(get_db)
 ):
     """Library page with filtering and search"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:
@@ -131,18 +131,18 @@ async def update_library_item(
         if new_status:
             old_status = library_item.status
             library_item.status = new_status
-            library_item.updated_at = datetime.utcnow()
+            library_item.updated_at = datetime.now(timezone.utc)
             
             # Track start/finish times
             if new_status == WatchStatus.WATCHING and old_status != WatchStatus.WATCHING:
-                library_item.started_at = datetime.utcnow()
+                library_item.started_at = datetime.now(timezone.utc)
             elif new_status == WatchStatus.COMPLETED:
-                library_item.finished_at = datetime.utcnow()
+                library_item.finished_at = datetime.now(timezone.utc)
             
             # Handle weekly release tracking
             if new_status == WatchStatus.WATCHING and weekly_release:
                 library_item.weekly_release = True
-                next_date = datetime.utcnow() + timedelta(days=7)
+                next_date = datetime.now(timezone.utc) + timedelta(days=7)
                 library_item.next_episode_date = next_date
                 
                 # Create reminder
@@ -185,7 +185,7 @@ async def update_progress(
             library_item.current_season = season
         if episode is not None:
             library_item.current_episode = episode
-        library_item.updated_at = datetime.utcnow()
+        library_item.updated_at = datetime.now(timezone.utc)
         db.commit()
     
     return RedirectResponse(url="/library", status_code=303)
@@ -213,7 +213,7 @@ async def rate_item(
         library_item.rating = min(5, max(1, rating))  # Clamp to 1-5
         if notes:
             library_item.notes = notes
-        library_item.updated_at = datetime.utcnow()
+        library_item.updated_at = datetime.now(timezone.utc)
         db.commit()
     
     return RedirectResponse(url="/library", status_code=303)

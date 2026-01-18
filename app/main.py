@@ -5,14 +5,15 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
-from typing import List, Tuple
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.database import init_db
+from app.templates import templates, static_path, flash, get_flashed_messages
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +31,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"Environment: {settings.env}")
+    logger.info(f"Clerk authentication: {'enabled' if settings.is_clerk_configured else 'disabled'}")
+    
     # Initialize database tables (create if not exist)
     init_db(drop_all=False)
     logger.info("Database initialized")
@@ -55,6 +59,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Configure rate limiter
+from app.routes.auth import limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Add Clerk authentication middleware first so it wraps session middleware
 # Middleware order: Request -> ClerkAuth -> Session -> Route
 # (middleware added last executes first)
@@ -64,94 +73,15 @@ app.add_middleware(ClerkAuthMiddleware)
 # Add session middleware after Clerk so session is available when Clerk middleware runs
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.secret_key,
+    secret_key=settings.session_secret or settings.secret_key,
     session_cookie="moviemind_session",
     max_age=86400 * 7,  # 7 days
     same_site="lax",
-    https_only=False  # Set to True in production with HTTPS
+    https_only=settings.env == "production"
 )
 
 # Mount static files
-static_path = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
-
-# Setup Jinja2 templates
-templates_path = Path(__file__).parent.parent / "templates"
-templates = Jinja2Templates(directory=templates_path)
-
-# Add custom template filters and globals
-import os
-import json
-
-def from_json_filter(value):
-    """Parse JSON string to Python object"""
-    try:
-        return json.loads(value) if value else []
-    except:
-        return []
-
-def static_url(filename: str) -> str:
-    """Generate static file URL for templates"""
-    return f"/static/{filename}"
-
-# Flash message storage (request-scoped via context var)
-from contextvars import ContextVar
-_flash_messages: ContextVar[List[Tuple[str, str]]] = ContextVar('flash_messages', default=[])
-
-
-def flash(message: str, category: str = "info"):
-    """Add a flash message to be displayed on next page load"""
-    messages = _flash_messages.get()
-    messages.append((category, message))
-    _flash_messages.set(messages)
-
-
-def get_flashed_messages(with_categories: bool = False):
-    """Get and clear flash messages"""
-    messages = _flash_messages.get()
-    _flash_messages.set([])
-    if with_categories:
-        return messages
-    return [msg for _, msg in messages]
-
-def get_ai_status():
-    """Get the current AI agent status based on configuration"""
-    # Use settings which loads from .env file
-    tavily_key = settings.tavily_api_key
-    gemini_key = settings.gemini_api_key
-    
-    if not tavily_key:
-        return {
-            "status": "inactive",
-            "message": "Tavily API key not configured",
-            "details": "Add TAVILY_API_KEY to .env to enable gossip scraping",
-            "color": "yellow"
-        }
-    
-    if not gemini_key:
-        return {
-            "status": "limited",
-            "message": "Gossip scraping enabled",
-            "details": "Add GEMINI_API_KEY for AI-powered analysis",
-            "color": "blue"
-        }
-    
-    return {
-        "status": "active",
-        "message": "AI agents fully operational",
-        "details": "Scraping variety.com, deadline.com...",
-        "color": "green"
-    }
-
-templates.env.filters["from_json"] = from_json_filter
-templates.env.globals["static_url"] = static_url
-templates.env.globals["get_flashed_messages"] = get_flashed_messages
-templates.env.globals["get_ai_status"] = get_ai_status
-templates.env.globals["flash"] = flash
-
-# Clerk configuration for frontend
-templates.env.globals["clerk_publishable_key"] = settings.clerk_publishable_key or ""
-templates.env.globals["clerk_enabled"] = bool(settings.clerk_publishable_key and settings.clerk_issuer)
 
 
 # Include routers
@@ -169,7 +99,6 @@ app.include_router(content.router, tags=["content"])
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Landing page"""
-    from app.routes.auth import get_current_user
     from app.database import get_db
     
     # Get user from middleware-set user_id (avoids detached session issues)
@@ -200,7 +129,11 @@ async def index(request: Request):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "version": settings.app_version}
+    return {
+        "status": "healthy",
+        "version": settings.app_version,
+        "clerk_configured": settings.is_clerk_configured
+    }
 
 
 @app.get("/favicon.ico")
@@ -223,7 +156,6 @@ async def favicon():
 
 
 # Error handlers
-from fastapi.exceptions import HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 
@@ -236,6 +168,16 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "errors/404.html",
             {"request": request},
             status_code=404
+        )
+    if exc.status_code == 429:
+        return templates.TemplateResponse(
+            "errors/error.html",
+            {
+                "request": request,
+                "error": "Too many requests. Please slow down and try again.",
+                "status_code": 429
+            },
+            status_code=429
         )
     return templates.TemplateResponse(
         "errors/error.html",
@@ -251,9 +193,12 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     logger.error(traceback.format_exc())
     
+    # Don't expose internal errors in production
+    error_message = str(exc) if settings.debug else "An unexpected error occurred"
+    
     return templates.TemplateResponse(
         "errors/error.html",
-        {"request": request, "error": str(exc), "status_code": 500},
+        {"request": request, "error": error_message, "status_code": 500},
         status_code=500
     )
 
@@ -266,4 +211,3 @@ if __name__ == "__main__":
         port=5000,
         reload=settings.debug
     )
-

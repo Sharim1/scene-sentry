@@ -190,27 +190,70 @@ class GossipScraperAgent:
         return text.strip()
     
     def _validate_article_url(self, url: str) -> bool:
-        """Check if URL is a valid article URL (not just a domain)"""
+        """Check if URL is a valid article URL (not just a domain or section page)"""
         if not url:
             return False
         
         parsed = urlparse(url)
         path = parsed.path.strip('/')
+        query = parsed.query
         
-        # A valid article URL should have a path with some content
+        # Reject obvious non-article patterns
+        # Homepage with only tracking params
+        if not path and query:
+            # URLs like domain.com/?srsltid=xxx are not articles
+            tracking_params = ['srsltid', 'utm_', 'fbclid', 'gclid', 'ref']
+            if any(param in query.lower() for param in tracking_params):
+                return False
+        
+        # Must have a path
         if not path:
             return False
         
-        # Should have more than just one segment
-        segments = path.split('/')
+        # Reject common section/category paths
+        section_patterns = [
+            r'^v/\w+/?$',  # variety.com/v/tv/
+            r'^section/',
+            r'^category/',
+            r'^tag/',
+            r'^author/',
+            r'^page/',
+            r'^\d{4}/?$',  # Just a year
+            r'^[a-z]{1,3}/?$',  # Very short paths like /tv/ or /c/
+        ]
+        
+        for pattern in section_patterns:
+            if re.match(pattern, path, re.IGNORECASE):
+                return False
+        
+        # Article URLs typically have:
+        # 1. Longer paths with multiple segments
+        # 2. Slugified titles (words-separated-by-dashes)
+        # 3. Numeric IDs
+        
+        segments = [s for s in path.split('/') if s]
+        
+        # Must have at least one meaningful segment
         if len(segments) < 1:
             return False
         
-        # Should not be a category or section page (usually shorter paths)
-        if len(path) < 10:
-            return False
+        # Check if any segment looks like an article slug or ID
+        has_article_indicator = False
+        for segment in segments:
+            # Numeric ID (common in article URLs)
+            if re.match(r'^\d{5,}$', segment):
+                has_article_indicator = True
+                break
+            # Slugified title (at least 3 words separated by dashes)
+            if segment.count('-') >= 2 and len(segment) > 15:
+                has_article_indicator = True
+                break
+            # Long alphanumeric segment (likely article slug)
+            if len(segment) > 20 and re.match(r'^[a-z0-9-]+$', segment, re.IGNORECASE):
+                has_article_indicator = True
+                break
         
-        return True
+        return has_article_indicator
     
     async def scrape_gossip(self, tracked_titles: List[str] = None) -> List[Dict[str, Any]]:
         """
@@ -253,19 +296,22 @@ class GossipScraperAgent:
         """Build search queries for gossip"""
         queries = []
         
-        # General entertainment news queries
+        # Get current year for more relevant results
+        current_year = datetime.now().year
+        
+        # General entertainment news queries - more specific to get actual articles
         queries.extend([
-            "entertainment news today TV shows movies",
-            "casting news 2024 TV series",
-            "show renewal cancellation news",
-            "book to TV adaptation announcements",
-            "streaming series exclusive news"
+            f"exclusive casting news {current_year} TV series announced",
+            f"TV show renewed cancelled {current_year}",
+            f"new movie trailer release date {current_year}",
+            f"streaming series premiere announced {current_year}",
+            f"actor joins cast movie {current_year}"
         ])
         
         # Add queries for tracked titles
         if tracked_titles:
             for title in tracked_titles[:5]:
-                queries.append(f"{title} news cast production 2024")
+                queries.append(f'"{title}" news cast production {current_year}')
         
         return queries
     

@@ -3,7 +3,7 @@ Background task scheduler using APScheduler
 """
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -136,7 +136,7 @@ async def reminder_task():
         with db_session() as db:
             # Get reminders that are due
             due_reminders = db.query(Reminder).filter(
-                Reminder.scheduled_time <= datetime.utcnow(),
+                Reminder.scheduled_time <= datetime.now(timezone.utc),
                 Reminder.sent == False
             ).all()
             
@@ -147,7 +147,7 @@ async def reminder_task():
                     logger.info(f"Reminder due for user {reminder.user_id}: {reminder.message}")
                     
                     reminder.sent = True
-                    reminder.sent_at = datetime.utcnow()
+                    reminder.sent_at = datetime.now(timezone.utc)
                     
                 except Exception as e:
                     logger.error(f"Error sending reminder {reminder.id}: {e}")
@@ -167,8 +167,8 @@ async def cleanup_task():
         from app.database import db_session
         from app.models import Recommendation, SearchLog, Reminder, Gossip
         
-        cutoff_30_days = datetime.utcnow() - timedelta(days=30)
-        cutoff_7_days = datetime.utcnow() - timedelta(days=7)
+        cutoff_30_days = datetime.now(timezone.utc) - timedelta(days=30)
+        cutoff_7_days = datetime.now(timezone.utc) - timedelta(days=7)
         
         with db_session() as db:
             # Delete old dismissed recommendations (older than 30 days)

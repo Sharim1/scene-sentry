@@ -1,12 +1,17 @@
 """
 Reminder model for notifications
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware)"""
+    return datetime.now(timezone.utc)
 
 
 class ReminderType(str, PyEnum):
@@ -38,9 +43,9 @@ class Reminder(Base):
     sent = Column(Boolean, default=False)
     dismissed = Column(Boolean, default=False)
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    sent_at = Column(DateTime, nullable=True)
+    # Timestamps (timezone-aware)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="reminders")

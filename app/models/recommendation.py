@@ -1,11 +1,16 @@
 """
 Recommendation and search log models
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware)"""
+    return datetime.now(timezone.utc)
 
 
 class Recommendation(Base):
@@ -31,9 +36,9 @@ class Recommendation(Base):
     dismissed = Column(Boolean, default=False)
     saved_to_library = Column(Boolean, default=False)
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    viewed_at = Column(DateTime, nullable=True)
+    # Timestamps (timezone-aware)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    viewed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="recommendations")
@@ -58,8 +63,8 @@ class SearchLog(Base):
     results_count = Column(Integer, default=0)
     execution_time = Column(Float, nullable=True)  # In seconds
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # Timestamps (timezone-aware)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
     
     def __repr__(self):
         return f"<SearchLog '{self.query[:30]}...'>"

@@ -73,29 +73,28 @@
                 <div class="p-2 border-b border-white/10">
                     <p class="text-xs font-medium text-muted-foreground px-2">Add to Library</p>
                 </div>
-                <form action="/library/add" method="POST" @click.stop>
-                    <input type="hidden" name="content_id" value="{{ content.id }}">
-                    <button type="submit" name="status" value="watching" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors">
+                <div @click.stop>
+                    <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors">
                         <i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i>
                         Watching
                     </button>
-                    <button type="submit" name="status" value="planned" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors">
+                    <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors">
                         <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
                         Planned
                     </button>
-                    <button type="submit" name="status" value="completed" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors">
+                    <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors">
                         <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
                         Completed
                     </button>
-                    <button type="submit" name="status" value="dropped" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors">
+                    <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors">
                         <i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>
                         Dropped
                     </button>
-                    <button type="submit" name="status" value="maybe" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors">
+                    <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors">
                         <i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i>
                         Maybe
                     </button>
-                </form>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -115,7 +114,7 @@
                 {{ content.title }}
             </h3>
             
-            <!-- Rating -->
+            <!-- Rating and Discovery Time -->
             <div class="flex items-center justify-between">
                 {% if content.rating %}
                 <div class="flex items-center gap-1 text-yellow-400">
@@ -126,6 +125,12 @@
                 <span class="text-xs text-white/60">{{ content.network }}</span>
                 {% else %}
                 <div></div>
+                {% endif %}
+                
+                {% if content.created_at %}
+                <span class="text-[10px] text-white/50" title="Discovered: {{ content.created_at.strftime('%Y-%m-%d %H:%M') }}">
+                    {{ content.created_at | time_ago }}
+                </span>
                 {% endif %}
             </div>
         </div>

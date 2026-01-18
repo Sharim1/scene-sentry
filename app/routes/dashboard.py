@@ -3,7 +3,7 @@ Dashboard routes
 """
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request, Depends, Form, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
@@ -50,7 +50,7 @@ def get_ai_agent_status():
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
     """Main dashboard page"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:
@@ -86,7 +86,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     upcoming_reminders = db.query(Reminder).filter(
         Reminder.user_id == user.id,
         Reminder.sent == False,
-        Reminder.scheduled_time <= datetime.utcnow() + timedelta(days=7)
+        Reminder.scheduled_time <= datetime.now(timezone.utc) + timedelta(days=7)
     ).order_by(Reminder.scheduled_time).limit(5).all()
     
     # Get latest gossip
@@ -102,7 +102,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     
     # Get trending content (most added to libraries recently)
     trending = db.query(Content).join(LibraryItem).filter(
-        LibraryItem.added_at >= datetime.utcnow() - timedelta(days=7)
+        LibraryItem.added_at >= datetime.now(timezone.utc) - timedelta(days=7)
     ).group_by(Content.id).order_by(
         func.count(LibraryItem.id).desc()
     ).limit(5).all()
@@ -271,7 +271,7 @@ async def add_to_library(
         
         if existing:
             existing.status = watch_status
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = datetime.now(timezone.utc)
         else:
             library_item = LibraryItem(
                 user_id=user.id,

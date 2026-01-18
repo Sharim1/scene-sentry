@@ -2,21 +2,30 @@
 Clerk Authentication Middleware for FastAPI
 
 This middleware validates Clerk JWT tokens and syncs user data with the local database.
-It also handles the Clerk handshake flow for session token refresh.
+It handles the Clerk handshake flow for session token refresh.
+
+Security features:
+- JWT signature verification using JWKS
+- Issuer (iss) and expiration (exp) claim validation
+- Not-before (nbf) claim validation
+- Authorized party (azp) claim verification
+- Thread-safe JWKS caching with async locks
 """
 import logging
 import httpx
+import asyncio
 import base64
 import json
 from typing import Optional, Dict, Any, List
-from datetime import datetime
-from functools import lru_cache
+from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from dataclasses import dataclass, field
 
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from jose import jwt, JWTError, jwk
 from jose.exceptions import JWKError
 
@@ -25,10 +34,54 @@ from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
-# Cache for JWKS (JSON Web Key Set)
-_jwks_cache: Optional[Dict[str, Any]] = None
-_jwks_cache_time: Optional[datetime] = None
+# JWKS Cache Configuration
 JWKS_CACHE_DURATION_SECONDS = 3600  # 1 hour
+
+
+@dataclass
+class JWKSCache:
+    """Thread-safe cache for JWKS (JSON Web Key Set)"""
+    data: Optional[Dict[str, Any]] = None
+    timestamp: Optional[datetime] = None
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    
+    async def get_or_fetch(self, issuer: str) -> Dict[str, Any]:
+        """Get cached JWKS or fetch from Clerk if expired/missing"""
+        async with self._lock:
+            # Check if cache is valid
+            if self.data and self.timestamp:
+                age = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
+                if age < JWKS_CACHE_DURATION_SECONDS:
+                    return self.data
+            
+            # Fetch fresh JWKS
+            try:
+                jwks_url = f"{issuer}/.well-known/jwks.json"
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(jwks_url, timeout=10.0)
+                    response.raise_for_status()
+                    self.data = response.json()
+                    self.timestamp = datetime.now(timezone.utc)
+                    logger.info("Successfully fetched and cached Clerk JWKS")
+                    return self.data
+            except httpx.TimeoutException:
+                logger.error("Timeout fetching Clerk JWKS")
+                return self.data or {}
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error fetching Clerk JWKS: {e.response.status_code}")
+                return self.data or {}
+            except Exception as e:
+                logger.error(f"Failed to fetch Clerk JWKS: {e}")
+                return self.data or {}
+    
+    def invalidate(self):
+        """Invalidate the cache (useful for key rotation)"""
+        self.data = None
+        self.timestamp = None
+
+
+# Global JWKS cache instance
+_jwks_cache = JWKSCache()
 
 
 def decode_handshake_jwt(handshake_token: str) -> Optional[List[str]]:
@@ -91,47 +144,24 @@ def parse_set_cookie_header(cookie_str: str) -> Dict[str, Any]:
     return result
 
 
-async def fetch_clerk_jwks() -> Dict[str, Any]:
-    """Fetch Clerk's JWKS for token verification"""
-    global _jwks_cache, _jwks_cache_time
-    
-    # Check cache
-    if _jwks_cache and _jwks_cache_time:
-        age = (datetime.utcnow() - _jwks_cache_time).total_seconds()
-        if age < JWKS_CACHE_DURATION_SECONDS:
-            return _jwks_cache
-    
-    if not settings.clerk_issuer:
-        logger.warning("CLERK_ISSUER not configured")
-        return {}
-    
-    try:
-        jwks_url = f"{settings.clerk_issuer}/.well-known/jwks.json"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(jwks_url, timeout=10.0)
-            response.raise_for_status()
-            _jwks_cache = response.json()
-            _jwks_cache_time = datetime.utcnow()
-            logger.info("Successfully fetched Clerk JWKS")
-            return _jwks_cache
-    except Exception as e:
-        logger.error(f"Failed to fetch Clerk JWKS: {e}")
-        return _jwks_cache or {}
-
-
-def get_signing_key(jwks: Dict[str, Any], token: str) -> Optional[str]:
+def get_signing_key(jwks: Dict[str, Any], token: str) -> Optional[Any]:
     """Get the signing key from JWKS that matches the token's kid"""
     try:
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
         
         if not kid:
+            logger.warning("Token missing 'kid' header")
             return None
         
         for key in jwks.get("keys", []):
             if key.get("kid") == kid:
                 return jwk.construct(key)
         
+        logger.warning(f"No matching key found for kid: {kid}")
+        return None
+    except JWTError as e:
+        logger.error(f"Error parsing token header: {e}")
         return None
     except Exception as e:
         logger.error(f"Error getting signing key: {e}")
@@ -139,19 +169,38 @@ def get_signing_key(jwks: Dict[str, Any], token: str) -> Optional[str]:
 
 
 async def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
-    """Verify a Clerk JWT token and return the payload"""
+    """
+    Verify a Clerk JWT token and return the payload.
+    
+    Validates:
+    - Token signature using JWKS
+    - Issuer (iss) claim
+    - Expiration (exp) claim
+    - Not-before (nbf) claim
+    - Authorized party (azp) claim if configured
+    """
     if not settings.clerk_issuer:
+        logger.warning("CLERK_ISSUER not configured, skipping token verification")
         return None
     
     try:
-        jwks = await fetch_clerk_jwks()
+        # Fetch JWKS (uses cache)
+        jwks = await _jwks_cache.get_or_fetch(settings.clerk_issuer)
         if not jwks:
+            logger.error("Could not fetch JWKS for token verification")
             return None
         
+        # Get signing key matching token's kid
         signing_key = get_signing_key(jwks, token)
         if not signing_key:
-            logger.warning("Could not find matching signing key")
-            return None
+            # Key not found - might be rotated, invalidate cache and retry once
+            logger.info("Signing key not found, invalidating cache and retrying")
+            _jwks_cache.invalidate()
+            jwks = await _jwks_cache.get_or_fetch(settings.clerk_issuer)
+            signing_key = get_signing_key(jwks, token)
+            if not signing_key:
+                logger.warning("Could not find matching signing key after cache refresh")
+                return None
         
         # Verify the token
         payload = jwt.decode(
@@ -163,11 +212,26 @@ async def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
                 "verify_aud": False,  # Clerk doesn't always set audience
                 "verify_exp": True,
                 "verify_iss": True,
+                "verify_nbf": True,  # Verify not-before claim
             }
         )
         
+        # Verify authorized party (azp) claim if configured
+        azp = payload.get("azp")
+        authorized_parties = settings.clerk_authorized_parties_list
+        if azp and authorized_parties:
+            if azp not in authorized_parties:
+                logger.warning(f"Token azp '{azp}' not in authorized parties: {authorized_parties}")
+                return None
+        
         return payload
         
+    except jwt.ExpiredSignatureError:
+        logger.debug("Token has expired")
+        return None
+    except jwt.JWTClaimsError as e:
+        logger.warning(f"JWT claims validation failed: {e}")
+        return None
     except JWTError as e:
         logger.warning(f"JWT verification failed: {e}")
         return None
@@ -176,15 +240,37 @@ async def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def generate_unique_username(clerk_payload: Dict[str, Any], attempt: int = 0) -> str:
+    """Generate a unique username from Clerk payload"""
+    email = clerk_payload.get("email") or clerk_payload.get("primary_email_address")
+    clerk_user_id = clerk_payload.get("sub", "")
+    
+    username = clerk_payload.get("username")
+    if not username and email:
+        username = email.split("@")[0]
+    if not username:
+        username = f"user_{clerk_user_id[:8]}"
+    
+    if attempt > 0:
+        username = f"{username}_{attempt}"
+    
+    return username
+
+
 async def get_or_create_user_from_clerk(
     db: Session,
     clerk_payload: Dict[str, Any]
 ) -> Optional["User"]:
-    """Get or create a local user from Clerk token payload"""
+    """
+    Get or create a local user from Clerk token payload.
+    
+    Uses retry logic to handle race conditions in username generation.
+    """
     from app.models.user import User
     
     clerk_user_id = clerk_payload.get("sub")
     if not clerk_user_id:
+        logger.warning("Clerk payload missing 'sub' claim")
         return None
     
     # Try to find existing user by clerk_id
@@ -192,8 +278,12 @@ async def get_or_create_user_from_clerk(
     
     if user:
         # Update last login
-        user.last_login = datetime.utcnow()
-        db.commit()
+        user.last_login = datetime.now(timezone.utc)
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to update last login: {e}")
+            db.rollback()
         return user
     
     # Try to find by email (for users who registered before Clerk integration)
@@ -203,50 +293,53 @@ async def get_or_create_user_from_clerk(
         if user:
             # Link existing user to Clerk
             user.clerk_id = clerk_user_id
-            user.last_login = datetime.utcnow()
+            user.last_login = datetime.now(timezone.utc)
             
             # Update avatar if available
             if clerk_payload.get("image_url"):
                 user.avatar_url = clerk_payload.get("image_url")
             
-            db.commit()
+            try:
+                db.commit()
+            except Exception as e:
+                logger.error(f"Failed to link user to Clerk: {e}")
+                db.rollback()
             return user
     
-    # Create new user
-    try:
-        # Generate username from email or Clerk data
-        username = clerk_payload.get("username")
-        if not username and email:
-            username = email.split("@")[0]
-        if not username:
-            username = f"user_{clerk_user_id[:8]}"
-        
-        # Ensure username is unique
-        base_username = username
-        counter = 1
-        while db.query(User).filter(User.username == username).first():
-            username = f"{base_username}_{counter}"
-            counter += 1
-        
-        user = User(
-            clerk_id=clerk_user_id,
-            username=username,
-            email=email or f"{clerk_user_id}@clerk.user",
-            avatar_url=clerk_payload.get("image_url"),
-            last_login=datetime.utcnow()
-        )
-        
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        
-        logger.info(f"Created new user from Clerk: {user.username}")
-        return user
-        
-    except Exception as e:
-        logger.error(f"Failed to create user from Clerk: {e}")
-        db.rollback()
-        return None
+    # Create new user with retry logic for uniqueness conflicts
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            username = generate_unique_username(clerk_payload, attempt)
+            
+            user = User(
+                clerk_id=clerk_user_id,
+                username=username,
+                email=email or f"{clerk_user_id}@clerk.user",
+                avatar_url=clerk_payload.get("image_url"),
+                last_login=datetime.now(timezone.utc)
+            )
+            
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            
+            logger.info(f"Created new user from Clerk: {user.username} (clerk_id: {clerk_user_id[:8]}...)")
+            return user
+            
+        except IntegrityError as e:
+            db.rollback()
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to create user after {max_retries} attempts: {e}")
+                return None
+            logger.debug(f"Username collision on attempt {attempt + 1}, retrying...")
+            continue
+        except Exception as e:
+            logger.error(f"Failed to create user from Clerk: {e}")
+            db.rollback()
+            return None
+    
+    return None
 
 
 class ClerkAuthMiddleware(BaseHTTPMiddleware):
@@ -260,26 +353,16 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
     - We set those cookies and redirect back without the parameter
     """
     
-    # Routes that are publicly accessible (for reference - auth is still attempted for all non-static routes)
-    # Individual route handlers should check request.state.user and redirect if needed
-    PUBLIC_ROUTES = {
-        "/",
-        "/login",
-        "/register",
-        "/health",
-        "/webhooks/clerk",
-        "/favicon.ico",
-    }
-    
     async def dispatch(self, request: Request, call_next):
         # Initialize user state
         request.state.user = None
         request.state.clerk_user_id = None
         request.state.session_user_id = None
+        request.state.clerk_payload = None
         request.state.handshake_in_progress = False
         
         # Quick check: if Clerk isn't configured, skip Clerk auth entirely
-        clerk_configured = bool(settings.clerk_issuer and settings.clerk_publishable_key)
+        clerk_configured = settings.is_clerk_configured
         
         # CRITICAL: Handle Clerk handshake FIRST before any other processing
         # The __clerk_handshake query parameter contains cookie-setting instructions
@@ -302,8 +385,9 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
             payload = await verify_clerk_token(token)
             
             if payload:
-                # Get database session
-                db = next(get_db())
+                # Get database session and sync user
+                db_gen = get_db()
+                db = next(db_gen)
                 try:
                     user = await get_or_create_user_from_clerk(db, payload)
                     if user:
@@ -311,15 +395,18 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                         # Don't store the ORM object directly as it will be detached
                         request.state.clerk_user_id = user.id
                         request.state.clerk_payload = payload
+                except Exception as e:
+                    logger.error(f"Error processing Clerk user: {e}")
                 finally:
+                    try:
+                        next(db_gen, None)  # Cleanup generator
+                    except StopIteration:
+                        pass
                     db.close()
         
-        # Also check session-based auth (fallback)
-        if not hasattr(request.state, "clerk_user_id") or request.state.clerk_user_id is None:
+        # Also check session-based auth (fallback when Clerk not configured)
+        if request.state.clerk_user_id is None and not clerk_configured:
             # Check if there's a user_id in session (legacy auth)
-            # Note: Use "session" in request.scope instead of hasattr because
-            # request.session is a property that raises AssertionError if SessionMiddleware
-            # hasn't processed the request yet
             if "session" in request.scope and request.scope["session"].get("user_id"):
                 request.state.session_user_id = request.scope["session"].get("user_id")
         
@@ -428,12 +515,12 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
     
     def _extract_token(self, request: Request) -> Optional[str]:
         """Extract Clerk token from request"""
-        # Check Authorization header
+        # Check Authorization header first (for API requests)
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             return auth_header[7:]
         
-        # Check Clerk session cookie
+        # Check Clerk session cookie (for browser requests)
         # Clerk uses __session cookie by default
         token = request.cookies.get("__session")
         if token:

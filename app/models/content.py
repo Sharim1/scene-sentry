@@ -1,11 +1,16 @@
 """
 Content model for movies, TV shows, and books
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware)"""
+    return datetime.now(timezone.utc)
 
 
 class Content(Base):
@@ -59,9 +64,9 @@ class Content(Base):
     next_episode_date = Column(DateTime, nullable=True)
     premiere_date = Column(DateTime, nullable=True)
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Timestamps (timezone-aware)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     
     # Relationships
     library_items = relationship("LibraryItem", back_populates="content")

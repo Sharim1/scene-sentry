@@ -8,7 +8,7 @@ import re
 from fastapi import APIRouter, Request, Depends, Query, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.models import User, Content, LibraryItem, WatchStatus
@@ -180,28 +180,63 @@ def is_article_title(title: str) -> bool:
     return False
 
 
+def is_tv_series_title(title: str) -> bool:
+    """Check if a title looks like a TV series rather than a movie"""
+    title_lower = title.lower()
+    
+    # Explicit TV series indicators
+    tv_indicators = [
+        '(series)', '(tv series)', '(tv)', '(mini-series)', '(miniseries)',
+        ': season', ': series', ' season ', ' - season ',
+        '(limited series)', '(anthology series)',
+    ]
+    
+    for indicator in tv_indicators:
+        if indicator in title_lower:
+            return True
+    
+    return False
+
+
 async def save_scraped_content(db: Session, item: dict, content_type: str) -> Content:
     """Save scraped content to database"""
     title = item.get('title', '').strip()
-    if not title or is_article_title(title):
+    if not title:
+        logger.debug("Skipping item with no title")
         return None
     
-    # Check if already exists (by title and type)
+    if is_article_title(title):
+        logger.debug(f"Skipping article-like title: {title[:50]}")
+        return None
+    
+    # Skip TV series if we're saving movies
+    if content_type == "movie" and is_tv_series_title(title):
+        logger.debug(f"Skipping TV series from movie results: {title}")
+        return None
+    
+    # Check if already exists (by exact title match and type)
+    # Use exact match to avoid false positives
     existing = db.query(Content).filter(
-        Content.title.ilike(f"%{title}%"),
+        Content.title == title,
         Content.content_type == content_type
     ).first()
     
     if existing:
         # Update with new data if we have more info
+        updated = False
         if item.get('poster_url') and not existing.poster_url:
             existing.poster_url = item.get('poster_url')
+            updated = True
         if item.get('rating') and not existing.rating:
             existing.rating = item.get('rating')
+            updated = True
         if item.get('description') and not existing.description:
             existing.description = item.get('description')[:500] if item.get('description') else None
-        existing.updated_at = datetime.utcnow()
-        db.commit()
+            updated = True
+        if updated:
+            existing.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            logger.debug(f"Updated existing {content_type}: {title}")
         return existing
     
     # Create new content
@@ -219,6 +254,7 @@ async def save_scraped_content(db: Session, item: dict, content_type: str) -> Co
     db.add(content)
     db.commit()
     db.refresh(content)
+    logger.info(f"Saved new {content_type}: {title}")
     return content
 
 
@@ -247,7 +283,7 @@ async def movies_page(
     db: Session = Depends(get_db)
 ):
     """Movies page with search functionality"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:
@@ -368,7 +404,7 @@ async def tv_shows_page(
     db: Session = Depends(get_db)
 ):
     """TV Shows page with search functionality"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:
@@ -548,7 +584,7 @@ async def add_to_library(
     if existing:
         # Update status
         existing.status = watch_status
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.now(timezone.utc)
         db.commit()
     else:
         # Verify content exists
@@ -576,7 +612,7 @@ async def content_detail(
     db: Session = Depends(get_db)
 ):
     """Content detail page"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:

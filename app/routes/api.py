@@ -3,7 +3,7 @@ JSON API routes for AJAX interactions
 """
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Request, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -18,6 +18,9 @@ from app.services.task_manager import get_task_manager, TaskType, TaskStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Store references to running tasks to prevent garbage collection
+_running_tasks: set = set()
 
 
 # Pydantic models for API responses
@@ -194,7 +197,7 @@ async def update_item_status(
         raise HTTPException(status_code=400, detail="Invalid status")
     
     item.status = status_map[update.status]
-    item.updated_at = datetime.utcnow()
+    item.updated_at = datetime.now(timezone.utc)
     db.commit()
     
     return {"success": True, "status": update.status}
@@ -225,7 +228,7 @@ async def update_item_progress(
         item.current_season = update.season
     if update.episode is not None:
         item.current_episode = update.episode
-    item.updated_at = datetime.utcnow()
+    item.updated_at = datetime.now(timezone.utc)
     db.commit()
     
     return {"success": True, "progress": update.progress}
@@ -254,7 +257,7 @@ async def update_item_rating(
     item.rating = min(5, max(1, update.rating))
     if update.notes:
         item.notes = update.notes
-    item.updated_at = datetime.utcnow()
+    item.updated_at = datetime.now(timezone.utc)
     db.commit()
     
     return {"success": True, "rating": item.rating}
@@ -457,33 +460,51 @@ async def start_task(
     )
     
     # Define task functions for each type
+    # Store user preferences in closure variables to avoid db session issues
+    user_preferences = user.preferred_genres or "popular"
+    user_id = user.id
+    
     async def run_movie_discovery(task, tm):
         from app.services.content_scraper import get_content_scraper
         from app.routes.content import save_scraped_content
         
         scraper = get_content_scraper()
-        preferences = body.preferences if body else user.preferred_genres or "popular"
+        preferences = body.preferences if body else user_preferences
         
         await tm.update_task(task.id, progress=10, message="Fetching movie data...")
         
         try:
             movies = await scraper.discover_movies(preferences=preferences, limit=30)
+            logger.info(f"Movie discovery found {len(movies)} movies from scraper")
+            
+            if movies:
+                logger.debug(f"First few movies: {[m.get('title') for m in movies[:5]]}")
+            
             await tm.update_task(task.id, progress=50, message=f"Found {len(movies)} movies, saving...")
             
             saved_count = 0
+            new_count = 0
             for i, movie_data in enumerate(movies):
                 try:
-                    with next(get_db()) as db_session:
+                    # Get fresh database session for each save
+                    db_gen = get_db()
+                    db_session = next(db_gen)
+                    try:
                         content = await save_scraped_content(db_session, movie_data, "movie")
                         if content:
                             saved_count += 1
+                            if content.created_at and (datetime.now(timezone.utc) - content.created_at.replace(tzinfo=timezone.utc if content.created_at.tzinfo is None else content.created_at.tzinfo)).total_seconds() < 60:
+                                new_count += 1
+                    finally:
+                        db_session.close()
                 except Exception as e:
-                    logger.warning(f"Failed to save movie: {e}")
+                    logger.warning(f"Failed to save movie '{movie_data.get('title', 'unknown')}': {e}")
                 
                 progress = 50 + int((i / len(movies)) * 40)
-                await tm.update_task(task.id, progress=progress)
+                await tm.update_task(task.id, progress=progress, message=f"Saving movies... ({i+1}/{len(movies)})")
             
-            return {"saved": saved_count, "total": len(movies)}
+            logger.info(f"Movie discovery complete: {saved_count} processed, {new_count} newly created")
+            return {"saved": saved_count, "total": len(movies), "new": new_count}
             
         except Exception as e:
             logger.error(f"Movie discovery error: {e}")
@@ -494,7 +515,7 @@ async def start_task(
         from app.routes.content import save_scraped_content
         
         scraper = get_content_scraper()
-        preferences = body.preferences if body else user.preferred_genres or "popular"
+        preferences = body.preferences if body else user_preferences
         
         await tm.update_task(task.id, progress=10, message="Fetching TV show data...")
         
@@ -505,15 +526,20 @@ async def start_task(
             saved_count = 0
             for i, show_data in enumerate(shows):
                 try:
-                    with next(get_db()) as db_session:
+                    # Get fresh database session for each save
+                    db_gen = get_db()
+                    db_session = next(db_gen)
+                    try:
                         content = await save_scraped_content(db_session, show_data, "tv_show")
                         if content:
                             saved_count += 1
+                    finally:
+                        db_session.close()
                 except Exception as e:
                     logger.warning(f"Failed to save TV show: {e}")
                 
                 progress = 50 + int((i / len(shows)) * 40)
-                await tm.update_task(task.id, progress=progress)
+                await tm.update_task(task.id, progress=progress, message=f"Saving TV shows... ({i+1}/{len(shows)})")
             
             return {"saved": saved_count, "total": len(shows)}
             
@@ -529,17 +555,21 @@ async def start_task(
         await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
         
         try:
-            # Get user's tracked titles
+            # Get user's tracked titles with proper db session handling
             tracked_titles = []
-            with next(get_db()) as db_session:
+            db_gen = get_db()
+            db_session = next(db_gen)
+            try:
                 items = db_session.query(LibraryItem).filter(
-                    LibraryItem.user_id == user.id,
+                    LibraryItem.user_id == user_id,
                     LibraryItem.status.in_([WatchStatus.WATCHING, WatchStatus.PLANNED])
                 ).all()
                 
                 for item in items:
                     if item.content:
                         tracked_titles.append(item.content.title)
+            finally:
+                db_session.close()
             
             await tm.update_task(task.id, progress=30, message=f"Scanning news for {len(tracked_titles)} tracked titles...")
             
@@ -562,7 +592,7 @@ async def start_task(
         await tm.update_task(task.id, progress=10, message="Starting AI search...")
         
         try:
-            results = await discovery_graph.run_discovery(user.id, search_query=query)
+            results = await discovery_graph.run_discovery(user_id, search_query=query)
             
             await tm.update_task(task.id, progress=90, message=f"Found {len(results)} recommendations")
             
@@ -583,8 +613,21 @@ async def start_task(
     
     task_func = task_functions.get(task_type_map[task_type])
     
-    # Run task in background
-    background_tasks.add_task(task_manager.run_task, task.id, task_func)
+    # Run task in background using asyncio.create_task for proper async handling
+    # We add a small delay to ensure the HTTP response is sent BEFORE the task starts
+    # This allows the frontend to connect to SSE and receive updates
+    async def run_and_cleanup():
+        try:
+            # Wait for client to receive response and connect to SSE
+            await asyncio.sleep(0.5)
+            await task_manager.run_task(task.id, task_func)
+        finally:
+            # Remove from running tasks set when done
+            _running_tasks.discard(asyncio.current_task())
+    
+    # Store reference to prevent garbage collection
+    bg_task = asyncio.create_task(run_and_cleanup())
+    _running_tasks.add(bg_task)
     
     return {
         "success": True,

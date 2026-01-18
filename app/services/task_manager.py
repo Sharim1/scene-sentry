@@ -6,7 +6,7 @@ Manages background tasks with status tracking and SSE (Server-Sent Events) for r
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Callable, Awaitable
 from enum import Enum
 from dataclasses import dataclass, field, asdict
@@ -33,6 +33,11 @@ class TaskType(str, Enum):
     CONTENT_RECOMMENDATION = "content_recommendation"
 
 
+def _utc_now():
+    """Get current UTC time (timezone-aware)"""
+    return datetime.now(timezone.utc)
+
+
 @dataclass
 class Task:
     """Represents a background task"""
@@ -45,7 +50,7 @@ class Task:
     message: str = "Waiting to start..."
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utc_now)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
@@ -147,9 +152,9 @@ class TaskManager:
             if status:
                 task.status = status
                 if status == TaskStatus.RUNNING and not task.started_at:
-                    task.started_at = datetime.utcnow()
+                    task.started_at = datetime.now(timezone.utc)
                 elif status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
-                    task.completed_at = datetime.utcnow()
+                    task.completed_at = datetime.now(timezone.utc)
             
             if progress is not None:
                 task.progress = min(100, max(0, progress))
@@ -173,12 +178,42 @@ class TaskManager:
         """Get a task by ID"""
         return self._tasks.get(task_id)
     
-    async def get_user_tasks(self, user_id: int, active_only: bool = True) -> List[Task]:
-        """Get all tasks for a user"""
+    async def get_user_tasks(
+        self, 
+        user_id: int, 
+        active_only: bool = True,
+        include_recent_completed: bool = True,
+        recent_seconds: int = 30
+    ) -> List[Task]:
+        """
+        Get all tasks for a user.
+        
+        Args:
+            user_id: The user's ID
+            active_only: If True, only return active (pending/running) tasks
+            include_recent_completed: If True, also include tasks completed within recent_seconds
+            recent_seconds: How many seconds to consider "recent" for completed tasks
+        """
         tasks = [t for t in self._tasks.values() if t.user_id == user_id]
         
         if active_only:
-            tasks = [t for t in tasks if t.status in (TaskStatus.PENDING, TaskStatus.RUNNING)]
+            active_tasks = [t for t in tasks if t.status in (TaskStatus.PENDING, TaskStatus.RUNNING)]
+            
+            # Also include recently completed tasks so frontend can see them
+            if include_recent_completed:
+                now = datetime.now(timezone.utc)
+                recent_completed = []
+                for t in tasks:
+                    if t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED) and t.completed_at:
+                        completed = t.completed_at
+                        # Handle offset-naive datetimes
+                        if completed.tzinfo is None:
+                            completed = completed.replace(tzinfo=timezone.utc)
+                        if (now - completed).total_seconds() < recent_seconds:
+                            recent_completed.append(t)
+                tasks = active_tasks + recent_completed
+            else:
+                tasks = active_tasks
         
         return sorted(tasks, key=lambda t: t.created_at, reverse=True)
     
@@ -293,7 +328,7 @@ class TaskManager:
     
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """Remove tasks older than max_age_hours"""
-        cutoff = datetime.utcnow()
+        cutoff = datetime.now(timezone.utc)
         to_remove = []
         
         for task_id, task in self._tasks.items():

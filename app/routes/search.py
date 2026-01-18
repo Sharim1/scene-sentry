@@ -22,7 +22,7 @@ async def search_page(
     db: Session = Depends(get_db)
 ):
     """Search & AI page"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:

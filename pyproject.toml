@@ -23,6 +23,10 @@ dependencies = [
     # Auth
     "werkzeug>=3.1.3",
     "python-jose[cryptography]>=3.3.0",
+    "svix>=1.41.0",
+    
+    # Rate limiting
+    "slowapi>=0.1.9",
     
     # AI and LangChain
     "langchain>=0.3.27",

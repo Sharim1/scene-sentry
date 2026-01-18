@@ -30,6 +30,7 @@ function taskNotifications() {
         sseConnected: false,
         connectionAttempts: 0,
         maxAttempts: 5,
+        pollInterval: null,
         
         init() {
             // Load any existing tasks from sessionStorage
@@ -37,16 +38,20 @@ function taskNotifications() {
             if (stored) {
                 try {
                     const parsed = JSON.parse(stored);
-                    // Only keep non-completed tasks
-                    this.tasks = parsed.filter(t => t.status !== 'completed' && t.status !== 'failed');
+                    // Keep tasks that are not dismissed (completed tasks will auto-dismiss)
+                    this.tasks = parsed.filter(t => !t.dismissed);
                 } catch (e) {
                     this.tasks = [];
                 }
             }
             
-            // Connect to SSE immediately if there are active tasks
+            // Always do an initial poll to check for any running/recent tasks
+            this.checkForActiveTasks();
+            
+            // Connect to SSE if there are active tasks
             if (this.tasks.length > 0) {
                 this.connectSSE();
+                this.startPolling();
             }
             
             // Listen for custom events to add tasks
@@ -56,6 +61,8 @@ function taskNotifications() {
                 if (!this.sseConnected) {
                     this.connectSSE();
                 }
+                // Start polling as backup for SSE
+                this.startPolling();
             });
             
             // Re-initialize Lucide icons after Alpine renders
@@ -66,11 +73,32 @@ function taskNotifications() {
             });
         },
         
+        async checkForActiveTasks() {
+            // Do a single poll to check for any active/recently completed tasks
+            try {
+                const response = await fetch('/api/tasks?active_only=true');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.tasks && data.tasks.length > 0) {
+                        data.tasks.forEach(task => this.handleTaskUpdate(task));
+                        // Connect if we found tasks
+                        if (!this.sseConnected) {
+                            this.connectSSE();
+                        }
+                        this.startPolling();
+                    }
+                }
+            } catch (e) {
+                // Ignore errors on initial check
+            }
+        },
+        
         connectSSE() {
             // Don't reconnect if already connected or too many attempts
             if (this.sseConnected || typeof EventSource === 'undefined') return;
             if (this.connectionAttempts >= this.maxAttempts) {
-                console.warn('Max SSE connection attempts reached');
+                console.warn('Max SSE connection attempts reached, falling back to polling');
+                this.startPolling();
                 return;
             }
             
@@ -81,6 +109,7 @@ function taskNotifications() {
                 this.sseConnected = true;
                 
                 this.eventSource.onopen = () => {
+                    console.log('SSE connected');
                     this.connectionAttempts = 0; // Reset on successful connection
                 };
                 
@@ -96,6 +125,7 @@ function taskNotifications() {
                 };
                 
                 this.eventSource.onerror = (error) => {
+                    console.warn('SSE error, will retry or fall back to polling');
                     this.sseConnected = false;
                     if (this.eventSource) {
                         this.eventSource.close();
@@ -106,38 +136,136 @@ function taskNotifications() {
                     if (activeTasks.length > 0) {
                         const delay = Math.min(1000 * Math.pow(2, this.connectionAttempts), 30000);
                         setTimeout(() => this.connectSSE(), delay);
+                        // Start polling as backup
+                        this.startPolling();
                     }
                 };
             } catch (e) {
+                console.warn('SSE not supported, falling back to polling');
                 this.sseConnected = false;
+                this.startPolling();
+            }
+        },
+        
+        startPolling() {
+            // Don't start multiple polling intervals
+            if (this.pollInterval) return;
+            
+            let pollCount = 0;
+            const maxPolls = 30; // Stop after 30 seconds of polling with no active tasks
+            
+            const pollTasks = async () => {
+                try {
+                    // Include recently completed tasks in polling
+                    const response = await fetch('/api/tasks?active_only=true');
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.tasks && data.tasks.length > 0) {
+                            pollCount = 0; // Reset counter when we have tasks
+                            data.tasks.forEach(task => this.handleTaskUpdate(task));
+                        } else {
+                            pollCount++;
+                        }
+                    } else if (response.status === 401) {
+                        // User logged out, stop polling
+                        this.stopPolling();
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Task polling failed:', e);
+                    pollCount++;
+                }
+                
+                // Stop polling if no tasks for too long
+                const activeTasks = this.tasks.filter(t => t.status === 'running' || t.status === 'pending');
+                if (activeTasks.length === 0 && pollCount > 5) {
+                    this.stopPolling();
+                }
+                if (pollCount > maxPolls) {
+                    this.stopPolling();
+                }
+            };
+            
+            // Poll every 2 seconds (less aggressive than 1s)
+            this.pollInterval = setInterval(pollTasks, 2000);
+            // Also poll immediately
+            pollTasks();
+        },
+        
+        stopPolling() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
             }
         },
         
         handleTaskUpdate(data) {
             const existingIndex = this.tasks.findIndex(t => t.id === data.id);
             
+            // Check if this task already triggered a reload (prevents infinite reload loop)
+            const reloadedTasks = JSON.parse(sessionStorage.getItem('reloadedTasks') || '[]');
+            const alreadyReloaded = reloadedTasks.includes(data.id);
+            
             if (existingIndex >= 0) {
                 // Update existing task
                 this.tasks[existingIndex] = { ...this.tasks[existingIndex], ...data };
             } else {
-                // Add new task
+                // Add new task only if it's not already completed and reloaded
+                if (data.status === 'completed' && alreadyReloaded) {
+                    // Skip adding completed tasks that we already processed
+                    return;
+                }
                 this.tasks.push(data);
             }
             
             // Save to sessionStorage
             sessionStorage.setItem('activeTasks', JSON.stringify(this.tasks));
             
-            // Auto-dismiss completed tasks after 5 seconds
-            if (data.status === 'completed') {
+            // Auto-dismiss completed tasks after a delay and refresh page
+            if (data.status === 'completed' && !alreadyReloaded) {
                 const idx = existingIndex >= 0 ? existingIndex : this.tasks.length - 1;
                 this.tasks[idx].showCompleted = true;
+                
+                // Mark this task as having triggered a reload
+                reloadedTasks.push(data.id);
+                sessionStorage.setItem('reloadedTasks', JSON.stringify(reloadedTasks));
+                
+                // Clean up old reloaded task IDs after 60 seconds (to prevent memory growth)
                 setTimeout(() => {
+                    const current = JSON.parse(sessionStorage.getItem('reloadedTasks') || '[]');
+                    const updated = current.filter(id => id !== data.id);
+                    sessionStorage.setItem('reloadedTasks', JSON.stringify(updated));
+                }, 60000);
+                
+                setTimeout(async () => {
                     this.dismissTask(data.id);
-                    // Reload page to show new content after discovery completes
-                    if (data.type === 'movie_discovery' || data.type === 'tv_discovery') {
-                        window.location.reload();
+                    // Reload page to show new content after discovery/scrape completes
+                    if (['movie_discovery', 'tv_discovery', 'gossip_scrape', 'content_recommendation', 'ai_search'].includes(data.type)) {
+                        // First check if we're still authenticated before reloading
+                        // This prevents redirect to login if token expired
+                        try {
+                            const authCheck = await fetch('/api/tasks?active_only=true');
+                            if (authCheck.ok) {
+                                // User is authenticated, safe to reload
+                                window.location.reload();
+                            } else if (authCheck.status === 401) {
+                                // Token expired - show a toast instead of reloading
+                                // The new content is already saved, user can navigate manually
+                                if (typeof window.showToast === 'function') {
+                                    window.showToast('Discovery complete! Refresh the page to see new content.', 'success');
+                                }
+                            }
+                        } catch (e) {
+                            // Network error - just show toast
+                            if (typeof window.showToast === 'function') {
+                                window.showToast('Discovery complete! Refresh the page to see new content.', 'success');
+                            }
+                        }
                     }
-                }, 3000);
+                }, 2500);
+            } else if (data.status === 'completed' && alreadyReloaded) {
+                // Already reloaded for this task, just dismiss it
+                this.dismissTask(data.id);
             }
             
             // Handle failed tasks
@@ -183,17 +311,22 @@ function taskNotifications() {
             this.tasks = this.tasks.filter(t => t.id !== taskId);
             sessionStorage.setItem('activeTasks', JSON.stringify(this.tasks));
             
-            // Disconnect SSE if no more active tasks
-            if (this.tasks.length === 0 && this.eventSource) {
-                this.eventSource.close();
-                this.eventSource = null;
-                this.sseConnected = false;
+            // Stop polling and disconnect SSE if no more active tasks
+            const activeTasks = this.tasks.filter(t => t.status === 'running' || t.status === 'pending');
+            if (activeTasks.length === 0) {
+                this.stopPolling();
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                    this.sseConnected = false;
+                }
             }
         },
         
         clearAll() {
             this.tasks = [];
             sessionStorage.removeItem('activeTasks');
+            this.stopPolling();
             if (this.eventSource) {
                 this.eventSource.close();
                 this.eventSource = null;
@@ -578,10 +711,112 @@ async function startDiscoveryTask(taskType, buttonElement) {
     }
 }
 
+/**
+ * Add content to library using AJAX
+ * Handles auth errors gracefully by showing a toast instead of redirecting
+ */
+async function addToLibrary(contentId, status, buttonElement = null) {
+    // Show loading state if button provided
+    let originalHTML = '';
+    if (buttonElement) {
+        originalHTML = buttonElement.innerHTML;
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('content_id', contentId);
+        formData.append('status', status);
+        
+        const response = await fetch('/add-to-library', {
+            method: 'POST',
+            body: formData,
+            redirect: 'manual' // Prevent automatic redirect following
+        });
+        
+        if (response.ok || response.type === 'opaqueredirect' || response.status === 303) {
+            // Success - check if we were redirected to login (auth issue)
+            const redirectUrl = response.headers.get('Location') || '';
+            if (redirectUrl.includes('/login')) {
+                showToast('Session expired. Please refresh the page to continue.', 'warning');
+            } else {
+                showToast('Added to library!', 'success');
+                // Reload page after short delay to show updated state
+                setTimeout(() => window.location.reload(), 1000);
+            }
+        } else if (response.status === 401) {
+            showToast('Session expired. Please refresh the page to continue.', 'warning');
+        } else {
+            showToast('Failed to add to library. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Add to library error:', error);
+        showToast('Failed to add to library. Please try again.', 'error');
+    } finally {
+        // Restore button state
+        if (buttonElement && originalHTML) {
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = originalHTML;
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+    }
+}
+
+/**
+ * Cleanup article-style entries using AJAX
+ * Handles auth errors gracefully
+ */
+async function cleanupArticles(buttonElement = null) {
+    // Show loading state
+    let originalHTML = '';
+    if (buttonElement) {
+        originalHTML = buttonElement.innerHTML;
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+    }
+    
+    try {
+        const response = await fetch('/cleanup-articles', {
+            method: 'POST',
+            redirect: 'manual'
+        });
+        
+        if (response.ok || response.type === 'opaqueredirect' || response.status === 303) {
+            const redirectUrl = response.headers.get('Location') || '';
+            if (redirectUrl.includes('/login')) {
+                showToast('Session expired. Please refresh the page.', 'warning');
+            } else {
+                showToast('Cleanup complete!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            }
+        } else if (response.status === 401) {
+            showToast('Session expired. Please refresh the page.', 'warning');
+        } else {
+            showToast('Cleanup failed. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Cleanup error:', error);
+        showToast('Cleanup failed. Please try again.', 'error');
+    } finally {
+        if (buttonElement && originalHTML) {
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = originalHTML;
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+    }
+}
+
 // Make functions available globally
 window.startBackgroundTask = startBackgroundTask;
 window.startDiscoveryTask = startDiscoveryTask;
 window.updateStatus = updateStatus;
 window.updateProgress = updateProgress;
+window.addToLibrary = addToLibrary;
+window.cleanupArticles = cleanupArticles;
 window.copyToClipboard = copyToClipboard;
 window.confirmAction = confirmAction;

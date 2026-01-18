@@ -23,7 +23,7 @@ async def gossip_feed(
     db: Session = Depends(get_db)
 ):
     """Main gossip feed page"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:
@@ -72,7 +72,7 @@ async def gossip_detail(
     db: Session = Depends(get_db)
 ):
     """Single gossip article page"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:
@@ -199,7 +199,7 @@ async def gossip_for_content(
     db: Session = Depends(get_db)
 ):
     """Get all gossip related to a specific content"""
-    from app.main import templates
+    from app.templates import templates
     
     user = get_current_user(request, db)
     if not user:

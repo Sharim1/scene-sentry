@@ -1,12 +1,17 @@
 """
 User model
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from app.database import Base
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware)"""
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -24,9 +29,9 @@ class User(Base):
     password_hash = Column(String(256), nullable=True)  # Nullable for Clerk-only users
     avatar_url = Column(String(500), nullable=True)
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_login = Column(DateTime, nullable=True)
+    # Timestamps (using timezone-aware UTC)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    last_login = Column(DateTime(timezone=True), nullable=True)
     
     # User preferences
     preferred_genres = Column(Text, nullable=True)  # JSON string of preferred genres

@@ -1,12 +1,17 @@
 """
 Gossip model for entertainment news and rumors
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+def utc_now():
+    """Get current UTC time (timezone-aware)"""
+    return datetime.now(timezone.utc)
 
 
 class GossipTag(str, PyEnum):
@@ -65,10 +70,10 @@ class Gossip(Base):
     is_featured = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     
-    # Timestamps
-    published_at = Column(DateTime, nullable=True)  # Original publish date
-    scraped_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Timestamps (using timezone-aware UTC)
+    published_at = Column(DateTime(timezone=True), nullable=True)  # Original publish date
+    scraped_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     
     # Relationships
     related_content = relationship("Content", back_populates="gossip_items")
@@ -82,8 +87,14 @@ class Gossip(Base):
         if not self.scraped_at:
             return "Unknown"
         
-        now = datetime.utcnow()
-        diff = now - self.scraped_at
+        now = datetime.now(timezone.utc)
+        scraped = self.scraped_at
+        
+        # Handle offset-naive datetimes from existing database records
+        if scraped.tzinfo is None:
+            scraped = scraped.replace(tzinfo=timezone.utc)
+        
+        diff = now - scraped
         
         if diff.days > 0:
             return f"{diff.days}d ago"
