@@ -4,19 +4,19 @@ SQLAlchemy Models
 from app.models.user import User
 from app.models.content import Content
 from app.models.library import LibraryItem, WatchStatus
-from app.models.recommendation import Recommendation, SearchLog
 from app.models.gossip import Gossip, GossipTag
 from app.models.reminder import Reminder
+from app.models.ranking import UserContentRank
+from app.models.discovery_state import DiscoveryState
 
 __all__ = [
     "User",
-    "Content", 
+    "Content",
     "LibraryItem",
     "WatchStatus",
-    "Recommendation",
-    "SearchLog",
     "Gossip",
     "GossipTag",
-    "Reminder"
+    "Reminder",
+    "UserContentRank",
+    "DiscoveryState",
 ]
-

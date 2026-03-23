@@ -38,8 +38,9 @@ class Gossip(Base):
     
     # Content
     title = Column(String(500), nullable=False)
-    content = Column(Text, nullable=False)  # Full article/summary
-    summary = Column(Text, nullable=True)  # AI-generated summary
+    content = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)  # Deprecated – no longer written
+    preview_text = Column(Text, nullable=True)  # Short snippet (~200 chars)
     
     # Source info
     source_url = Column(String(500), nullable=False)

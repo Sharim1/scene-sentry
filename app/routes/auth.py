@@ -240,7 +240,7 @@ async def logout(request: Request):
     # but the tokens are short-lived (~60s) and will expire naturally
     response.delete_cookie("__session", path="/")
     response.delete_cookie("__clerk_db_jwt", path="/")
-    response.delete_cookie("moviemind_session", path="/")
+    response.delete_cookie("scenesentry_session", path="/")
     
     # Clear any other auth-related cookies
     response.delete_cookie("__client_uat", path="/")

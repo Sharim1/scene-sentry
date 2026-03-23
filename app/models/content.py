@@ -25,11 +25,16 @@ class Content(Base):
     description = Column(Text, nullable=True)
     genres = Column(Text, nullable=True)  # JSON string
     
-    # External IDs
+    # External IDs (used for cross-platform deduplication)
     external_id = Column(String(50), nullable=True)
     tmdb_id = Column(Integer, nullable=True, index=True)
-    imdb_id = Column(String(20), nullable=True)
+    imdb_id = Column(String(20), nullable=True, index=True)
+    tvdb_id = Column(Integer, nullable=True, index=True)
+    tvmaze_id = Column(Integer, nullable=True, index=True)
     isbn = Column(String(20), nullable=True)
+
+    # Which provider originally ingested this record
+    source = Column(String(20), nullable=True)  # "tmdb", "tvdb", "omdb", "tvmaze"
     
     # Media
     poster_url = Column(String(500), nullable=True)
@@ -70,7 +75,6 @@ class Content(Base):
     
     # Relationships
     library_items = relationship("LibraryItem", back_populates="content")
-    recommendations = relationship("Recommendation", back_populates="content")
     gossip_items = relationship("Gossip", back_populates="related_content")
     
     def __repr__(self):

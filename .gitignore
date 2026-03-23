@@ -1,5 +1,5 @@
 .env
-instance/
+instance/  
 __pycache__/
 attached_assets/
 .replit
@@ -7,3 +7,4 @@ attached_assets/
 .DS_Store
 .cursor/
 ARCHITECTURE.md
+temp_design_directory_for_reference/

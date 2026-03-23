@@ -2,15 +2,15 @@
 Gossip routes for entertainment news
 """
 import logging
-from datetime import datetime
 from fastapi import APIRouter, Request, Depends, Query, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Gossip, Content
 from app.models.gossip import GossipTag
 from app.routes.auth import get_current_user
+from app.services.gossip_service import GossipService
+from app.repositories.library_repo import LibraryRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,38 +20,18 @@ router = APIRouter()
 async def gossip_feed(
     request: Request,
     tag: str = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Main gossip feed page"""
     from app.templates import templates
-    
+
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-    
-    # Build query
-    query = db.query(Gossip).filter(Gossip.is_active == True)
-    
-    # Filter by tag
-    if tag:
-        try:
-            gossip_tag = GossipTag(tag)
-            query = query.filter(Gossip.tag == gossip_tag)
-        except ValueError:
-            pass
-    
-    gossip_items = query.order_by(Gossip.scraped_at.desc()).limit(50).all()
-    
-    # Get all available tags with counts
-    tag_counts = {}
-    for t in GossipTag:
-        count = db.query(Gossip).filter(
-            Gossip.is_active == True,
-            Gossip.tag == t
-        ).count()
-        if count > 0:
-            tag_counts[t.value] = count
-    
+
+    svc = GossipService(db)
+    gossip_items = svc.get_feed(tag=tag, limit=50)
+    tag_counts = svc.get_tag_counts()
+
     return templates.TemplateResponse(
         "gossip/feed.html",
         {
@@ -60,167 +40,77 @@ async def gossip_feed(
             "gossip_items": gossip_items,
             "current_tag": tag,
             "tag_counts": tag_counts,
-            "all_tags": [t.value for t in GossipTag]
-        }
+            "all_tags": [t.value for t in GossipTag],
+        },
     )
 
 
-@router.get("/{gossip_id}", response_class=HTMLResponse)
+@router.get("/{gossip_id}")
 async def gossip_detail(
     request: Request,
     gossip_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Single gossip article page"""
-    from app.templates import templates
-    
+    """Redirect to the original article source."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-    
-    gossip = db.query(Gossip).filter(
-        Gossip.id == gossip_id,
-        Gossip.is_active == True
-    ).first()
-    
-    if not gossip:
+
+    svc = GossipService(db)
+    gossip = svc.get_by_id(gossip_id)
+    if not gossip or not gossip.source_url:
         return RedirectResponse(url="/gossip", status_code=303)
-    
-    # Increment view count
+
     gossip.view_count += 1
     db.commit()
-    
-    # Get related content
-    related_content = None
-    if gossip.related_content_id:
-        related_content = db.query(Content).filter(
-            Content.id == gossip.related_content_id
-        ).first()
-    
-    # Get similar gossip (same tag or related content)
-    similar_query = db.query(Gossip).filter(
-        Gossip.is_active == True,
-        Gossip.id != gossip_id
-    )
-    
-    if gossip.related_content_id:
-        similar_query = similar_query.filter(
-            Gossip.related_content_id == gossip.related_content_id
-        )
-    else:
-        similar_query = similar_query.filter(Gossip.tag == gossip.tag)
-    
-    similar_gossip = similar_query.order_by(Gossip.scraped_at.desc()).limit(3).all()
-    
-    return templates.TemplateResponse(
-        "gossip/detail.html",
-        {
-            "request": request,
-            "user": user,
-            "gossip": gossip,
-            "related_content": related_content,
-            "similar_gossip": similar_gossip
-        }
-    )
+
+    return RedirectResponse(url=gossip.source_url, status_code=302)
 
 
 @router.post("/refresh")
 async def refresh_gossip(
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Manually trigger gossip refresh using background task"""
     from app.services.task_manager import get_task_manager, TaskType
-    from app.models import LibraryItem
-    from app.models.library import WatchStatus
-    
+
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-    
+
     task_manager = get_task_manager()
-    
-    # Check if user already has an active gossip task
     existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
     for existing in existing_tasks:
         if existing.type == TaskType.GOSSIP_SCRAPE:
-            logger.info(f"Gossip scrape already running for user {user.id}")
             return RedirectResponse(url="/gossip", status_code=303)
-    
-    # Get user's tracked content for personalized gossip
-    tracked_titles = []
-    library_items = db.query(LibraryItem).filter(
-        LibraryItem.user_id == user.id,
-        LibraryItem.status.in_([WatchStatus.WATCHING, WatchStatus.PLANNED])
-    ).all()
-    
-    for item in library_items:
-        if item.content:
-            tracked_titles.append(item.content.title)
-    
-    # Create and run task
+
+    lib_repo = LibraryRepository(db)
+    tracked_titles = lib_repo.get_tracked_titles(user.id)
+
     task = await task_manager.create_task(
         task_type=TaskType.GOSSIP_SCRAPE,
         user_id=user.id,
-        name="Scanning for Gossip"
+        name="Scanning for Gossip",
     )
-    
+
     async def run_gossip_scrape(task, tm):
-        from app.agents.gossip_agent import get_gossip_agent
-        
+        from app.services.gossip_service import GossipService as GS
+
         await tm.update_task(task.id, progress=10, message=f"Scanning news for {len(tracked_titles)} tracked titles...")
-        
         try:
-            agent = get_gossip_agent()
-            
-            await tm.update_task(task.id, progress=30, message="Searching entertainment news sources...")
-            
-            results = await agent.scrape_gossip(tracked_titles[:10])
-            
-            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
-            
-            return {"scraped": len(results), "tracked_titles": len(tracked_titles)}
-            
+            db_gen = get_db()
+            db_session = next(db_gen)
+            try:
+                svc = GS(db_session)
+                results = await svc.scrape_latest(tracked_titles)
+                await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
+                return {"scraped": len(results)}
+            finally:
+                db_session.close()
         except Exception as e:
             logger.error(f"Gossip scrape error: {e}")
             raise
-    
+
     background_tasks.add_task(task_manager.run_task, task.id, run_gossip_scrape)
-    logger.info(f"Started gossip scrape task {task.id} for user {user.id}")
-    
     return RedirectResponse(url="/gossip", status_code=303)
-
-
-@router.get("/content/{content_id}", response_class=HTMLResponse)
-async def gossip_for_content(
-    request: Request,
-    content_id: int,
-    db: Session = Depends(get_db)
-):
-    """Get all gossip related to a specific content"""
-    from app.templates import templates
-    
-    user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    content = db.query(Content).filter(Content.id == content_id).first()
-    if not content:
-        return RedirectResponse(url="/gossip", status_code=303)
-    
-    gossip_items = db.query(Gossip).filter(
-        Gossip.is_active == True,
-        Gossip.related_content_id == content_id
-    ).order_by(Gossip.scraped_at.desc()).all()
-    
-    return templates.TemplateResponse(
-        "gossip/content.html",
-        {
-            "request": request,
-            "user": user,
-            "content": content,
-            "gossip_items": gossip_items
-        }
-    )
-

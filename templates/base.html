@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}MovieMind{% endblock %}</title>
+    <title>{% block title %}Scene Sentry{% endblock %}</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -112,7 +112,7 @@
                     <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
                         <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
                     </div>
-                    <span class="font-display font-bold text-xl tracking-tight">MovieMind</span>
+                    <span class="font-display font-bold text-xl tracking-tight">Scene Sentry</span>
                 </div>
             </div>
             
@@ -124,16 +124,6 @@
                     <a href="/dashboard" class="sidebar-nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
                         <i data-lucide="home" class="w-5 h-5"></i>
                         <span>Home</span>
-                    </a>
-                    
-                    <a href="/search" class="sidebar-nav-item {% if '/search' in request.url.path %}active{% endif %}">
-                        <i data-lucide="search" class="w-5 h-5"></i>
-                        <span>Search & AI</span>
-                    </a>
-                    
-                    <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' and 'type=' not in (request.url.query or '') %}active{% endif %}">
-                        <i data-lucide="library" class="w-5 h-5"></i>
-                        <span>My Library</span>
                     </a>
                     
                     <a href="/movies" class="sidebar-nav-item {% if '/movies' in request.url.path %}active{% endif %}">
@@ -149,6 +139,16 @@
                     <a href="/gossip" class="sidebar-nav-item {% if '/gossip' in request.url.path %}active{% endif %}">
                         <i data-lucide="flame" class="w-5 h-5"></i>
                         <span>Gossip Feed</span>
+                    </a>
+                    
+                    <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' %}active{% endif %}">
+                        <i data-lucide="library" class="w-5 h-5"></i>
+                        <span>My Library</span>
+                    </a>
+                    
+                    <a href="/reminders" class="sidebar-nav-item {% if '/reminders' in request.url.path %}active{% endif %}">
+                        <i data-lucide="bell" class="w-5 h-5"></i>
+                        <span>Reminders</span>
                     </a>
                 </div>
                 
@@ -251,7 +251,7 @@
                 <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                     <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
                 </div>
-                <span class="font-display font-bold text-lg">MovieMind</span>
+                <span class="font-display font-bold text-lg">Scene Sentry</span>
             </div>
             <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 hover:bg-white/5 rounded-lg transition-colors">
                 <i data-lucide="menu" class="w-6 h-6" x-show="!mobileMenuOpen"></i>
@@ -285,21 +285,13 @@
                 <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                     <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
                 </div>
-                <span class="font-display font-bold text-xl">MovieMind</span>
+                <span class="font-display font-bold text-xl">Scene Sentry</span>
             </div>
             
             <nav class="flex flex-col gap-1 flex-1">
                 <a href="/dashboard" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="home" class="w-5 h-5"></i>
                     <span>Home</span>
-                </a>
-                <a href="/search" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="search" class="w-5 h-5"></i>
-                    <span>Search & AI</span>
-                </a>
-                <a href="/library" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="library" class="w-5 h-5"></i>
-                    <span>My Library</span>
                 </a>
                 <a href="/movies" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="film" class="w-5 h-5"></i>
@@ -312,6 +304,14 @@
                 <a href="/gossip" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="flame" class="w-5 h-5"></i>
                     <span>Gossip Feed</span>
+                </a>
+                <a href="/library" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="library" class="w-5 h-5"></i>
+                    <span>My Library</span>
+                </a>
+                <a href="/reminders" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="bell" class="w-5 h-5"></i>
+                    <span>Reminders</span>
                 </a>
                 
                 {% if user %}
@@ -365,6 +365,10 @@
                 
                 {% block content %}{% endblock %}
             </div>
+            
+            <footer class="mt-16 py-6 border-t border-white/5 text-center">
+                <p class="text-xs text-muted-foreground">Scene Sentry. The Digital Auteur Experience.</p>
+            </footer>
         </main>
     </div>
     

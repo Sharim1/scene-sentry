@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MovieMind Application Entry Point
+Scene Sentry Application Entry Point
 
 Run with: python run.py
 Or: uvicorn app.main:app --reload --host 0.0.0.0 --port 5000

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User, Content, LibraryItem, Recommendation, Gossip
+from app.models import User, Content, LibraryItem, Gossip
 from app.models.library import WatchStatus
 from app.routes.auth import get_current_user
 from app.services.task_manager import get_task_manager, TaskType, TaskStatus
@@ -19,11 +19,9 @@ from app.services.task_manager import get_task_manager, TaskType, TaskStatus
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Store references to running tasks to prevent garbage collection
 _running_tasks: set = set()
 
 
-# Pydantic models for API responses
 class ContentResponse(BaseModel):
     id: int
     title: str
@@ -39,7 +37,7 @@ class ContentResponse(BaseModel):
 class GossipResponse(BaseModel):
     id: int
     title: str
-    summary: Optional[str]
+    preview_text: Optional[str]
     source_name: str
     image_url: Optional[str]
     tag: str
@@ -81,28 +79,26 @@ class RatingUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-# API Routes
+class TaskStartRequest(BaseModel):
+    preferences: Optional[str] = None
+    query: Optional[str] = None
+
+
 @router.get("/search", response_model=SearchResponse)
 async def search_content(
     request: Request,
     q: str = Query(..., min_length=1),
     type: str = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Search content in database"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    query = db.query(Content).filter(
-        Content.title.ilike(f"%{q}%")
-    )
-    
-    if type:
-        query = query.filter(Content.content_type == type)
-    
-    results = query.limit(20).all()
-    
+
+    from app.repositories.content_repo import ContentRepository
+    repo = ContentRepository(db)
+    results = repo.search(q, content_type=type, limit=20)
+
     return SearchResponse(
         query=q,
         results=[
@@ -112,11 +108,11 @@ async def search_content(
                 content_type=c.content_type,
                 poster_url=c.poster_url,
                 rating=c.rating,
-                year=c.release_date[:4] if c.release_date else None
+                year=c.release_date[:4] if c.release_date else None,
             )
             for c in results
         ],
-        count=len(results)
+        count=len(results),
     )
 
 
@@ -124,28 +120,27 @@ async def search_content(
 async def get_library(
     request: Request,
     status: str = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Get user's library items"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    query = db.query(LibraryItem).filter(LibraryItem.user_id == user.id)
-    
+
+    from app.repositories.library_repo import LibraryRepository
+    ws = None
     if status:
         status_map = {
-            'watching': WatchStatus.WATCHING,
-            'planned': WatchStatus.PLANNED,
-            'completed': WatchStatus.COMPLETED,
-            'dropped': WatchStatus.DROPPED,
-            'maybe': WatchStatus.MAYBE
+            "watching": WatchStatus.WATCHING,
+            "planned": WatchStatus.PLANNED,
+            "completed": WatchStatus.COMPLETED,
+            "dropped": WatchStatus.DROPPED,
+            "maybe": WatchStatus.MAYBE,
         }
-        if status in status_map:
-            query = query.filter(LibraryItem.status == status_map[status])
-    
-    items = query.order_by(LibraryItem.updated_at.desc()).all()
-    
+        ws = status_map.get(status)
+
+    repo = LibraryRepository(db)
+    items = repo.get_by_user(user.id, status=ws)
+
     return [
         LibraryItemResponse(
             id=item.id,
@@ -155,11 +150,11 @@ async def get_library(
                 content_type=item.content.content_type,
                 poster_url=item.content.poster_url,
                 rating=item.content.rating,
-                year=item.content.release_date[:4] if item.content.release_date else None
+                year=item.content.release_date[:4] if item.content.release_date else None,
             ),
             status=item.status.value,
             progress=item.progress,
-            rating=item.rating
+            rating=item.rating,
         )
         for item in items
     ]
@@ -167,62 +162,49 @@ async def get_library(
 
 @router.put("/library/{item_id}/status")
 async def update_item_status(
-    request: Request,
-    item_id: int,
-    update: StatusUpdate,
-    db: Session = Depends(get_db)
+    request: Request, item_id: int, update: StatusUpdate, db: Session = Depends(get_db)
 ):
-    """Update library item status via API"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id
-    ).first()
-    
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
+
+    from app.repositories.library_repo import LibraryRepository
     status_map = {
-        'watching': WatchStatus.WATCHING,
-        'planned': WatchStatus.PLANNED,
-        'completed': WatchStatus.COMPLETED,
-        'dropped': WatchStatus.DROPPED,
-        'maybe': WatchStatus.MAYBE
+        "watching": WatchStatus.WATCHING,
+        "planned": WatchStatus.PLANNED,
+        "completed": WatchStatus.COMPLETED,
+        "dropped": WatchStatus.DROPPED,
+        "maybe": WatchStatus.MAYBE,
     }
-    
     if update.status not in status_map:
         raise HTTPException(status_code=400, detail="Invalid status")
-    
-    item.status = status_map[update.status]
-    item.updated_at = datetime.now(timezone.utc)
+
+    repo = LibraryRepository(db)
+    item = repo.update_status(item_id, user.id, status_map[update.status])
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
     db.commit()
-    
+
+    from app.services.ranking_service import RankingService
+    RankingService(db).invalidate_ranks(user.id)
+
     return {"success": True, "status": update.status}
 
 
 @router.put("/library/{item_id}/progress")
 async def update_item_progress(
-    request: Request,
-    item_id: int,
-    update: ProgressUpdate,
-    db: Session = Depends(get_db)
+    request: Request, item_id: int, update: ProgressUpdate, db: Session = Depends(get_db)
 ):
-    """Update library item progress via API"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
+
     item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id
+        LibraryItem.id == item_id, LibraryItem.user_id == user.id
     ).first()
-    
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     item.progress = update.progress
     if update.season is not None:
         item.current_season = update.season
@@ -230,189 +212,132 @@ async def update_item_progress(
         item.current_episode = update.episode
     item.updated_at = datetime.now(timezone.utc)
     db.commit()
-    
     return {"success": True, "progress": update.progress}
 
 
 @router.put("/library/{item_id}/rating")
 async def update_item_rating(
-    request: Request,
-    item_id: int,
-    update: RatingUpdate,
-    db: Session = Depends(get_db)
+    request: Request, item_id: int, update: RatingUpdate, db: Session = Depends(get_db)
 ):
-    """Update library item rating via API"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id
-    ).first()
-    
+
+    from app.repositories.library_repo import LibraryRepository
+    repo = LibraryRepository(db)
+    item = repo.update_rating(item_id, user.id, update.rating, update.notes)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
-    item.rating = min(5, max(1, update.rating))
-    if update.notes:
-        item.notes = update.notes
-    item.updated_at = datetime.now(timezone.utc)
     db.commit()
-    
+
+    from app.services.ranking_service import RankingService
+    RankingService(db).invalidate_ranks(user.id)
+
     return {"success": True, "rating": item.rating}
 
 
 @router.get("/gossip/latest", response_model=List[GossipResponse])
 async def get_latest_gossip(
-    request: Request,
-    limit: int = Query(10, le=50),
-    db: Session = Depends(get_db)
+    request: Request, limit: int = Query(10, le=50), db: Session = Depends(get_db)
 ):
-    """Get latest gossip items"""
-    gossip_items = db.query(Gossip).filter(
-        Gossip.is_active == True
-    ).order_by(Gossip.scraped_at.desc()).limit(limit).all()
-    
+    from app.services.gossip_service import GossipService
+    svc = GossipService(db)
+    items = svc.get_latest(limit=limit)
+
     return [
         GossipResponse(
             id=g.id,
             title=g.title,
-            summary=g.summary,
+            preview_text=g.preview_text,
             source_name=g.source_name,
             image_url=g.image_url,
             tag=g.tag.value if g.tag else "rumor",
-            time_ago=g.time_ago
+            time_ago=g.time_ago,
         )
-        for g in gossip_items
+        for g in items
     ]
 
 
-@router.get("/recommendations", response_model=List[ContentResponse])
-async def get_recommendations(
+@router.get("/rankings")
+async def get_rankings(
     request: Request,
+    content_type: str = Query(None),
     limit: int = Query(10, le=50),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Get user's recommendations"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    recommendations = db.query(Recommendation).filter(
-        Recommendation.user_id == user.id,
-        Recommendation.dismissed == False
-    ).order_by(Recommendation.confidence_score.desc()).limit(limit).all()
-    
+
+    from app.services.ranking_service import RankingService
+    svc = RankingService(db)
+    ranked = svc.get_personalized_content(user.id, content_type=content_type, limit=limit)
+
     return [
-        ContentResponse(
-            id=r.content.id,
-            title=r.content.title,
-            content_type=r.content.content_type,
-            poster_url=r.content.poster_url,
-            rating=r.content.rating,
-            year=r.content.release_date[:4] if r.content.release_date else None
-        )
-        for r in recommendations
+        {
+            "content": ContentResponse(
+                id=content.id,
+                title=content.title,
+                content_type=content.content_type,
+                poster_url=content.poster_url,
+                rating=content.rating,
+                year=content.release_date[:4] if content.release_date else None,
+            ).model_dump(),
+            "rank_score": score,
+            "reasoning": reasoning,
+        }
+        for content, score, reasoning in ranked
     ]
-
-
-@router.delete("/recommendations/{rec_id}")
-async def dismiss_recommendation(
-    request: Request,
-    rec_id: int,
-    db: Session = Depends(get_db)
-):
-    """Dismiss a recommendation via API"""
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    rec = db.query(Recommendation).filter(
-        Recommendation.id == rec_id,
-        Recommendation.user_id == user.id
-    ).first()
-    
-    if not rec:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
-    
-    rec.dismissed = True
-    db.commit()
-    
-    return {"success": True}
 
 
 # ==================== TASK MANAGEMENT ENDPOINTS ====================
 
-class TaskStartRequest(BaseModel):
-    """Request body for starting a task"""
-    preferences: Optional[str] = None
-    query: Optional[str] = None
-
-
 @router.get("/tasks")
 async def get_user_tasks(
-    request: Request,
-    active_only: bool = Query(True),
-    db: Session = Depends(get_db)
+    request: Request, active_only: bool = Query(True), db: Session = Depends(get_db)
 ):
-    """Get all tasks for the current user"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
+
     task_manager = get_task_manager()
     tasks = await task_manager.get_user_tasks(user.id, active_only=active_only)
-    
     return {"tasks": [task.to_dict() for task in tasks]}
 
 
 @router.get("/tasks/stream")
 async def task_stream(request: Request, db: Session = Depends(get_db)):
-    """
-    Server-Sent Events endpoint for real-time task updates.
-    Clients should connect to this endpoint to receive task status updates.
-    """
     user = get_current_user(request, db)
     if not user:
-        # Return empty stream for unauthenticated users
         async def empty_stream():
             yield "data: {}\n\n"
-        return StreamingResponse(
-            empty_stream(),
-            media_type="text/event-stream"
-        )
-    
+        return StreamingResponse(empty_stream(), media_type="text/event-stream")
+
     task_manager = get_task_manager()
     queue = await task_manager.subscribe(user.id)
-    
+
     async def event_generator():
-        """Generate SSE events from task updates"""
         try:
-            # Send initial keepalive
-            yield "data: {\"type\": \"connected\"}\n\n"
-            
+            yield 'data: {"type": "connected"}\n\n'
             while True:
                 try:
-                    # Wait for task updates with timeout
                     task_data = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {__import__('json').dumps(task_data)}\n\n"
                 except asyncio.TimeoutError:
-                    # Send keepalive to prevent connection timeout
-                    yield "data: {\"type\": \"keepalive\"}\n\n"
+                    yield 'data: {"type": "keepalive"}\n\n'
                 except asyncio.CancelledError:
                     break
         finally:
             await task_manager.unsubscribe(user.id, queue)
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        }
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -422,241 +347,143 @@ async def start_task(
     task_type: str,
     background_tasks: BackgroundTasks,
     body: TaskStartRequest = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Start a background task"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    # Map task type string to enum
+
     task_type_map = {
         "movie_discovery": TaskType.MOVIE_DISCOVERY,
         "tv_discovery": TaskType.TV_DISCOVERY,
         "gossip_scrape": TaskType.GOSSIP_SCRAPE,
-        "ai_search": TaskType.AI_SEARCH,
-        "content_recommendation": TaskType.CONTENT_RECOMMENDATION,
+        "content_reranking": TaskType.CONTENT_RERANKING,
     }
-    
+
     if task_type not in task_type_map:
         raise HTTPException(status_code=400, detail=f"Invalid task type: {task_type}")
-    
+
     task_manager = get_task_manager()
-    
-    # Check if user already has an active task of this type
     existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
     for existing in existing_tasks:
         if existing.type == task_type_map[task_type]:
-            return {
-                "success": False,
-                "message": "A task of this type is already running",
-                "task": existing.to_dict()
-            }
-    
-    # Create the task
-    task = await task_manager.create_task(
-        task_type=task_type_map[task_type],
-        user_id=user.id
-    )
-    
-    # Define task functions for each type
-    # Store user preferences in closure variables to avoid db session issues
-    user_preferences = user.preferred_genres or "popular"
+            return {"success": False, "message": "A task of this type is already running", "task": existing.to_dict()}
+
+    task = await task_manager.create_task(task_type=task_type_map[task_type], user_id=user.id)
+
     user_id = user.id
-    
+
     async def run_movie_discovery(task, tm):
-        from app.services.content_scraper import get_content_scraper
-        from app.routes.content import save_scraped_content
-        
-        scraper = get_content_scraper()
-        preferences = body.preferences if body else user_preferences
-        
-        await tm.update_task(task.id, progress=10, message="Fetching movie data...")
-        
+        from app.services.content_discovery import ContentDiscoveryService
+
+        await tm.update_task(task.id, progress=10, message="Fetching movies from providers...")
         try:
-            movies = await scraper.discover_movies(preferences=preferences, limit=30)
-            logger.info(f"Movie discovery found {len(movies)} movies from scraper")
-            
-            if movies:
-                logger.debug(f"First few movies: {[m.get('title') for m in movies[:5]]}")
-            
-            await tm.update_task(task.id, progress=50, message=f"Found {len(movies)} movies, saving...")
-            
-            saved_count = 0
-            new_count = 0
-            for i, movie_data in enumerate(movies):
-                try:
-                    # Get fresh database session for each save
-                    db_gen = get_db()
-                    db_session = next(db_gen)
-                    try:
-                        content = await save_scraped_content(db_session, movie_data, "movie")
-                        if content:
-                            saved_count += 1
-                            if content.created_at and (datetime.now(timezone.utc) - content.created_at.replace(tzinfo=timezone.utc if content.created_at.tzinfo is None else content.created_at.tzinfo)).total_seconds() < 60:
-                                new_count += 1
-                    finally:
-                        db_session.close()
-                except Exception as e:
-                    logger.warning(f"Failed to save movie '{movie_data.get('title', 'unknown')}': {e}")
-                
-                progress = 50 + int((i / len(movies)) * 40)
-                await tm.update_task(task.id, progress=progress, message=f"Saving movies... ({i+1}/{len(movies)})")
-            
-            logger.info(f"Movie discovery complete: {saved_count} processed, {new_count} newly created")
-            return {"saved": saved_count, "total": len(movies), "new": new_count}
-            
-        except Exception as e:
-            logger.error(f"Movie discovery error: {e}")
-            raise
-    
-    async def run_tv_discovery(task, tm):
-        from app.services.content_scraper import get_content_scraper
-        from app.routes.content import save_scraped_content
-        
-        scraper = get_content_scraper()
-        preferences = body.preferences if body else user_preferences
-        
-        await tm.update_task(task.id, progress=10, message="Fetching TV show data...")
-        
-        try:
-            shows = await scraper.discover_tv_shows(preferences=preferences, limit=30)
-            await tm.update_task(task.id, progress=50, message=f"Found {len(shows)} TV shows, saving...")
-            
-            saved_count = 0
-            for i, show_data in enumerate(shows):
-                try:
-                    # Get fresh database session for each save
-                    db_gen = get_db()
-                    db_session = next(db_gen)
-                    try:
-                        content = await save_scraped_content(db_session, show_data, "tv_show")
-                        if content:
-                            saved_count += 1
-                    finally:
-                        db_session.close()
-                except Exception as e:
-                    logger.warning(f"Failed to save TV show: {e}")
-                
-                progress = 50 + int((i / len(shows)) * 40)
-                await tm.update_task(task.id, progress=progress, message=f"Saving TV shows... ({i+1}/{len(shows)})")
-            
-            return {"saved": saved_count, "total": len(shows)}
-            
-        except Exception as e:
-            logger.error(f"TV discovery error: {e}")
-            raise
-    
-    async def run_gossip_scrape(task, tm):
-        from app.agents.gossip_agent import get_gossip_agent
-        from app.models import LibraryItem
-        from app.models.library import WatchStatus
-        
-        await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
-        
-        try:
-            # Get user's tracked titles with proper db session handling
-            tracked_titles = []
             db_gen = get_db()
             db_session = next(db_gen)
             try:
-                items = db_session.query(LibraryItem).filter(
-                    LibraryItem.user_id == user_id,
-                    LibraryItem.status.in_([WatchStatus.WATCHING, WatchStatus.PLANNED])
-                ).all()
-                
-                for item in items:
-                    if item.content:
-                        tracked_titles.append(item.content.title)
+                svc = ContentDiscoveryService(db_session)
+                saved = await svc.discover_and_save_movies(limit=200)
+                await tm.update_task(task.id, progress=90, message=f"Saved {saved} movies")
+                return {"saved": saved}
             finally:
                 db_session.close()
-            
-            await tm.update_task(task.id, progress=30, message=f"Scanning news for {len(tracked_titles)} tracked titles...")
-            
-            agent = get_gossip_agent()
-            results = await agent.scrape_gossip(tracked_titles[:10])
-            
-            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
-            
-            return {"scraped": len(results), "tracked_titles": len(tracked_titles)}
-            
+        except Exception as e:
+            logger.error(f"Movie discovery error: {e}")
+            raise
+
+    async def run_tv_discovery(task, tm):
+        from app.services.content_discovery import ContentDiscoveryService
+
+        await tm.update_task(task.id, progress=10, message="Fetching TV shows from providers...")
+        try:
+            db_gen = get_db()
+            db_session = next(db_gen)
+            try:
+                svc = ContentDiscoveryService(db_session)
+                saved = await svc.discover_and_save_tv_shows(limit=200)
+                await tm.update_task(task.id, progress=90, message=f"Saved {saved} TV shows")
+                return {"saved": saved}
+            finally:
+                db_session.close()
+        except Exception as e:
+            logger.error(f"TV discovery error: {e}")
+            raise
+
+    async def run_gossip_scrape(task, tm):
+        from app.services.gossip_service import GossipService as GS
+        from app.repositories.library_repo import LibraryRepository
+
+        await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
+        try:
+            db_gen = get_db()
+            db_session = next(db_gen)
+            try:
+                tracked = LibraryRepository(db_session).get_all_tracked_titles()
+                await tm.update_task(task.id, progress=30, message=f"Scanning news for {len(tracked)} titles...")
+                svc = GS(db_session)
+                results = await svc.scrape_latest(tracked)
+                await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
+                return {"scraped": len(results)}
+            finally:
+                db_session.close()
         except Exception as e:
             logger.error(f"Gossip scrape error: {e}")
             raise
-    
-    async def run_ai_search(task, tm):
-        from app.agents.graph import discovery_graph
-        
-        query = body.query if body else None
-        
-        await tm.update_task(task.id, progress=10, message="Starting AI search...")
-        
+
+    async def run_content_reranking(task, tm):
+        from app.services.ranking_service import RankingService
+
+        await tm.update_task(task.id, progress=10, message="Starting content re-ranking...")
         try:
-            results = await discovery_graph.run_discovery(user_id, search_query=query)
-            
-            await tm.update_task(task.id, progress=90, message=f"Found {len(results)} recommendations")
-            
-            return {"recommendations": len(results)}
-            
+            db_gen = get_db()
+            db_session = next(db_gen)
+            try:
+                svc = RankingService(db_session)
+                count = await svc.run_reranking(user_id)
+                await tm.update_task(task.id, progress=90, message=f"Ranked {count} items")
+                return {"ranked": count}
+            finally:
+                db_session.close()
         except Exception as e:
-            logger.error(f"AI search error: {e}")
+            logger.error(f"Re-ranking error: {e}")
             raise
-    
-    # Map task types to functions
+
     task_functions = {
         TaskType.MOVIE_DISCOVERY: run_movie_discovery,
         TaskType.TV_DISCOVERY: run_tv_discovery,
         TaskType.GOSSIP_SCRAPE: run_gossip_scrape,
-        TaskType.AI_SEARCH: run_ai_search,
-        TaskType.CONTENT_RECOMMENDATION: run_ai_search,  # Same as AI search for now
+        TaskType.CONTENT_RERANKING: run_content_reranking,
     }
-    
+
     task_func = task_functions.get(task_type_map[task_type])
-    
-    # Run task in background using asyncio.create_task for proper async handling
-    # We add a small delay to ensure the HTTP response is sent BEFORE the task starts
-    # This allows the frontend to connect to SSE and receive updates
+
     async def run_and_cleanup():
         try:
-            # Wait for client to receive response and connect to SSE
             await asyncio.sleep(0.5)
             await task_manager.run_task(task.id, task_func)
         finally:
-            # Remove from running tasks set when done
             _running_tasks.discard(asyncio.current_task())
-    
-    # Store reference to prevent garbage collection
+
     bg_task = asyncio.create_task(run_and_cleanup())
     _running_tasks.add(bg_task)
-    
-    return {
-        "success": True,
-        "message": f"Task started: {task.name}",
-        "task": task.to_dict()
-    }
+
+    return {"success": True, "message": f"Task started: {task.name}", "task": task.to_dict()}
 
 
 @router.post("/tasks/{task_id}/cancel")
 async def cancel_task(
-    request: Request,
-    task_id: str,
-    db: Session = Depends(get_db)
+    request: Request, task_id: str, db: Session = Depends(get_db)
 ):
-    """Cancel a running task"""
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    
+
     task_manager = get_task_manager()
     task = await task_manager.get_task(task_id)
-    
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
     if task.user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to cancel this task")
-    
-    success = await task_manager.cancel_task(task_id)
-    
-    return {"success": success}
+        raise HTTPException(status_code=403, detail="Not authorized")
 
+    success = await task_manager.cancel_task(task_id)
+    return {"success": success}

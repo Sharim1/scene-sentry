@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="AI-powered entertainment discovery and gossip platform",
+    description="AI-powered cinema intelligence platform",
     lifespan=lifespan
 )
 
@@ -74,7 +74,7 @@ app.add_middleware(ClerkAuthMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret or settings.secret_key,
-    session_cookie="moviemind_session",
+    session_cookie="scenesentry_session",
     max_age=86400 * 7,  # 7 days
     same_site="lax",
     https_only=settings.env == "production"
@@ -137,14 +137,14 @@ async def favicon():
 
 
 # Include routers -- content router last since it has a catch-all /{content_id} route
-from app.routes import auth, dashboard, library, gossip, api, search, content
+from app.routes import auth, dashboard, library, gossip, api, content, reminders
 
 app.include_router(auth.router, tags=["auth"])
 app.include_router(dashboard.router, tags=["dashboard"])
 app.include_router(library.router, prefix="/library", tags=["library"])
 app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
 app.include_router(api.router, prefix="/api", tags=["api"])
-app.include_router(search.router, prefix="/search", tags=["search"])
+app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
 app.include_router(content.router, tags=["content"])
 
 

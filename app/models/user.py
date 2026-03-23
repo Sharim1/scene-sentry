@@ -44,7 +44,6 @@ class User(Base):
     
     # Relationships
     library_items = relationship("LibraryItem", back_populates="user", cascade="all, delete-orphan")
-    recommendations = relationship("Recommendation", back_populates="user", cascade="all, delete-orphan")
     reminders = relationship("Reminder", back_populates="user", cascade="all, delete-orphan")
     
     def set_password(self, password: str):

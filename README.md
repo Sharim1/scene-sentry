@@ -1,37 +1,51 @@
-# MovieMind
+# Scene Sentry
 
-AI-powered entertainment discovery and gossip platform. Get personalized recommendations, track your watchlist, and stay updated with the latest entertainment news.
+AI-powered cinema intelligence platform. Get personalized content rankings, track your watchlist, and stay updated with the latest entertainment news.
 
 ## Features
 
-- **AI-Powered Discovery**: LangGraph-orchestrated agents that search and analyze entertainment content
-- **Entertainment Gossip**: Real-time scraping of news from Variety, Deadline, Hollywood Reporter, and more
-- **Smart Recommendations**: Personalized suggestions based on your taste and viewing history
+- **AI-Powered Re-ranking**: LangGraph-orchestrated agent that periodically scores and ranks content based on your taste profile
+- **Entertainment Gossip**: Real-time aggregation of news from Variety, Deadline, Hollywood Reporter, and more — with external read-through links
+- **TMDB/TVDB Integration**: Movies and TV shows sourced from official APIs for clean, legal data
+- **Reminders**: Configure reminders for upcoming shows, movies, and premieres
 - **Library Management**: Track what you're watching, planning to watch, or have completed
-- **Book-to-Screen Tracking**: Follow your favorite book adaptations from announcement to premiere
 
 ## Tech Stack
 
 - **Backend**: FastAPI + Python 3.11+
 - **Database**: SQLAlchemy ORM (SQLite for dev, PostgreSQL for production)
-- **AI**: LangChain + LangGraph + Google Gemini
-- **Search**: Tavily API for web scraping
+- **AI**: LangChain + LangGraph + Google Gemini (content re-ranking agent)
+- **Content APIs**: Multi-provider (TVMaze, TVDB, OMDb, TMDb) with deduplication
+- **Search**: Tavily API for gossip aggregation
 - **Frontend**: Jinja2 templates + Tailwind CSS + Alpine.js
 - **Auth**: Session-based (Clerk integration ready)
+
+## Architecture
+
+```
+app/
+  routes/           # Thin HTTP handlers
+  services/         # Business logic layer
+    providers/      # Content provider abstraction (TVMaze, TVDB, OMDb, TMDb)
+  repositories/     # Database access wrappers
+  models/           # SQLAlchemy models
+  agents/           # LangGraph re-ranking agent
+  middleware/       # Auth middleware
+  tasks/            # Background scheduler
+```
 
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.11 or higher
-- Node.js (optional, for Tailwind CSS compilation)
 
 ### Installation
 
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd MovieMind
+cd scene-sentry
 ```
 
 2. Create a virtual environment:
@@ -62,47 +76,34 @@ uvicorn app.main:app --reload --port 5000
 
 6. Open http://localhost:5000 in your browser
 
-### Required API Keys
+### Content Provider API Keys
 
-- **GEMINI_API_KEY**: Get from [Google AI Studio](https://aistudio.google.com/)
-- **TAVILY_API_KEY**: Get from [Tavily](https://tavily.com/)
-- **TMDB_API_KEY**: Get from [TMDb](https://www.themoviedb.org/settings/api)
+At least one content provider should be enabled for the app to show movies/TV data.
+Enable them via the corresponding feature flags in `.env`:
 
-### Clerk authentication (optional)
+| Key | Source | Get it from | Feature flag |
+|---|---|---|---|
+| `TVMAZE_API_KEY` | TVMaze (TV shows) | [TVMaze Premium](https://www.tvmaze.com/premium) | `TVMAZE_ENABLED=true` (default) |
+| `TVDB_API_KEY` | TheTVDB (movies + TV) | [TheTVDB](https://thetvdb.com/api-information) | `TVDB_ENABLED=true` (default) |
+| `OMDB_API_KEY` | OMDb (movies + TV) | [OMDb](https://www.omdbapi.com/apikey.aspx) | `OMDB_ENABLED=true` (default) |
+| `TMDB_API_KEY` | TMDb (movies + TV) | [TMDb](https://www.themoviedb.org/settings/api) | `TMDB_ENABLED=false` (requires commercial license) |
+
+TVMaze public API works without a key; the key unlocks premium/user endpoints.
+OMDb free tier allows 1,000 requests/day.
+TMDb is disabled by default — a commercial API key is needed for revenue-generating projects.
+
+### Other API Keys
+
+- **TAVILY_API_KEY**: Get from [Tavily](https://tavily.com/) (for gossip scraping)
+- **GEMINI_API_KEY**: Get from [Google AI Studio](https://aistudio.google.com/) (for AI re-ranking)
+
+### Clerk Authentication (optional)
 
 When using [Clerk](https://clerk.com/) for sign-in, set at least:
 
-- **CLERK_SECRET_KEY**: Secret key from the Clerk dashboard (required for backend session JWT verification via `clerk-backend-api`)
-- **CLERK_PUBLISHABLE_KEY**: Publishable key (enables middleware auth when combined with the secret)
-- **CLERK_ISSUER**: Frontend API URL (e.g. `https://your-instance.clerk.accounts.dev`) — required for loading the Clerk JS SDK on login/register pages
-
-Optional: **CLERK_WEBHOOK_SECRET** (`whsec_...`) for user lifecycle webhooks, and **CLERK_AUTHORIZED_PARTIES** (comma-separated origins) to restrict session tokens by `azp`.
-
-## Project Structure
-
-```
-MovieMind/
-├── app/                    # FastAPI application
-│   ├── agents/            # AI agents (discovery, gossip)
-│   ├── models/            # SQLAlchemy models
-│   ├── routes/            # API routes
-│   ├── services/          # Business logic
-│   ├── tasks/             # Background tasks
-│   ├── config.py          # Settings
-│   ├── database.py        # Database setup
-│   └── main.py            # FastAPI app
-├── templates/             # Jinja2 templates
-│   ├── partials/          # Reusable components
-│   ├── auth/              # Auth pages
-│   ├── gossip/            # Gossip pages
-│   └── errors/            # Error pages
-├── static/                # Static files
-│   ├── css/               # Stylesheets
-│   ├── js/                # JavaScript
-│   └── images/            # Images
-├── run.py                 # Entry point
-└── pyproject.toml         # Dependencies
-```
+- **CLERK_SECRET_KEY**: Secret key from the Clerk dashboard
+- **CLERK_PUBLISHABLE_KEY**: Publishable key
+- **CLERK_ISSUER**: Frontend API URL (e.g. `https://your-instance.clerk.accounts.dev`)
 
 ## Development
 
@@ -114,7 +115,7 @@ pytest
 ### Database Migrations
 The app uses SQLAlchemy with automatic table creation. For schema changes, you may need to recreate the database during development:
 ```bash
-rm moviemind.db
+rm scenesentry.db
 python run.py
 ```
 

@@ -1,601 +1,501 @@
 """
-LangGraph-based Entertainment Discovery Agent System
+Content Re-Ranking Agent — LangGraph state machine that scores Content rows
+against a user's taste profile and persists UserContentRank records.
 
-This module implements a sophisticated multi-agent system using LangGraph for 
-intelligent entertainment content discovery and recommendation.
+Nodes
+-----
+1. build_taste_profile  (no LLM)
+2. select_candidates    (no LLM, pure SQL)
+3. batch_score          (Gemini LLM — only AI node)
+4. write_rankings       (no LLM)
+5. validate_quality     (conditional → loops back or finishes)
 """
 
-import os
 import json
 import logging
-from typing import Dict, List, TypedDict, Literal, Optional, Any
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Literal, TypedDict
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from tavily import TavilyClient
+from langchain_core.messages import HumanMessage
 
 from app.database import db_session
-from app.models import User, Content, Recommendation, SearchLog
-from app.services.content_service import TMDbService
+from app.models import User, Content, LibraryItem
+from app.models.ranking import UserContentRank
+from app.repositories.ranking_repo import RankingRepository
 
 logger = logging.getLogger(__name__)
 
+BATCH_SIZE = 20
+CANDIDATE_POOL = 50
+MIN_RANKED_TARGET = 15
+MIN_GENRE_DIVERSITY = 3
+STALE_HOURS = 24
 
-class AgentState(TypedDict):
-    """State object that flows through the LangGraph workflow"""
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+class RankingState(TypedDict):
     user_id: int
-    user_preferences: Dict[str, Any]
-    search_query: Optional[str]
-    search_results: List[Dict[str, Any]]
-    analyzed_content: List[Dict[str, Any]]
-    recommendations: List[Dict[str, Any]]
-    messages: List[BaseMessage]
-    step_count: int
-    max_steps: int
-    error_count: int
-    current_node: str
-    remaining_queries: List[str]
+    taste_profile: Dict[str, Any]
+    candidates: List[Dict[str, Any]]
+    scored_items: List[Dict[str, Any]]
+    iteration: int
+    max_iterations: int
+    total_ranked: int
 
 
-class EntertainmentDiscoveryGraph:
-    """
-    LangGraph-based entertainment discovery system with multiple specialized agents
-    """
-    
+# ---------------------------------------------------------------------------
+# Graph
+# ---------------------------------------------------------------------------
+
+class ContentRankingGraph:
+    """Five-node LangGraph state machine for content re-ranking."""
+
     def __init__(self):
-        self.llm = self._initialize_llm()
-        self.tavily = self._initialize_tavily()
-        self.tmdb = TMDbService()
-        self.memory = MemorySaver()
-        self.graph = self._create_graph()
-        
-    def _initialize_llm(self):
-        """Initialize the Google Gemini LLM"""
+        self._llm = None
+        self._graph = None
+        self._memory = MemorySaver()
+
+    # -- lazy initialisers ---------------------------------------------------
+
+    @property
+    def llm(self) -> ChatGoogleGenerativeAI | None:
+        if self._llm is None:
+            self._llm = self._init_llm()
+        return self._llm
+
+    @property
+    def graph(self):
+        if self._graph is None:
+            self._graph = self._build_graph()
+        return self._graph
+
+    @staticmethod
+    def _init_llm() -> ChatGoogleGenerativeAI | None:
         from app.config import settings
+
         api_key = settings.gemini_api_key
         if not api_key:
-            logger.warning("GEMINI_API_KEY not found, AI features will be limited")
+            logger.warning("GEMINI_API_KEY not set — batch_score will fall back to heuristic scoring")
             return None
-        
+
         return ChatGoogleGenerativeAI(
             model="gemini-2.0-flash-exp",
             google_api_key=api_key,
-            temperature=0.7,
-            max_output_tokens=2048,
+            temperature=0.3,
+            max_output_tokens=4096,
         )
-    
-    def _initialize_tavily(self):
-        """Initialize Tavily search client"""
-        from app.config import settings
-        api_key = settings.tavily_api_key
-        if not api_key:
-            logger.warning("TAVILY_API_KEY not found, search functionality will be limited")
-            return None
-        
-        return TavilyClient(api_key=api_key)
-    
-    def _create_graph(self):
-        """Create the LangGraph workflow"""
-        workflow = StateGraph(AgentState)
-        
-        # Add nodes
-        workflow.add_node("preference_analyzer", self.analyze_preferences)
-        workflow.add_node("search_planner", self.plan_searches)
-        workflow.add_node("content_searcher", self.search_content)
-        workflow.add_node("content_analyzer", self.analyze_content)
-        workflow.add_node("recommendation_generator", self.generate_recommendations)
-        workflow.add_node("quality_validator", self.validate_quality)
-        
-        # Define the workflow path
-        workflow.set_entry_point("preference_analyzer")
-        
-        workflow.add_edge("preference_analyzer", "search_planner")
-        workflow.add_edge("search_planner", "content_searcher")
-        workflow.add_edge("content_searcher", "content_analyzer")
-        workflow.add_edge("content_analyzer", "recommendation_generator")
-        workflow.add_edge("recommendation_generator", "quality_validator")
-        
-        # Add conditional routing from quality_validator
+
+    # -- graph construction --------------------------------------------------
+
+    def _build_graph(self) -> StateGraph:
+        workflow = StateGraph(RankingState)
+
+        workflow.add_node("build_taste_profile", self.build_taste_profile)
+        workflow.add_node("select_candidates", self.select_candidates)
+        workflow.add_node("batch_score", self.batch_score)
+        workflow.add_node("write_rankings", self.write_rankings)
+        workflow.add_node("validate_quality", self.validate_quality)
+
+        workflow.set_entry_point("build_taste_profile")
+        workflow.add_edge("build_taste_profile", "select_candidates")
+        workflow.add_edge("select_candidates", "batch_score")
+        workflow.add_edge("batch_score", "write_rankings")
+        workflow.add_edge("write_rankings", "validate_quality")
+
         workflow.add_conditional_edges(
-            "quality_validator",
-            self.should_continue,
-            {
-                "continue": "search_planner",
-                "finish": END,
-                "retry": "content_analyzer"
-            }
+            "validate_quality",
+            self._should_continue,
+            {"loop": "select_candidates", "finish": END},
         )
-        
-        return workflow.compile(checkpointer=self.memory)
-    
-    async def analyze_preferences(self, state: AgentState) -> AgentState:
-        """Analyze user preferences and viewing history"""
-        logger.info(f"[preference_analyzer] Starting analysis for user {state['user_id']}")
-        
+
+        return workflow.compile(checkpointer=self._memory)
+
+    # -----------------------------------------------------------------------
+    # Node 1 — build_taste_profile (no LLM)
+    # -----------------------------------------------------------------------
+
+    async def build_taste_profile(self, state: RankingState) -> dict:
+        user_id = state["user_id"]
+        logger.info("[build_taste_profile] user=%s", user_id)
+
+        profile: Dict[str, Any] = {
+            "genre_freq": {},
+            "avg_rating_by_genre": {},
+            "content_type_ratio": {},
+            "top_genres": [],
+        }
+
         try:
             with db_session() as db:
-                user = db.query(User).filter(User.id == state["user_id"]).first()
-                if not user:
-                    raise ValueError(f"User {state['user_id']} not found")
-                
-                # Gather user data
-                library_items = user.library_items
-                preferred_genres = []
-                if user.preferred_genres:
-                    try:
-                        preferred_genres = json.loads(user.preferred_genres)
-                    except:
-                        pass
-                
-                # Build context about user's preferences
-                preference_data = {
-                    "explicit_genres": preferred_genres,
-                    "library_size": len(library_items),
-                    "highly_rated": [],
-                    "content_types": [],
-                    "recent_activity": []
+                items = (
+                    db.query(LibraryItem, Content)
+                    .join(Content, LibraryItem.content_id == Content.id)
+                    .filter(LibraryItem.user_id == user_id)
+                    .all()
+                )
+
+                if not items:
+                    logger.warning("[build_taste_profile] user %s has no library items", user_id)
+                    return {"taste_profile": profile}
+
+                genre_counter: Counter = Counter()
+                genre_rating_sums: Dict[str, float] = {}
+                genre_rating_counts: Dict[str, int] = {}
+                type_counter: Counter = Counter()
+
+                for lib_item, content in items:
+                    type_counter[content.content_type] += 1
+
+                    genres = _parse_genres(content.genres)
+                    for g in genres:
+                        genre_counter[g] += 1
+                        if lib_item.rating:
+                            genre_rating_sums[g] = genre_rating_sums.get(g, 0.0) + lib_item.rating
+                            genre_rating_counts[g] = genre_rating_counts.get(g, 0) + 1
+
+                total_items = len(items)
+                profile["genre_freq"] = {g: round(c / total_items, 3) for g, c in genre_counter.most_common()}
+                profile["avg_rating_by_genre"] = {
+                    g: round(genre_rating_sums[g] / genre_rating_counts[g], 2)
+                    for g in genre_rating_sums
                 }
-                
-                # Analyze library for implicit preferences
-                for item in library_items[-10:]:
-                    if item.status.value in ['watching', 'completed', 'planned']:
-                        content = item.content
-                        preference_data["content_types"].append(content.content_type)
-                        
-                        if item.rating and item.rating >= 4:
-                            preference_data["highly_rated"].append({
-                                "title": content.title,
-                                "type": content.content_type,
-                                "genres": content.genres,
-                                "rating": item.rating
-                            })
-                
-                # Use LLM to analyze preferences deeply
-                if self.llm:
-                    analysis_prompt = f"""
-                    Analyze this user's entertainment preferences and create a detailed profile:
-                    
-                    User Data: {json.dumps(preference_data, indent=2)}
-                    
-                    Please provide a comprehensive analysis including:
-                    1. Genre preferences (both explicit and inferred)
-                    2. Content type preferences (movies vs TV vs books)
-                    3. Themes and patterns in their choices
-                    4. Potential new genres they might enjoy
-                    5. Search strategies that would work best for this user
-                    
-                    Respond with a structured analysis that can guide content discovery.
-                    """
-                    
-                    messages = [HumanMessage(content=analysis_prompt)]
-                    response = await self.llm.ainvoke(messages)
-                    analysis = response.content
-                else:
-                    analysis = "AI analysis unavailable"
-                
-                state["user_preferences"] = {
-                    "raw_data": preference_data,
-                    "analysis": analysis,
-                    "explicit_genres": preferred_genres,
-                    "discovery_frequency": user.discovery_frequency or 30
-                }
-                
-                state["step_count"] += 1
-                state["current_node"] = "preference_analyzer"
-                
-                logger.info(f"[preference_analyzer] Analysis completed for user {user.username}")
-                
-        except Exception as e:
-            logger.error(f"[preference_analyzer] Error: {e}")
-            state["error_count"] += 1
-            state["user_preferences"] = {
-                "raw_data": {},
-                "analysis": f"Error analyzing preferences: {str(e)}",
-                "explicit_genres": [],
-                "discovery_frequency": 30
-            }
-        
-        return state
-    
-    async def plan_searches(self, state: AgentState) -> AgentState:
-        """Plan intelligent search queries based on user preferences"""
-        logger.info(f"[search_planner] Planning search strategies")
-        
-        try:
-            # If user provided a search query, use that
-            if state.get("search_query"):
-                state["remaining_queries"] = []
-                state["step_count"] += 1
-                state["current_node"] = "search_planner"
-                return state
-            
-            preferences = state["user_preferences"]
-            
-            if self.llm:
-                planning_prompt = f"""
-                Based on this user's preferences, create 3-5 strategic search queries for discovering new entertainment content:
-                
-                User Analysis: {preferences.get('analysis', 'No analysis available')}
-                Explicit Genres: {preferences.get('explicit_genres', [])}
-                
-                Create search queries that:
-                1. Explore their known preferences more deeply
-                2. Introduce adjacent genres they might enjoy
-                3. Find hidden gems and recent releases
-                4. Include different content types (movies, TV, books)
-                
-                Format as a JSON list of search query strings.
-                Example: ["best sci-fi movies 2024 reviews", "psychological thriller books recommendations"]
-                """
-                
-                messages = [HumanMessage(content=planning_prompt)]
-                response = await self.llm.ainvoke(messages)
-                
-                # Parse the response to extract search queries
-                try:
-                    content = response.content
-                    if "```json" in content:
-                        json_start = content.find("```json") + 7
-                        json_end = content.find("```", json_start)
-                        json_str = content[json_start:json_end].strip()
-                    else:
-                        json_str = content.strip()
-                    
-                    search_queries = json.loads(json_str)
-                    if not isinstance(search_queries, list):
-                        raise ValueError("Response is not a list")
-                        
-                except Exception as e:
-                    logger.warning(f"Could not parse search queries JSON: {e}")
-                    search_queries = self._generate_fallback_queries(preferences)
-            else:
-                search_queries = self._generate_fallback_queries(preferences)
-            
-            state["search_query"] = search_queries[0] if search_queries else "best movies 2024"
-            state["remaining_queries"] = search_queries[1:] if len(search_queries) > 1 else []
-            state["step_count"] += 1
-            state["current_node"] = "search_planner"
-            
-            logger.info(f"[search_planner] Planned {len(search_queries)} search queries")
-            
-        except Exception as e:
-            logger.error(f"[search_planner] Error: {e}")
-            state["error_count"] += 1
-            state["search_query"] = "best movies 2024 reviews"
-            state["remaining_queries"] = []
-        
-        return state
-    
-    def _generate_fallback_queries(self, preferences: dict) -> List[str]:
-        """Generate fallback search queries"""
-        queries = []
-        explicit_genres = preferences.get('explicit_genres', [])
-        
-        for genre in explicit_genres[:3]:
-            queries.append(f"best {genre.lower()} movies 2024")
-            queries.append(f"{genre.lower()} TV shows recommendations")
-        
-        if not queries:
-            queries = [
-                "best movies 2024 reviews",
-                "popular TV shows streaming",
-                "must read books 2024"
-            ]
-        
-        return queries
-    
-    async def search_content(self, state: AgentState) -> AgentState:
-        """Search for content using Tavily"""
-        logger.info(f"[content_searcher] Searching with query: {state['search_query']}")
-        
-        try:
-            if not self.tavily:
-                state["search_results"] = [{
-                    "title": "Tavily Search Unavailable",
-                    "content": "Search functionality is currently limited.",
-                    "url": ""
-                }]
-            else:
-                query = state["search_query"]
-                response = self.tavily.search(query=query, max_results=8, search_depth="advanced")
-                search_results = response.get("results", [])
-                
-                processed_results = []
-                for result in search_results:
-                    processed_results.append({
-                        "title": result.get("title", ""),
-                        "content": result.get("content", ""),
-                        "url": result.get("url", ""),
-                        "query": query
-                    })
-                
-                state["search_results"] = processed_results
-                
-                # Log the search
-                with db_session() as db:
-                    search_log = SearchLog(
-                        user_id=state["user_id"],
-                        query=query,
-                        results_count=len(processed_results),
-                        api_used='tavily'
+                profile["content_type_ratio"] = {t: round(c / total_items, 3) for t, c in type_counter.items()}
+                profile["top_genres"] = [
+                    g for g, _ in sorted(
+                        profile["avg_rating_by_genre"].items(),
+                        key=lambda kv: kv[1],
+                        reverse=True,
                     )
-                    db.add(search_log)
-            
-            state["step_count"] += 1
-            state["current_node"] = "content_searcher"
-            
-            logger.info(f"[content_searcher] Found {len(state['search_results'])} results")
-            
-        except Exception as e:
-            logger.error(f"[content_searcher] Error: {e}")
-            state["error_count"] += 1
-            state["search_results"] = []
-        
-        return state
-    
-    async def analyze_content(self, state: AgentState) -> AgentState:
-        """Analyze search results to extract entertainment content"""
-        logger.info(f"[content_analyzer] Analyzing {len(state['search_results'])} search results")
-        
+                ][:10]
+
+        except Exception:
+            logger.exception("[build_taste_profile] failed for user %s", user_id)
+
+        return {"taste_profile": profile}
+
+    # -----------------------------------------------------------------------
+    # Node 2 — select_candidates (no LLM, pure SQL)
+    # -----------------------------------------------------------------------
+
+    async def select_candidates(self, state: RankingState) -> dict:
+        user_id = state["user_id"]
+        top_genres = state["taste_profile"].get("top_genres", [])
+        logger.info("[select_candidates] user=%s top_genres=%s", user_id, top_genres[:5])
+
+        candidates: List[Dict[str, Any]] = []
+
         try:
-            search_results = state["search_results"]
-            user_preferences = state["user_preferences"]
-            
-            if not self.llm or not search_results:
-                state["analyzed_content"] = []
-                state["step_count"] += 1
-                state["current_node"] = "content_analyzer"
-                return state
-            
-            # Limit analysis to top 5 results for speed
-            limited_results = search_results[:5]
-            
-            batch_prompt = f"""
-            Analyze these search results to extract entertainment content information:
-            
-            User Preferences: {user_preferences.get('explicit_genres', [])}
-            
-            Search Results:
-            {chr(10).join([f"Result {i+1}: {result['title']} - {result['content'][:400]}" for i, result in enumerate(limited_results)])}
-            
-            Extract any movies, TV shows, or books mentioned. For each item found, provide:
-            1. Title
-            2. Content type (movie, tv_show, or book)  
-            3. Genre(s)
-            4. Release year (if available)
-            5. Brief description
-            6. Confidence score (0-1) based on preference matching
-            
-            Format as JSON array of objects. Limit to top 10 most relevant items.
-            """
-            
-            try:
-                messages = [HumanMessage(content=batch_prompt)]
-                response = await self.llm.ainvoke(messages)
-                
-                content = response.content
-                if "```json" in content:
-                    json_start = content.find("```json") + 7
-                    json_end = content.find("```", json_start)
-                    json_str = content[json_start:json_end].strip()
-                else:
-                    json_str = content.strip()
-                
-                analyzed_content = json.loads(json_str)
-                if not isinstance(analyzed_content, list):
-                    analyzed_content = []
-                    
-            except Exception as e:
-                logger.warning(f"Could not analyze results: {e}")
-                analyzed_content = []
-            
-            state["analyzed_content"] = analyzed_content
-            state["step_count"] += 1
-            state["current_node"] = "content_analyzer"
-            
-            logger.info(f"[content_analyzer] Found {len(analyzed_content)} content items")
-            
-        except Exception as e:
-            logger.error(f"[content_analyzer] Error: {e}")
-            state["error_count"] += 1
-            state["analyzed_content"] = []
-        
-        return state
-    
-    async def generate_recommendations(self, state: AgentState) -> AgentState:
-        """Generate final recommendations with reasoning"""
-        logger.info(f"[recommendation_generator] Generating recommendations")
-        
-        try:
-            analyzed_content = state["analyzed_content"]
-            recommendations = []
-            seen_titles = set()
-            
             with db_session() as db:
-                # Get existing recommendations to avoid duplicates
-                existing_recs = db.query(Recommendation).join(Content).filter(
-                    Recommendation.user_id == state["user_id"],
-                    Recommendation.dismissed == False
-                ).all()
-                existing_titles = {rec.content.title.lower().strip() for rec in existing_recs}
-                
-                for item in analyzed_content:
-                    try:
-                        title = item.get('title', '').strip()
-                        content_type = item.get('content_type', '').strip()
-                        
-                        if not title or not content_type:
-                            continue
-                        
-                        title_lower = title.lower().strip()
-                        if title_lower in seen_titles or title_lower in existing_titles:
-                            continue
-                        seen_titles.add(title_lower)
-                        
-                        # Check if content already exists
-                        existing_content = db.query(Content).filter(
-                            Content.title == title,
-                            Content.content_type == content_type
-                        ).first()
-                        
-                        if not existing_content:
-                            content_record = Content(
-                                title=title,
-                                content_type=content_type,
-                                description=item.get('description', ''),
-                                genres=json.dumps(item.get('genres', [])),
-                                release_date=str(item.get('release_year', '')),
-                            )
-                            
-                            # Enhance with TMDb data
-                            if content_type in ['movie', 'tv_show']:
-                                tmdb_data = self.tmdb.search_content(title, content_type)
-                                if tmdb_data:
-                                    content_record.tmdb_id = tmdb_data.get('id')
-                                    content_record.poster_url = tmdb_data.get('poster_path')
-                                    content_record.rating = tmdb_data.get('vote_average')
-                                    if tmdb_data.get('overview'):
-                                        content_record.description = tmdb_data.get('overview')
-                            
-                            db.add(content_record)
-                            db.flush()
-                            content_record_id = content_record.id
-                        else:
-                            content_record_id = existing_content.id
-                        
-                        # Create recommendation
-                        confidence_score = float(item.get('confidence_score', 0.7))
-                        reasoning = item.get('reasoning', 'Recommended based on your preferences')
-                        
-                        recommendation = Recommendation(
-                            user_id=state["user_id"],
-                            content_id=content_record_id,
-                            confidence_score=confidence_score,
-                            reasoning=reasoning,
-                            source_urls=json.dumps([]),
-                            agent_type="discovery"
-                        )
-                        
-                        db.add(recommendation)
-                        recommendations.append({
-                            'content_id': content_record_id,
-                            'title': title,
-                            'content_type': content_type,
-                            'confidence_score': confidence_score,
-                            'reasoning': reasoning
-                        })
-                        
-                    except Exception as e:
-                        logger.warning(f"Could not create recommendation for {item}: {e}")
-                        continue
-            
-            state["recommendations"] = recommendations
-            state["step_count"] += 1
-            state["current_node"] = "recommendation_generator"
-            
-            logger.info(f"[recommendation_generator] Generated {len(recommendations)} recommendations")
-            
-        except Exception as e:
-            logger.error(f"[recommendation_generator] Error: {e}")
-            state["error_count"] += 1
-            state["recommendations"] = []
-        
-        return state
-    
-    async def validate_quality(self, state: AgentState) -> AgentState:
-        """Validate the quality of recommendations"""
-        logger.info(f"[quality_validator] Validating recommendations")
-        
-        try:
-            recommendations = state["recommendations"]
-            
-            quality_score = 0.0
-            if recommendations:
-                total_confidence = sum(r['confidence_score'] for r in recommendations)
-                avg_confidence = total_confidence / len(recommendations)
-                
-                quality_checks = {
-                    "has_recommendations": len(recommendations) > 0,
-                    "sufficient_count": len(recommendations) >= 2,
-                    "good_confidence": avg_confidence >= 0.6,
-                    "diverse_types": len(set(r['content_type'] for r in recommendations)) > 1,
-                    "not_too_many_errors": state["error_count"] < 3
-                }
-                
-                quality_score = sum(quality_checks.values()) / len(quality_checks)
-            
-            state["quality_score"] = quality_score
-            state["step_count"] += 1
-            state["current_node"] = "quality_validator"
-            
-            logger.info(f"[quality_validator] Quality score: {quality_score:.2f}")
-            
-        except Exception as e:
-            logger.error(f"[quality_validator] Error: {e}")
-            state["error_count"] += 1
-            state["quality_score"] = 0.0
-        
-        return state
-    
-    def should_continue(self, state: AgentState) -> Literal["continue", "finish", "retry"]:
-        """Determine whether to continue, finish, or retry"""
-        quality_score = state.get("quality_score", 0.0)
-        step_count = state.get("step_count", 0)
-        max_steps = state.get("max_steps", 8)
-        error_count = state.get("error_count", 0)
-        recommendations_count = len(state.get("recommendations", []))
-        
-        if quality_score >= 0.8 and recommendations_count >= 5:
-            return "finish"
-            
-        if recommendations_count >= 3 and step_count >= 6:
-            return "finish"
-        
-        if step_count >= max_steps or error_count >= 3:
-            return "finish"
-        
-        if recommendations_count >= 2 and quality_score >= 0.6:
-            return "finish"
-        
-        return "finish"
-    
-    async def run_discovery(self, user_id: int, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Run the complete discovery workflow for a user"""
-        
-        initial_state = AgentState(
-            user_id=user_id,
-            user_preferences={},
-            search_query=search_query,
-            search_results=[],
-            analyzed_content=[],
-            recommendations=[],
-            messages=[],
-            step_count=0,
-            max_steps=15,
-            error_count=0,
-            current_node="start",
-            remaining_queries=[]
+                library_ids = (
+                    db.query(LibraryItem.content_id)
+                    .filter(LibraryItem.user_id == user_id)
+                    .subquery()
+                )
+
+                freshness_cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_HOURS)
+                fresh_ranked_ids = (
+                    db.query(UserContentRank.content_id)
+                    .filter(
+                        UserContentRank.user_id == user_id,
+                        UserContentRank.ranked_at >= freshness_cutoff,
+                    )
+                    .subquery()
+                )
+
+                query = (
+                    db.query(Content)
+                    .filter(
+                        ~Content.id.in_(library_ids),
+                        ~Content.id.in_(fresh_ranked_ids),
+                    )
+                )
+
+                if top_genres:
+                    genre_filters = [Content.genres.ilike(f"%{g}%") for g in top_genres[:5]]
+                    from sqlalchemy import or_
+                    query = query.filter(or_(*genre_filters))
+
+                rows = (
+                    query
+                    .order_by(Content.rating.desc().nullslast())
+                    .limit(CANDIDATE_POOL)
+                    .all()
+                )
+
+                for c in rows:
+                    candidates.append({
+                        "content_id": c.id,
+                        "title": c.title,
+                        "content_type": c.content_type,
+                        "genres": _parse_genres(c.genres),
+                        "rating": c.rating,
+                        "description": (c.description or "")[:300],
+                    })
+
+        except Exception:
+            logger.exception("[select_candidates] failed for user %s", user_id)
+
+        logger.info("[select_candidates] found %d candidates", len(candidates))
+        return {"candidates": candidates}
+
+    # -----------------------------------------------------------------------
+    # Node 3 — batch_score (Gemini LLM)
+    # -----------------------------------------------------------------------
+
+    async def batch_score(self, state: RankingState) -> dict:
+        candidates = state["candidates"]
+        taste = state["taste_profile"]
+        logger.info("[batch_score] scoring %d candidates", len(candidates))
+
+        if not candidates:
+            return {"scored_items": []}
+
+        all_scored: List[Dict[str, Any]] = []
+
+        batches = [candidates[i:i + BATCH_SIZE] for i in range(0, len(candidates), BATCH_SIZE)]
+
+        for batch_idx, batch in enumerate(batches):
+            try:
+                scored = await self._score_batch(taste, batch, batch_idx)
+                all_scored.extend(scored)
+            except Exception:
+                logger.exception("[batch_score] batch %d failed — falling back to heuristic", batch_idx)
+                all_scored.extend(self._heuristic_score(taste, batch))
+
+        logger.info("[batch_score] scored %d items total", len(all_scored))
+        return {"scored_items": state.get("scored_items", []) + all_scored}
+
+    async def _score_batch(
+        self,
+        taste: Dict[str, Any],
+        batch: List[Dict[str, Any]],
+        batch_idx: int,
+    ) -> List[Dict[str, Any]]:
+        if self.llm is None:
+            return self._heuristic_score(taste, batch)
+
+        compact_candidates = [
+            {
+                "content_id": c["content_id"],
+                "title": c["title"],
+                "type": c["content_type"],
+                "genres": c["genres"],
+                "rating": c["rating"],
+                "desc": c["description"][:200],
+            }
+            for c in batch
+        ]
+
+        prompt = (
+            "You are a content recommendation scoring engine.\n\n"
+            f"USER TASTE PROFILE:\n{json.dumps(taste, indent=2)}\n\n"
+            f"CANDIDATE CONTENT (batch {batch_idx + 1}):\n{json.dumps(compact_candidates, indent=2)}\n\n"
+            "Score each candidate from 0 to 100 based on how well it matches the "
+            "user's taste profile. Consider genre overlap, content type preference, "
+            "and how well-rated similar genres are.\n\n"
+            "Return ONLY a JSON array — no markdown fences, no extra text:\n"
+            '[{"content_id": <int>, "score": <0-100>, "reasoning": "<1 sentence>"}]'
         )
-        
-        thread_id = f"user_{user_id}_{datetime.now().isoformat()}"
-        config = {"configurable": {"thread_id": thread_id}}
-        
+
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        return _parse_score_response(response.content, batch)
+
+    @staticmethod
+    def _heuristic_score(taste: Dict[str, Any], batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Deterministic fallback when the LLM is unavailable."""
+        avg_by_genre = taste.get("avg_rating_by_genre", {})
+        genre_freq = taste.get("genre_freq", {})
+        results = []
+        for c in batch:
+            genre_score = 0.0
+            matched = 0
+            for g in c.get("genres", []):
+                if g in avg_by_genre:
+                    genre_score += avg_by_genre[g] * genre_freq.get(g, 0.1)
+                    matched += 1
+            if matched:
+                genre_score /= matched
+            base = min((c.get("rating") or 5.0) * 10, 100)
+            score = round(0.5 * base + 0.5 * genre_score * 20, 1)
+            score = max(0, min(100, score))
+            results.append({
+                "content_id": c["content_id"],
+                "score": score,
+                "reasoning": "Heuristic: genre affinity + public rating",
+            })
+        return results
+
+    # -----------------------------------------------------------------------
+    # Node 4 — write_rankings (no LLM)
+    # -----------------------------------------------------------------------
+
+    async def write_rankings(self, state: RankingState) -> dict:
+        scored = state["scored_items"]
+        user_id = state["user_id"]
+        logger.info("[write_rankings] persisting %d scores for user %s", len(scored), user_id)
+
+        written = 0
         try:
-            final_state = await self.graph.ainvoke(initial_state, config=config)
-            
-            logger.info(f"Discovery completed for user {user_id}: "
-                        f"{len(final_state['recommendations'])} recommendations")
-            
-            return final_state["recommendations"]
-            
-        except Exception as e:
-            logger.error(f"Discovery workflow failed for user {user_id}: {e}")
+            with db_session() as db:
+                repo = RankingRepository(db)
+                for item in scored:
+                    try:
+                        repo.upsert_rank(
+                            user_id=user_id,
+                            content_id=item["content_id"],
+                            score=item["score"],
+                            reasoning=item.get("reasoning"),
+                        )
+                        written += 1
+                    except Exception:
+                        logger.warning(
+                            "[write_rankings] skip content_id=%s",
+                            item.get("content_id"),
+                            exc_info=True,
+                        )
+        except Exception:
+            logger.exception("[write_rankings] transaction failed for user %s", user_id)
+
+        new_total = state["total_ranked"] + written
+        logger.info("[write_rankings] wrote %d, cumulative total=%d", written, new_total)
+        return {"total_ranked": new_total, "iteration": state["iteration"] + 1}
+
+    # -----------------------------------------------------------------------
+    # Node 5 — validate_quality
+    # -----------------------------------------------------------------------
+
+    async def validate_quality(self, state: RankingState) -> dict:
+        total = state["total_ranked"]
+        scored = state["scored_items"]
+
+        genres_seen: set = set()
+        for item in scored:
+            for c in state["candidates"]:
+                if c["content_id"] == item["content_id"]:
+                    genres_seen.update(c.get("genres", []))
+                    break
+
+        logger.info(
+            "[validate_quality] iteration=%d total_ranked=%d genre_diversity=%d",
+            state["iteration"],
+            total,
+            len(genres_seen),
+        )
+        return {"taste_profile": {**state["taste_profile"], "_genres_seen": list(genres_seen)}}
+
+    # -- routing decision ----------------------------------------------------
+
+    @staticmethod
+    def _should_continue(state: RankingState) -> Literal["loop", "finish"]:
+        if state["iteration"] >= state["max_iterations"]:
+            return "finish"
+
+        if state["total_ranked"] < MIN_RANKED_TARGET:
+            genres_seen = set(state["taste_profile"].get("_genres_seen", []))
+            if len(genres_seen) < MIN_GENRE_DIVERSITY:
+                return "loop"
+            if state["total_ranked"] < MIN_RANKED_TARGET // 2:
+                return "loop"
+
+        return "finish"
+
+    # -----------------------------------------------------------------------
+    # Public entry point
+    # -----------------------------------------------------------------------
+
+    async def run_ranking(self, user_id: int) -> List[Dict[str, Any]]:
+        """Execute the full ranking pipeline for *user_id* and return scored items."""
+        initial_state: RankingState = {
+            "user_id": user_id,
+            "taste_profile": {},
+            "candidates": [],
+            "scored_items": [],
+            "iteration": 0,
+            "max_iterations": 3,
+            "total_ranked": 0,
+        }
+
+        thread_id = f"rank_{user_id}_{datetime.now(timezone.utc).isoformat()}"
+        config = {"configurable": {"thread_id": thread_id}}
+
+        try:
+            final = await self.graph.ainvoke(initial_state, config=config)
+            logger.info(
+                "Ranking complete for user %s — %d items scored across %d iteration(s)",
+                user_id,
+                final["total_ranked"],
+                final["iteration"],
+            )
+            return final["scored_items"]
+        except Exception:
+            logger.exception("Ranking pipeline failed for user %s", user_id)
             return []
 
 
-# Global instance
-discovery_graph = EntertainmentDiscoveryGraph()
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
+def _parse_genres(raw: str | None) -> List[str]:
+    """Safely extract a list of genre strings from the Content.genres column."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(g).strip() for g in parsed if g]
+    except (json.JSONDecodeError, TypeError):
+        return [g.strip() for g in raw.split(",") if g.strip()]
+    return []
+
+
+def _parse_score_response(
+    text: str,
+    batch: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Best-effort extraction of the JSON array from the LLM response."""
+    cleaned = text.strip()
+    if "```" in cleaned:
+        start = cleaned.find("```")
+        lang_end = cleaned.find("\n", start)
+        end = cleaned.find("```", lang_end + 1)
+        if end != -1:
+            cleaned = cleaned[lang_end + 1:end].strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        logger.warning("[_parse_score_response] JSON decode failed, returning empty")
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    valid_ids = {c["content_id"] for c in batch}
+    results = []
+    for entry in parsed:
+        cid = entry.get("content_id")
+        if cid not in valid_ids:
+            continue
+        score = entry.get("score", 50)
+        score = max(0, min(100, float(score)))
+        results.append({
+            "content_id": cid,
+            "score": score,
+            "reasoning": str(entry.get("reasoning", ""))[:500],
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Module-level lazy singleton
+# ---------------------------------------------------------------------------
+
+ranking_graph = ContentRankingGraph()

@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MovieMind - AI-Powered Entertainment Discovery</title>
+    <title>Scene Sentry - Your Cinematic Intelligence</title>
     
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -21,9 +19,12 @@
                         background: 'hsl(240 10% 4%)',
                         foreground: 'hsl(0 0% 98%)',
                         card: 'hsl(240 10% 7%)',
+                        'card-foreground': 'hsl(0 0% 98%)',
                         primary: { DEFAULT: 'hsl(270 70% 60%)', foreground: 'hsl(0 0% 100%)' },
+                        secondary: { DEFAULT: 'hsl(240 5% 15%)', foreground: 'hsl(0 0% 98%)' },
                         accent: { DEFAULT: 'hsl(320 80% 60%)', foreground: 'hsl(0 0% 100%)' },
                         muted: { DEFAULT: 'hsl(240 5% 15%)', foreground: 'hsl(240 5% 65%)' },
+                        border: 'hsl(240 5% 15%)',
                     },
                     fontFamily: {
                         sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
@@ -35,23 +36,29 @@
     </script>
     
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
-    
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-background text-foreground font-sans antialiased">
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50 px-4 py-4">
+    
+    <!-- Fixed Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 px-4 py-4 bg-background/60 backdrop-blur-xl border-b border-white/5">
         <div class="max-w-6xl mx-auto flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30">
                     <i data-lucide="sparkles" class="w-6 h-6 text-white"></i>
                 </div>
-                <span class="font-display font-bold text-2xl tracking-tight">MovieMind</span>
+                <span class="font-display font-bold text-2xl tracking-tight">Scene Sentry</span>
+            </div>
+            <div class="hidden md:flex items-center gap-8">
+                <a href="#" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Home</a>
+                <a href="#features" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Explore</a>
+                <a href="#gossip" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Gossip</a>
+                <a href="#library" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Library</a>
             </div>
             <div class="flex items-center gap-4">
-                <a href="/login" class="px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Sign in</a>
-                <a href="/register" class="px-6 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40">
+                <a href="/login" class="px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors hidden sm:inline-block">Sign in</a>
+                <a href="/register" class="px-6 py-2.5 bg-gradient-to-r from-primary to-accent hover:opacity-90 text-white rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/30">
                     Get Started
                 </a>
             </div>
@@ -60,117 +67,133 @@
     
     <!-- Hero Section -->
     <section class="min-h-screen flex items-center justify-center px-4 pt-20 relative overflow-hidden">
-        <!-- Background Effects -->
         <div class="absolute inset-0 overflow-hidden">
             <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl"></div>
             <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl"></div>
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-3xl"></div>
         </div>
         
         <div class="max-w-4xl mx-auto text-center relative z-10">
+            <!-- Social Proof Pill -->
             <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8 backdrop-blur-md">
                 <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span class="text-sm text-muted-foreground">AI Agents scanning entertainment news...</span>
+                <span class="text-sm text-muted-foreground">Trusted by 1K+ cinephiles</span>
             </div>
             
             <h1 class="text-5xl md:text-7xl font-display font-bold mb-6 leading-tight">
-                Your Personal
-                <span class="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Entertainment HQ</span>
+                Your Cinematic
+                <span class="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent"> Intelligence</span>
             </h1>
             
             <p class="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-                AI-powered discovery of movies, TV shows, and books. Get the latest gossip, personalized recommendations, and track everything you love in one place.
+                AI-powered discovery engine for movies, TV shows, and entertainment gossip. 
+                Curated recommendations, premiere alerts, and a personal library built for the digital auteur.
             </p>
             
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-                <a href="/register" class="w-full sm:w-auto px-8 py-4 bg-primary hover:bg-primary/90 text-white rounded-full text-lg font-medium transition-all shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 flex items-center justify-center gap-2">
+                <a href="/register" class="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-primary to-accent hover:opacity-90 text-white rounded-full text-lg font-medium transition-all shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 flex items-center justify-center gap-2">
                     <i data-lucide="sparkles" class="w-5 h-5"></i>
-                    Start Discovering
+                    Start Exploring
                 </a>
-                <a href="#features" class="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-foreground rounded-full text-lg font-medium transition-all flex items-center justify-center gap-2">
-                    <i data-lucide="play" class="w-5 h-5"></i>
-                    See How It Works
+                <a href="#features" class="w-full sm:w-auto px-8 py-4 bg-transparent hover:bg-white/5 border border-white/10 text-foreground rounded-full text-lg font-medium transition-all flex items-center justify-center gap-2">
+                    Learn More
+                    <i data-lucide="arrow-down" class="w-5 h-5"></i>
                 </a>
-            </div>
-            
-            <!-- Feature Preview Cards -->
-            <div class="grid md:grid-cols-3 gap-6 text-left">
-                <div class="p-6 rounded-2xl bg-card/50 border border-white/5 backdrop-blur-md hover:border-primary/30 transition-all group">
-                    <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                        <i data-lucide="flame" class="w-6 h-6 text-primary"></i>
-                    </div>
-                    <h3 class="font-display font-bold text-lg mb-2">Entertainment Gossip</h3>
-                    <p class="text-sm text-muted-foreground">AI agents scrape the web 24/7 for the latest news, casting rumors, and production updates.</p>
-                </div>
-                
-                <div class="p-6 rounded-2xl bg-card/50 border border-white/5 backdrop-blur-md hover:border-accent/30 transition-all group">
-                    <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-4 group-hover:bg-accent/20 transition-colors">
-                        <i data-lucide="sparkles" class="w-6 h-6 text-accent"></i>
-                    </div>
-                    <h3 class="font-display font-bold text-lg mb-2">Smart Recommendations</h3>
-                    <p class="text-sm text-muted-foreground">Personalized suggestions based on your taste, mood, and viewing history using advanced AI.</p>
-                </div>
-                
-                <div class="p-6 rounded-2xl bg-card/50 border border-white/5 backdrop-blur-md hover:border-primary/30 transition-all group">
-                    <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                        <i data-lucide="library" class="w-6 h-6 text-primary"></i>
-                    </div>
-                    <h3 class="font-display font-bold text-lg mb-2">Track Everything</h3>
-                    <p class="text-sm text-muted-foreground">Keep track of what you're watching, plan your next binge, and never miss a premiere.</p>
-                </div>
             </div>
         </div>
     </section>
     
-    <!-- Features Section -->
+    <!-- Bento Grid Features -->
     <section id="features" class="py-24 px-4">
         <div class="max-w-6xl mx-auto">
             <div class="text-center mb-16">
-                <h2 class="text-4xl font-display font-bold mb-4">Built for Entertainment Enthusiasts</h2>
+                <span class="text-xs font-bold uppercase tracking-widest text-primary mb-4 block">Features</span>
+                <h2 class="text-4xl font-display font-bold mb-4">Built for the Modern Cinephile</h2>
                 <p class="text-lg text-muted-foreground max-w-2xl mx-auto">
-                    Whether you love book adaptations like Percy Jackson or binge-worthy series like Lockwood & Co, MovieMind has you covered.
+                    Everything you need to stay ahead of the entertainment curve, powered by intelligent automation.
                 </p>
             </div>
             
-            <div class="grid md:grid-cols-2 gap-8">
-                <div class="p-8 rounded-2xl bg-gradient-to-br from-primary/10 to-transparent border border-white/5">
-                    <i data-lucide="bot" class="w-10 h-10 text-primary mb-4"></i>
-                    <h3 class="font-display font-bold text-xl mb-3">AI-Powered Discovery</h3>
-                    <p class="text-muted-foreground mb-4">Our AI agents continuously scan entertainment news sources like Variety, Deadline, and Hollywood Reporter to bring you the freshest updates.</p>
-                    <ul class="space-y-2 text-sm text-muted-foreground">
-                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-primary"></i> LangGraph orchestrated agents</li>
-                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-primary"></i> Real-time web scraping</li>
-                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-primary"></i> Personalized recommendations</li>
-                    </ul>
+            <div class="grid md:grid-cols-4 gap-4 auto-rows-[260px]">
+                <!-- AI Discovery (Large Card - spans 2 cols, 2 rows) -->
+                <div class="md:col-span-2 md:row-span-2 p-8 rounded-2xl bg-gradient-to-br from-primary/15 to-card border border-white/5 relative overflow-hidden group hover:border-primary/30 transition-all duration-300 flex flex-col justify-between">
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl transition-all duration-500 group-hover:bg-primary/20"></div>
+                    <div class="relative z-10">
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/20 border border-primary/30 mb-6">
+                            <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                            <span class="text-xs font-bold text-primary uppercase tracking-wider">Core Engine</span>
+                        </div>
+                        <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 group-hover:bg-primary/20 transition-colors">
+                            <i data-lucide="sparkles" class="w-7 h-7 text-primary"></i>
+                        </div>
+                        <h3 class="font-display font-bold text-2xl mb-3">AI Discovery</h3>
+                        <p class="text-muted-foreground leading-relaxed max-w-sm">
+                            Our AI agents continuously scan entertainment sources, scrape the latest gossip, and build personalized recommendations based on your taste profile.
+                        </p>
+                    </div>
+                    <div class="relative z-10 flex items-center gap-4 text-sm text-muted-foreground">
+                        <span class="flex items-center gap-1"><i data-lucide="check" class="w-4 h-4 text-primary"></i> Real-time scraping</span>
+                        <span class="flex items-center gap-1"><i data-lucide="check" class="w-4 h-4 text-primary"></i> Smart ranking</span>
+                    </div>
                 </div>
                 
-                <div class="p-8 rounded-2xl bg-gradient-to-br from-accent/10 to-transparent border border-white/5">
-                    <i data-lucide="book-open" class="w-10 h-10 text-accent mb-4"></i>
-                    <h3 class="font-display font-bold text-xl mb-3">Book-to-Screen Tracking</h3>
-                    <p class="text-muted-foreground mb-4">Track your favorite book adaptations from announcement to premiere. Never miss when your beloved stories come to screen.</p>
-                    <ul class="space-y-2 text-sm text-muted-foreground">
-                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-accent"></i> Adaptation announcements</li>
-                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-accent"></i> Casting news alerts</li>
-                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-accent"></i> Production updates</li>
-                    </ul>
+                <!-- Personalized Library -->
+                <div id="library" class="md:col-span-1 p-6 rounded-2xl bg-card border border-white/5 group hover:border-accent/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+                    <div>
+                        <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-4 group-hover:bg-accent/20 transition-colors">
+                            <i data-lucide="bookmark" class="w-6 h-6 text-accent"></i>
+                        </div>
+                        <h3 class="font-display font-bold text-lg mb-2">Personal Library</h3>
+                        <p class="text-sm text-muted-foreground">Track watching, planned, completed, and maybe lists all in one place.</p>
+                    </div>
+                </div>
+                
+                <!-- Emerging Signals -->
+                <div id="gossip" class="md:col-span-1 p-6 rounded-2xl bg-card border border-white/5 group hover:border-primary/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+                    <div>
+                        <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                            <i data-lucide="bell" class="w-6 h-6 text-primary"></i>
+                        </div>
+                        <h3 class="font-display font-bold text-lg mb-2">Emerging Signals</h3>
+                        <p class="text-sm text-muted-foreground">Premiere alerts, production updates, and casting news before anyone else.</p>
+                    </div>
+                </div>
+                
+                <!-- Cinematic Precision (Wide Card) -->
+                <div class="md:col-span-2 p-6 rounded-2xl bg-gradient-to-r from-card to-accent/5 border border-white/5 group hover:border-accent/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-40 h-40 bg-accent/10 rounded-full blur-3xl"></div>
+                    <div class="relative z-10">
+                        <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-4 group-hover:bg-accent/20 transition-colors">
+                            <i data-lucide="target" class="w-6 h-6 text-accent"></i>
+                        </div>
+                        <h3 class="font-display font-bold text-xl mb-2">Cinematic Precision</h3>
+                        <p class="text-sm text-muted-foreground max-w-md">
+                            From book-to-screen adaptations to sequel confirmations, our AI-powered gossip engine gives you the full picture with source attribution and confidence scoring.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
     
-    <!-- CTA Section -->
+    <!-- Newsletter / CTA Section -->
     <section class="py-24 px-4">
         <div class="max-w-4xl mx-auto text-center">
             <div class="p-12 rounded-3xl bg-gradient-to-br from-primary/20 to-accent/10 border border-white/5 relative overflow-hidden">
                 <div class="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-3xl"></div>
+                <div class="absolute bottom-0 left-0 w-48 h-48 bg-accent/20 rounded-full blur-3xl"></div>
                 <div class="relative z-10">
-                    <h2 class="text-4xl font-display font-bold mb-4">Ready to discover your next obsession?</h2>
+                    <h2 class="text-4xl font-display font-bold mb-4">Ready to see behind the curtain?</h2>
                     <p class="text-lg text-muted-foreground mb-8 max-w-xl mx-auto">
-                        Join thousands of entertainment enthusiasts who use MovieMind to stay ahead of the curve.
+                        Join the cinephiles who trust Scene Sentry for their entertainment intelligence.
                     </p>
-                    <a href="/register" class="inline-flex items-center gap-2 px-8 py-4 bg-primary hover:bg-primary/90 text-white rounded-full text-lg font-medium transition-all shadow-lg shadow-primary/30">
-                        <i data-lucide="sparkles" class="w-5 h-5"></i>
-                        Get Started for Free
-                    </a>
+                    <form class="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto" onsubmit="event.preventDefault(); window.location.href='/register';">
+                        <input type="email" placeholder="you@example.com" class="w-full h-12 px-5 bg-card/50 border border-white/10 rounded-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all">
+                        <button type="submit" class="w-full sm:w-auto px-8 h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 text-white rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/30 whitespace-nowrap flex items-center justify-center gap-2">
+                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                            Get Access
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -183,10 +206,15 @@
                 <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                     <i data-lucide="sparkles" class="w-4 h-4 text-white"></i>
                 </div>
-                <span class="font-display font-bold">MovieMind</span>
+                <span class="font-display font-bold">Scene Sentry</span>
+            </div>
+            <div class="flex items-center gap-6 text-sm text-muted-foreground">
+                <a href="#" class="hover:text-foreground transition-colors">Privacy</a>
+                <a href="#" class="hover:text-foreground transition-colors">Terms</a>
+                <a href="#" class="hover:text-foreground transition-colors">Contact</a>
             </div>
             <p class="text-sm text-muted-foreground">
-                © 2024 MovieMind. AI-powered entertainment discovery.
+                &copy; 2026 Scene Sentry. The Digital Auteur Experience.
             </p>
         </div>
     </footer>

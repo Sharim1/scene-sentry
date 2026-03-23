@@ -29,8 +29,7 @@ class TaskType(str, Enum):
     MOVIE_DISCOVERY = "movie_discovery"
     TV_DISCOVERY = "tv_discovery"
     GOSSIP_SCRAPE = "gossip_scrape"
-    AI_SEARCH = "ai_search"
-    CONTENT_RECOMMENDATION = "content_recommendation"
+    CONTENT_RERANKING = "content_reranking"
 
 
 def _utc_now():
@@ -114,8 +113,7 @@ class TaskManager:
             TaskType.MOVIE_DISCOVERY: "Discovering Movies",
             TaskType.TV_DISCOVERY: "Discovering TV Shows",
             TaskType.GOSSIP_SCRAPE: "Scanning for Gossip",
-            TaskType.AI_SEARCH: "AI Search",
-            TaskType.CONTENT_RECOMMENDATION: "Generating Recommendations",
+            TaskType.CONTENT_RERANKING: "Re-ranking Content",
         }
         
         task = Task(

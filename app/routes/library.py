@@ -156,7 +156,10 @@ async def update_library_item(
                 db.add(reminder)
             
             db.commit()
-    
+
+            from app.services.ranking_service import RankingService
+            RankingService(db).invalidate_ranks(user.id)
+
     return RedirectResponse(url="/library", status_code=303)
 
 
@@ -210,12 +213,15 @@ async def rate_item(
     ).first()
     
     if library_item:
-        library_item.rating = min(5, max(1, rating))  # Clamp to 1-5
+        library_item.rating = min(5, max(1, rating))
         if notes:
             library_item.notes = notes
         library_item.updated_at = datetime.now(timezone.utc)
         db.commit()
-    
+
+        from app.services.ranking_service import RankingService
+        RankingService(db).invalidate_ranks(user.id)
+
     return RedirectResponse(url="/library", status_code=303)
 
 

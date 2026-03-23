@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}TV Shows - MovieMind{% endblock %}
+{% block title %}TV Shows - Scene Sentry{% endblock %}
 
 {% block content %}
 <!-- Header -->
@@ -10,7 +10,7 @@
             <i data-lucide="tv" class="w-8 h-8 text-primary"></i>
             TV Shows
         </h1>
-        <p class="text-muted-foreground">Discover and track TV series</p>
+        <p class="text-muted-foreground">Discover and track TV series · <span class="text-primary font-medium">{{ total_count }}</span> in catalog</p>
     </div>
     <div class="flex items-center gap-2">
         <button type="button" onclick="cleanupArticles(this)" class="btn btn-ghost text-muted-foreground text-xs">
@@ -205,6 +205,30 @@
     </div>
     {% endfor %}
 </div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="flex items-center justify-center gap-2 mt-10">
+    {% if page > 1 %}
+    <a href="/tv-shows?page={{ page - 1 }}{% if current_filter != 'all' %}&filter={{ current_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="h-10 px-4 bg-card border border-white/10 rounded-lg text-sm font-medium hover:bg-white/10 flex items-center gap-2 transition-colors">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i> Previous
+    </a>
+    {% endif %}
+
+    <span class="h-10 px-4 bg-primary/20 border border-primary/30 rounded-lg text-sm font-medium flex items-center gap-1">
+        Page {{ page }} of {{ total_pages }}
+    </span>
+
+    {% if page < total_pages %}
+    <a href="/tv-shows?page={{ page + 1 }}{% if current_filter != 'all' %}&filter={{ current_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="h-10 px-4 bg-card border border-white/10 rounded-lg text-sm font-medium hover:bg-white/10 flex items-center gap-2 transition-colors">
+        Next <i data-lucide="chevron-right" class="w-4 h-4"></i>
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
 {% else %}
 <div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
     <i data-lucide="tv" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
@@ -217,9 +241,9 @@
             <i data-lucide="sparkles" class="w-4 h-4"></i>
             Discover Shows
         </button>
-        <a href="/search" class="btn btn-outline">
+        <a href="/tv-shows" class="btn btn-outline">
             <i data-lucide="search" class="w-4 h-4"></i>
-            Search
+            Browse All
         </a>
     </div>
 </div>

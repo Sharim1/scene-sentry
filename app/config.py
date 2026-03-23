@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # App
-    app_name: str = "MovieMind"
+    app_name: str = "Scene Sentry"
     app_version: str = "2.0.0"
     debug: bool = True
     env: str = "development"  # development, staging, production
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     session_secret: Optional[str] = None
     
     # Database
-    database_url: str = "sqlite:///./moviemind.db"
+    database_url: str = "sqlite:///./scenesentry.db"
     
     # Clerk Auth
     clerk_secret_key: Optional[str] = None
@@ -33,12 +33,22 @@ class Settings(BaseSettings):
     # AI APIs
     gemini_api_key: Optional[str] = None
     tavily_api_key: Optional[str] = None
+
+    # Content provider API keys
     tmdb_api_key: Optional[str] = None
-    brightdata_api_key: Optional[str] = None
+    tvdb_api_key: Optional[str] = None
+    omdb_api_key: Optional[str] = None
+    tvmaze_api_key: Optional[str] = None   # Optional; public API works without it
+
+    # Content provider feature flags (provider is active only when enabled AND key is present)
+    tmdb_enabled: bool = False   # Requires commercial license for revenue projects
+    tvdb_enabled: bool = True
+    omdb_enabled: bool = True
+    tvmaze_enabled: bool = True
     
     # Background Tasks
-    discovery_interval_minutes: int = 30
     gossip_scrape_interval_minutes: int = 30
+    reranking_interval_minutes: int = 120
     
     # Rate limiting
     rate_limit_auth: str = "5/minute"  # For login/register endpoints

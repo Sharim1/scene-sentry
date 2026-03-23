@@ -32,16 +32,20 @@ class Reminder(Base):
     
     # Foreign keys
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    library_item_id = Column(Integer, ForeignKey("library_items.id"), nullable=False, index=True)
+    library_item_id = Column(Integer, ForeignKey("library_items.id"), nullable=True, index=True)
+    content_id = Column(Integer, ForeignKey("content.id"), nullable=True, index=True)
     
     # Reminder details
     reminder_type = Column(Enum(ReminderType), nullable=False)
     scheduled_time = Column(DateTime, nullable=False, index=True)
     message = Column(Text, nullable=True)
+    platform = Column(String(50), nullable=True)
+    quality = Column(String(50), nullable=True)
     
     # Status
     sent = Column(Boolean, default=False)
     dismissed = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)
     
     # Timestamps (timezone-aware)
     created_at = Column(DateTime(timezone=True), default=utc_now)
@@ -50,6 +54,7 @@ class Reminder(Base):
     # Relationships
     user = relationship("User", back_populates="reminders")
     library_item = relationship("LibraryItem", back_populates="reminders")
+    content = relationship("Content")
     
     def __repr__(self):
         return f"<Reminder {self.reminder_type} at {self.scheduled_time}>"
