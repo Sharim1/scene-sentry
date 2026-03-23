@@ -68,6 +68,16 @@ uvicorn app.main:app --reload --port 5000
 - **TAVILY_API_KEY**: Get from [Tavily](https://tavily.com/)
 - **TMDB_API_KEY**: Get from [TMDb](https://www.themoviedb.org/settings/api)
 
+### Clerk authentication (optional)
+
+When using [Clerk](https://clerk.com/) for sign-in, set at least:
+
+- **CLERK_SECRET_KEY**: Secret key from the Clerk dashboard (required for backend session JWT verification via `clerk-backend-api`)
+- **CLERK_PUBLISHABLE_KEY**: Publishable key (enables middleware auth when combined with the secret)
+- **CLERK_ISSUER**: Frontend API URL (e.g. `https://your-instance.clerk.accounts.dev`) — required for loading the Clerk JS SDK on login/register pages
+
+Optional: **CLERK_WEBHOOK_SECRET** (`whsec_...`) for user lifecycle webhooks, and **CLERK_AUTHORIZED_PARTIES** (comma-separated origins) to restrict session tokens by `azp`.
+
 ## Project Structure
 
 ```

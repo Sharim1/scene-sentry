@@ -76,14 +76,13 @@ def require_auth(request: Request, db: Session = Depends(get_db)) -> User:
 @router.get("/login", response_class=HTMLResponse, name="login")
 async def login_page(request: Request):
     """Login page - shows Clerk SignIn or traditional form"""
-    # Check if already logged in
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
     if clerk_user_id or session_user_id:
         return RedirectResponse(url="/dashboard", status_code=303)
     
-    # Check if Clerk is enabled
-    clerk_enabled = settings.is_clerk_configured
+    fallback = request.query_params.get("fallback") == "1"
+    clerk_enabled = settings.is_clerk_configured and not fallback
     
     return templates.TemplateResponse(
         "auth/login.html",
@@ -139,13 +138,13 @@ async def login(
 @router.get("/register", response_class=HTMLResponse, name="register")
 async def register_page(request: Request):
     """Registration page - shows Clerk SignUp or traditional form"""
-    # Check if already logged in
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
     if clerk_user_id or session_user_id:
         return RedirectResponse(url="/dashboard", status_code=303)
     
-    clerk_enabled = settings.is_clerk_configured
+    fallback = request.query_params.get("fallback") == "1"
+    clerk_enabled = settings.is_clerk_configured and not fallback
     
     return templates.TemplateResponse(
         "auth/register.html",

@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -84,24 +84,11 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 
-# Include routers
-from app.routes import auth, dashboard, library, gossip, api, search, content
-
-app.include_router(auth.router, tags=["auth"])
-app.include_router(dashboard.router, tags=["dashboard"])
-app.include_router(library.router, prefix="/library", tags=["library"])
-app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
-app.include_router(api.router, prefix="/api", tags=["api"])
-app.include_router(search.router, prefix="/search", tags=["search"])
-app.include_router(content.router, tags=["content"])
-
-
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Landing page"""
     from app.database import get_db
     
-    # Get user from middleware-set user_id (avoids detached session issues)
     user = None
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
@@ -116,10 +103,7 @@ async def index(request: Request):
             db.close()
     
     if user:
-        return templates.TemplateResponse(
-            "dashboard.html",
-            {"request": request, "user": user}
-        )
+        return RedirectResponse(url="/dashboard", status_code=303)
     return templates.TemplateResponse(
         "index.html",
         {"request": request}
@@ -141,18 +125,27 @@ async def favicon():
     """Serve favicon or return 204 No Content if not available"""
     from fastapi.responses import FileResponse, Response
     
-    # Check if favicon exists in static folder
     favicon_path = static_path / "favicon.ico"
     if favicon_path.exists():
         return FileResponse(favicon_path)
     
-    # Check for PNG favicon
     favicon_png_path = static_path / "images" / "favicon.png"
     if favicon_png_path.exists():
         return FileResponse(favicon_png_path, media_type="image/png")
     
-    # Return 204 No Content to prevent repeated requests
     return Response(status_code=204)
+
+
+# Include routers -- content router last since it has a catch-all /{content_id} route
+from app.routes import auth, dashboard, library, gossip, api, search, content
+
+app.include_router(auth.router, tags=["auth"])
+app.include_router(dashboard.router, tags=["dashboard"])
+app.include_router(library.router, prefix="/library", tags=["library"])
+app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
+app.include_router(api.router, prefix="/api", tags=["api"])
+app.include_router(search.router, prefix="/search", tags=["search"])
+app.include_router(content.router, tags=["content"])
 
 
 # Error handlers

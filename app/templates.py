@@ -123,3 +123,7 @@ templates.env.globals["flash"] = flash
 # Clerk configuration for frontend
 templates.env.globals["clerk_publishable_key"] = settings.clerk_publishable_key or ""
 templates.env.globals["clerk_enabled"] = bool(settings.clerk_publishable_key and settings.clerk_issuer)
+_clerk_fapi_url = ""
+if settings.clerk_issuer:
+    _clerk_fapi_url = settings.clerk_issuer.replace("https://", "").replace("http://", "")
+templates.env.globals["clerk_fapi_url"] = _clerk_fapi_url

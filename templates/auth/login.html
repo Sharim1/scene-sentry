@@ -37,12 +37,12 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     
     {% if clerk_enabled %}
-    <!-- Clerk JavaScript SDK -->
+    <!-- Clerk JavaScript SDK (loaded from Clerk's CDN for full UI component support) -->
     <script
         async
         crossorigin="anonymous"
         data-clerk-publishable-key="{{ clerk_publishable_key }}"
-        src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+        src="https://{{ clerk_fapi_url }}/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
         type="text/javascript"
     ></script>
     {% endif %}
@@ -114,12 +114,14 @@
                         });
                     } catch (error) {
                         console.error('Clerk initialization error:', error);
-                        // Show fallback message
+                        const loadingDiv = document.getElementById('clerk-loading');
+                        if (loadingDiv) loadingDiv.style.display = 'none';
                         const signInDiv = document.getElementById('clerk-sign-in');
                         signInDiv.innerHTML = `
-                            <div class="text-center py-8">
-                                <p class="text-destructive mb-4">Authentication service unavailable</p>
-                                <a href="/login?fallback=1" class="text-primary hover:underline">Use traditional login</a>
+                            <div class="text-center py-8 space-y-3">
+                                <p class="text-destructive font-medium">Authentication service unavailable</p>
+                                <p class="text-xs text-muted-foreground">${error.message || 'Could not connect to Clerk'}</p>
+                                <a href="/login?fallback=1" class="inline-block mt-2 px-4 py-2 bg-primary/20 text-primary rounded-lg text-sm hover:bg-primary/30 transition-colors">Use traditional login</a>
                             </div>
                         `;
                     }

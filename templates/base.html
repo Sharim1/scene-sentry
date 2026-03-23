@@ -67,14 +67,36 @@
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
     
     {% if clerk_enabled %}
-    <!-- Clerk JavaScript SDK -->
+    <!-- Clerk JavaScript SDK (loaded from Clerk's CDN for full UI component support) -->
     <script
         async
         crossorigin="anonymous"
         data-clerk-publishable-key="{{ clerk_publishable_key }}"
-        src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+        src="https://{{ clerk_fapi_url }}/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
         type="text/javascript"
+        onload="window.__clerkScriptLoaded = true; window.dispatchEvent(new Event('clerk-script-loaded'));"
     ></script>
+    <script>
+        window.__clerkReady = new Promise(function(resolve) {
+            function initClerk() {
+                if (typeof Clerk !== 'undefined') {
+                    Clerk.load().then(function() {
+                        resolve(Clerk);
+                    }).catch(function(err) {
+                        console.warn('Clerk.load() failed:', err);
+                        resolve(null);
+                    });
+                } else if (!window.__clerkScriptLoaded) {
+                    window.addEventListener('clerk-script-loaded', initClerk, { once: true });
+                }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initClerk);
+            } else {
+                initClerk();
+            }
+        });
+    </script>
     {% endif %}
     
     {% block head %}{% endblock %}
@@ -147,12 +169,12 @@
                     <!-- Clerk UserButton -->
                     <div id="clerk-user-button" class="flex items-center justify-center"></div>
                     <script>
-                        document.addEventListener('DOMContentLoaded', async function() {
-                            if (typeof Clerk !== 'undefined') {
-                                await Clerk.load();
-                                const userButtonDiv = document.getElementById('clerk-user-button');
-                                if (userButtonDiv && Clerk.user) {
-                                    Clerk.mountUserButton(userButtonDiv, {
+                        if (window.__clerkReady) {
+                            window.__clerkReady.then(function(clerk) {
+                                if (!clerk) return;
+                                var userButtonDiv = document.getElementById('clerk-user-button');
+                                if (userButtonDiv && clerk.user) {
+                                    clerk.mountUserButton(userButtonDiv, {
                                         appearance: {
                                             baseTheme: 'dark',
                                             variables: {
@@ -162,8 +184,8 @@
                                         afterSignOutUrl: '/',
                                     });
                                 }
-                            }
-                        });
+                            });
+                        }
                     </script>
                     {% else %}
                     <!-- Traditional User Profile with Dropdown -->

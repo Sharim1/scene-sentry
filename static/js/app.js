@@ -3,6 +3,26 @@
  * Handles interactivity, form submissions, and UI enhancements
  */
 
+/**
+ * Attempt to refresh the Clerk session token.
+ * Returns true if a fresh token was obtained, false otherwise.
+ */
+async function refreshClerkToken() {
+    try {
+        if (window.__clerkReady) {
+            const clerk = await window.__clerkReady;
+            if (clerk && clerk.session) {
+                await clerk.session.getToken({ skipCache: true });
+                return true;
+            }
+        }
+    } catch (e) {
+        console.warn('Clerk token refresh failed:', e);
+    }
+    return false;
+}
+window.refreshClerkToken = refreshClerkToken;
+
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Lucide icons - with guard to prevent double initialization
     if (typeof lucide !== 'undefined' && !window.lucideInitialized) {
@@ -74,14 +94,18 @@ function taskNotifications() {
         },
         
         async checkForActiveTasks() {
-            // Do a single poll to check for any active/recently completed tasks
             try {
-                const response = await fetch('/api/tasks?active_only=true');
+                let response = await fetch('/api/tasks?active_only=true');
+                if (response.status === 401) {
+                    const refreshed = await refreshClerkToken();
+                    if (refreshed) {
+                        response = await fetch('/api/tasks?active_only=true');
+                    }
+                }
                 if (response.ok) {
                     const data = await response.json();
                     if (data.tasks && data.tasks.length > 0) {
                         data.tasks.forEach(task => this.handleTaskUpdate(task));
-                        // Connect if we found tasks
                         if (!this.sseConnected) {
                             this.connectSSE();
                         }
@@ -131,12 +155,12 @@ function taskNotifications() {
                         this.eventSource.close();
                         this.eventSource = null;
                     }
-                    // Retry with exponential backoff if there are still active tasks
                     const activeTasks = this.tasks.filter(t => t.status === 'running' || t.status === 'pending');
                     if (activeTasks.length > 0) {
                         const delay = Math.min(1000 * Math.pow(2, this.connectionAttempts), 30000);
-                        setTimeout(() => this.connectSSE(), delay);
-                        // Start polling as backup
+                        refreshClerkToken().finally(() => {
+                            setTimeout(() => this.connectSSE(), delay);
+                        });
                         this.startPolling();
                     }
                 };
@@ -154,21 +178,30 @@ function taskNotifications() {
             let pollCount = 0;
             const maxPolls = 30; // Stop after 30 seconds of polling with no active tasks
             
+            let refreshAttempted = false;
             const pollTasks = async () => {
                 try {
-                    // Include recently completed tasks in polling
-                    const response = await fetch('/api/tasks?active_only=true');
+                    let response = await fetch('/api/tasks?active_only=true');
+                    if (response.status === 401 && !refreshAttempted) {
+                        refreshAttempted = true;
+                        const refreshed = await refreshClerkToken();
+                        if (refreshed) {
+                            response = await fetch('/api/tasks?active_only=true');
+                            if (response.ok) refreshAttempted = false;
+                        }
+                    }
                     if (response.ok) {
+                        refreshAttempted = false;
                         const data = await response.json();
                         if (data.tasks && data.tasks.length > 0) {
-                            pollCount = 0; // Reset counter when we have tasks
+                            pollCount = 0;
                             data.tasks.forEach(task => this.handleTaskUpdate(task));
                         } else {
                             pollCount++;
                         }
                     } else if (response.status === 401) {
-                        // User logged out, stop polling
                         this.stopPolling();
+                        showToast('Session expired. Please sign in again.', 'warning');
                         return;
                     }
                 } catch (e) {

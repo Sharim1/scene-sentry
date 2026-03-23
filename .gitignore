@@ -6,3 +6,4 @@ attached_assets/
 *.db
 .DS_Store
 .cursor/
+ARCHITECTURE.md

@@ -4,84 +4,28 @@ Clerk Authentication Middleware for FastAPI
 This middleware validates Clerk JWT tokens and syncs user data with the local database.
 It handles the Clerk handshake flow for session token refresh.
 
-Security features:
-- JWT signature verification using JWKS
-- Issuer (iss) and expiration (exp) claim validation
-- Not-before (nbf) claim validation
-- Authorized party (azp) claim verification
-- Thread-safe JWKS caching with async locks
+Session tokens are verified with the official clerk-backend-api SDK (JWKS from Clerk's API).
 """
 import logging
-import httpx
-import asyncio
 import base64
 import json
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
-from dataclasses import dataclass, field
 
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from jose import jwt, JWTError, jwk
-from jose.exceptions import JWKError
+
+from clerk_backend_api.security import verify_token_async, VerifyTokenOptions, TokenVerificationError
+from clerk_backend_api.security.types import TokenVerificationErrorReason
 
 from app.config import settings
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
-
-# JWKS Cache Configuration
-JWKS_CACHE_DURATION_SECONDS = 3600  # 1 hour
-
-
-@dataclass
-class JWKSCache:
-    """Thread-safe cache for JWKS (JSON Web Key Set)"""
-    data: Optional[Dict[str, Any]] = None
-    timestamp: Optional[datetime] = None
-    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    
-    async def get_or_fetch(self, issuer: str) -> Dict[str, Any]:
-        """Get cached JWKS or fetch from Clerk if expired/missing"""
-        async with self._lock:
-            # Check if cache is valid
-            if self.data and self.timestamp:
-                age = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
-                if age < JWKS_CACHE_DURATION_SECONDS:
-                    return self.data
-            
-            # Fetch fresh JWKS
-            try:
-                jwks_url = f"{issuer}/.well-known/jwks.json"
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(jwks_url, timeout=10.0)
-                    response.raise_for_status()
-                    self.data = response.json()
-                    self.timestamp = datetime.now(timezone.utc)
-                    logger.info("Successfully fetched and cached Clerk JWKS")
-                    return self.data
-            except httpx.TimeoutException:
-                logger.error("Timeout fetching Clerk JWKS")
-                return self.data or {}
-            except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error fetching Clerk JWKS: {e.response.status_code}")
-                return self.data or {}
-            except Exception as e:
-                logger.error(f"Failed to fetch Clerk JWKS: {e}")
-                return self.data or {}
-    
-    def invalidate(self):
-        """Invalidate the cache (useful for key rotation)"""
-        self.data = None
-        self.timestamp = None
-
-
-# Global JWKS cache instance
-_jwks_cache = JWKSCache()
 
 
 def decode_handshake_jwt(handshake_token: str) -> Optional[List[str]]:
@@ -144,96 +88,38 @@ def parse_set_cookie_header(cookie_str: str) -> Dict[str, Any]:
     return result
 
 
-def get_signing_key(jwks: Dict[str, Any], token: str) -> Optional[Any]:
-    """Get the signing key from JWKS that matches the token's kid"""
-    try:
-        unverified_header = jwt.get_unverified_header(token)
-        kid = unverified_header.get("kid")
-        
-        if not kid:
-            logger.warning("Token missing 'kid' header")
-            return None
-        
-        for key in jwks.get("keys", []):
-            if key.get("kid") == kid:
-                return jwk.construct(key)
-        
-        logger.warning(f"No matching key found for kid: {kid}")
-        return None
-    except JWTError as e:
-        logger.error(f"Error parsing token header: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error getting signing key: {e}")
-        return None
+def _log_token_verification_failure(reason: TokenVerificationErrorReason) -> None:
+    if reason == TokenVerificationErrorReason.TOKEN_EXPIRED:
+        logger.debug("Clerk token has expired")
+    elif reason == TokenVerificationErrorReason.TOKEN_INVALID_AUTHORIZED_PARTIES:
+        logger.warning("Clerk token azp not in authorized parties")
+    elif reason in (
+        TokenVerificationErrorReason.JWK_FAILED_TO_LOAD,
+        TokenVerificationErrorReason.JWK_REMOTE_INVALID,
+        TokenVerificationErrorReason.SERVER_ERROR,
+    ):
+        logger.error("Clerk token verification failed: %s", reason.value[1])
+    else:
+        logger.warning("Clerk token verification failed: %s", reason.value[1])
 
 
 async def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
     """
-    Verify a Clerk JWT token and return the payload.
-    
-    Validates:
-    - Token signature using JWKS
-    - Issuer (iss) claim
-    - Expiration (exp) claim
-    - Not-before (nbf) claim
-    - Authorized party (azp) claim if configured
+    Verify a Clerk session JWT using clerk-backend-api and return the payload.
     """
-    if not settings.clerk_issuer:
-        logger.warning("CLERK_ISSUER not configured, skipping token verification")
+    if not settings.clerk_secret_key:
+        logger.warning("CLERK_SECRET_KEY not configured, skipping token verification")
         return None
-    
+
+    parties = settings.clerk_authorized_parties_list
+    options = VerifyTokenOptions(
+        secret_key=settings.clerk_secret_key,
+        authorized_parties=parties if parties else None,
+    )
     try:
-        # Fetch JWKS (uses cache)
-        jwks = await _jwks_cache.get_or_fetch(settings.clerk_issuer)
-        if not jwks:
-            logger.error("Could not fetch JWKS for token verification")
-            return None
-        
-        # Get signing key matching token's kid
-        signing_key = get_signing_key(jwks, token)
-        if not signing_key:
-            # Key not found - might be rotated, invalidate cache and retry once
-            logger.info("Signing key not found, invalidating cache and retrying")
-            _jwks_cache.invalidate()
-            jwks = await _jwks_cache.get_or_fetch(settings.clerk_issuer)
-            signing_key = get_signing_key(jwks, token)
-            if not signing_key:
-                logger.warning("Could not find matching signing key after cache refresh")
-                return None
-        
-        # Verify the token
-        payload = jwt.decode(
-            token,
-            signing_key,
-            algorithms=["RS256"],
-            issuer=settings.clerk_issuer,
-            options={
-                "verify_aud": False,  # Clerk doesn't always set audience
-                "verify_exp": True,
-                "verify_iss": True,
-                "verify_nbf": True,  # Verify not-before claim
-            }
-        )
-        
-        # Verify authorized party (azp) claim if configured
-        azp = payload.get("azp")
-        authorized_parties = settings.clerk_authorized_parties_list
-        if azp and authorized_parties:
-            if azp not in authorized_parties:
-                logger.warning(f"Token azp '{azp}' not in authorized parties: {authorized_parties}")
-                return None
-        
-        return payload
-        
-    except jwt.ExpiredSignatureError:
-        logger.debug("Token has expired")
-        return None
-    except jwt.JWTClaimsError as e:
-        logger.warning(f"JWT claims validation failed: {e}")
-        return None
-    except JWTError as e:
-        logger.warning(f"JWT verification failed: {e}")
+        return await verify_token_async(token, options)
+    except TokenVerificationError as e:
+        _log_token_verification_failure(e.reason)
         return None
     except Exception as e:
         logger.error(f"Token verification error: {e}")
@@ -371,10 +257,8 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
             if handshake_response:
                 return handshake_response
         
-        # Check path for static files only - we want to try auth for ALL other routes
-        # including public ones, so logged-in users can be identified
         path = request.url.path
-        if path.startswith("/static"):
+        if path.startswith("/static") or path in ("/favicon.ico", "/health"):
             return await call_next(request)
         
         # Try to get Clerk token from cookie or header

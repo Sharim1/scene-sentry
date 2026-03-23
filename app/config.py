@@ -77,8 +77,8 @@ class Settings(BaseSettings):
     
     @property
     def is_clerk_configured(self) -> bool:
-        """Check if Clerk authentication is properly configured"""
-        return bool(self.clerk_issuer and self.clerk_publishable_key)
+        """Check if Clerk authentication is properly configured (requires secret for SDK verification)."""
+        return bool(self.clerk_secret_key and self.clerk_publishable_key)
 
 
 @lru_cache()
