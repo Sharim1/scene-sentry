@@ -26,8 +26,6 @@ class TaskStatus(str, Enum):
 
 class TaskType(str, Enum):
     """Types of background tasks"""
-    MOVIE_DISCOVERY = "movie_discovery"
-    TV_DISCOVERY = "tv_discovery"
     GOSSIP_SCRAPE = "gossip_scrape"
     CONTENT_RERANKING = "content_reranking"
 
@@ -110,8 +108,6 @@ class TaskManager:
         
         # Default names for task types
         default_names = {
-            TaskType.MOVIE_DISCOVERY: "Discovering Movies",
-            TaskType.TV_DISCOVERY: "Discovering TV Shows",
             TaskType.GOSSIP_SCRAPE: "Scanning for Gossip",
             TaskType.CONTENT_RERANKING: "Re-ranking Content",
         }

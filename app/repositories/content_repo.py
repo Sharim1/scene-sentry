@@ -6,6 +6,7 @@ title+year matching.
 """
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -16,6 +17,23 @@ from app.models.content import Content
 from app.services.providers.base import NormalizedContent
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
+    """Best-effort parse of YYYY-MM-DD (or YYYY) into a tz-aware datetime."""
+    if not date_str:
+        return None
+    s = str(date_str).strip()
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    m = re.match(r"(\d{4})", s)
+    if m:
+        return datetime(int(m.group(1)), 1, 1, tzinfo=timezone.utc)
+    return None
 
 
 class ContentRepository:
@@ -137,6 +155,10 @@ class ContentRepository:
             status=nc.status,
             network=nc.network,
             source=nc.source,
+            language=nc.language,
+            country=nc.country,
+            premiere_date=_parse_datetime(nc.premiered),
+            next_episode_date=_parse_datetime(nc.next_episode_date),
         )
         self.db.add(content)
         self.db.flush()
@@ -203,6 +225,8 @@ class ContentRepository:
             content.network = nc.network
         if nc.seasons and not content.seasons:
             content.seasons = nc.seasons
+        if nc.episodes and not content.episodes:
+            content.episodes = nc.episodes
         if nc.release_date and not content.release_date:
             content.release_date = nc.release_date
         if nc.imdb_id and not content.imdb_id:
@@ -213,6 +237,14 @@ class ContentRepository:
             content.tvdb_id = nc.tvdb_id
         if nc.tvmaze_id and not content.tvmaze_id:
             content.tvmaze_id = nc.tvmaze_id
+        if nc.language and not content.language:
+            content.language = nc.language
+        if nc.country and not content.country:
+            content.country = nc.country
+        if nc.premiered and not content.premiere_date:
+            content.premiere_date = _parse_datetime(nc.premiered)
+        if nc.next_episode_date:
+            content.next_episode_date = _parse_datetime(nc.next_episode_date)
         content.updated_at = datetime.now(timezone.utc)
 
     def _apply_filters(self, query, filter_by: str, search: Optional[str]):

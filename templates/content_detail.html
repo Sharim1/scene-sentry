@@ -3,43 +3,58 @@
 {% block title %}{{ content.title }} - Scene Sentry{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto">
+<div class="max-w-6xl mx-auto">
     <!-- Back Button -->
     <a href="{{ '/movies' if content.content_type == 'movie' else '/tv-shows' }}" 
        class="inline-flex items-center gap-2 text-muted-foreground hover:text-white mb-6 transition-colors">
         <i data-lucide="arrow-left" class="w-4 h-4"></i>
         Back to {{ 'Movies' if content.content_type == 'movie' else 'TV Shows' }}
     </a>
-    
+
+    <!-- Backdrop -->
+    {% if content.backdrop_url %}
+    <div class="relative rounded-xl overflow-hidden mb-8 h-64 md:h-80">
+        <img src="{{ content.backdrop_url }}" alt="{{ content.title }}" class="w-full h-full object-cover">
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent"></div>
+    </div>
+    {% endif %}
+
     <!-- Content Header -->
-    <div class="flex flex-col md:flex-row gap-8">
+    <div class="flex flex-col md:flex-row gap-8 {{ 'md:-mt-32 relative z-10' if content.backdrop_url else '' }}">
         <!-- Poster -->
-        <div class="flex-shrink-0 w-full md:w-72">
-            <div class="aspect-[2/3] rounded-xl overflow-hidden bg-card border border-white/10">
+        <div class="flex-shrink-0 w-full md:w-64">
+            <div class="aspect-[2/3] rounded-xl overflow-hidden bg-card border border-white/10 shadow-2xl">
                 {% if content.poster_url %}
-                <img src="{{ content.poster_url }}" 
-                     alt="{{ content.title }}"
-                     class="w-full h-full object-cover">
+                <img src="{{ content.poster_url }}" alt="{{ content.title }}" class="w-full h-full object-cover">
                 {% else %}
                 <div class="w-full h-full bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center">
-                    <i data-lucide="{{ 'tv' if content.content_type == 'tv_show' else 'film' }}" 
-                       class="w-20 h-20 text-white/20"></i>
+                    <i data-lucide="{{ 'tv' if content.content_type == 'tv_show' else 'film' }}" class="w-20 h-20 text-white/20"></i>
                 </div>
                 {% endif %}
             </div>
         </div>
-        
+
         <!-- Info -->
-        <div class="flex-1">
+        <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-4 mb-4">
                 <div>
-                    <span class="inline-block px-2 py-1 text-xs font-medium rounded bg-primary/20 text-primary mb-3">
-                        {{ 'TV Show' if content.content_type == 'tv_show' else 'Movie' }}
-                    </span>
-                    <h1 class="text-3xl md:text-4xl font-display font-bold mb-2">{{ content.title }}</h1>
-                    
-                    <!-- Meta Info -->
-                    <div class="flex flex-wrap items-center gap-4 text-muted-foreground">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="inline-block px-2.5 py-1 text-xs font-bold rounded uppercase tracking-wider bg-primary/20 text-primary">
+                            {{ 'TV Show' if content.content_type == 'tv_show' else 'Movie' }}
+                        </span>
+                        {% if content.status %}
+                        <span class="inline-block px-2.5 py-1 text-xs font-medium rounded
+                            {% if content.status in ['Running', 'Returning Series'] %}bg-green-500/20 text-green-400
+                            {% elif content.status in ['Ended', 'Cancelled'] %}bg-red-500/20 text-red-400
+                            {% else %}bg-white/10 text-white/70{% endif %}">
+                            {{ content.status }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    <h1 class="text-3xl md:text-4xl font-display font-bold mb-3">{{ content.title }}</h1>
+
+                    <!-- Meta Row -->
+                    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
                         {% if content.rating %}
                         <div class="flex items-center gap-1.5">
                             <i data-lucide="star" class="w-4 h-4 text-yellow-400 fill-yellow-400"></i>
@@ -47,38 +62,63 @@
                             <span>/10</span>
                         </div>
                         {% endif %}
-                        
+
                         {% if content.release_date %}
                         <div class="flex items-center gap-1.5">
                             <i data-lucide="calendar" class="w-4 h-4"></i>
-                            <span>{{ content.release_date[:4] if content.release_date|length >= 4 else content.release_date }}</span>
+                            <span>{{ content.release_date }}</span>
                         </div>
                         {% endif %}
-                        
+
                         {% if content.runtime %}
                         <div class="flex items-center gap-1.5">
                             <i data-lucide="clock" class="w-4 h-4"></i>
                             <span>{{ content.runtime }} min</span>
                         </div>
                         {% endif %}
-                        
+
                         {% if content.seasons %}
                         <div class="flex items-center gap-1.5">
                             <i data-lucide="layers" class="w-4 h-4"></i>
                             <span>{{ content.seasons }} Season{{ 's' if content.seasons > 1 else '' }}</span>
                         </div>
                         {% endif %}
-                        
+
+                        {% if content.episodes %}
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="play-square" class="w-4 h-4"></i>
+                            <span>{{ content.episodes }} Episode{{ 's' if content.episodes > 1 else '' }}</span>
+                        </div>
+                        {% endif %}
+
                         {% if content.network %}
                         <div class="flex items-center gap-1.5">
                             <i data-lucide="tv" class="w-4 h-4"></i>
                             <span>{{ content.network }}</span>
                         </div>
                         {% endif %}
+
+                        {% if content.language %}
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="globe" class="w-4 h-4"></i>
+                            <span>{{ content.language }}{% if content.country %} · {{ content.country }}{% endif %}</span>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
-            
+
+            <!-- Genres -->
+            {% if genres %}
+            <div class="flex flex-wrap gap-2 mb-5">
+                {% for genre in genres %}
+                <span class="px-3 py-1 text-xs font-medium rounded-full bg-white/5 border border-white/10 text-white/80">
+                    {{ genre }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <!-- Library Status / Actions -->
             <div class="mb-6" x-data="{ showMenu: false }">
                 {% if library_item %}
@@ -96,33 +136,14 @@
                     <button @click="showMenu = !showMenu" class="btn btn-outline relative">
                         <i data-lucide="edit" class="w-4 h-4"></i>
                         Change Status
-                        
-                        <!-- Dropdown -->
-                        <div x-show="showMenu" 
-                             @click.away="showMenu = false"
-                             x-transition
+                        <div x-show="showMenu" @click.away="showMenu = false" x-transition
                              class="absolute top-full left-0 mt-2 w-48 bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden z-30">
                             <div>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i>
-                                    Watching
-                                </button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
-                                    Planned
-                                </button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
-                                    Completed
-                                </button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>
-                                    Dropped
-                                </button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i>
-                                    Maybe
-                                </button>
+                                <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
+                                <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors"><i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Planned</button>
+                                <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i> Completed</button>
+                                <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors"><i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i> Dropped</button>
+                                <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors"><i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i> Maybe</button>
                             </div>
                         </div>
                     </button>
@@ -133,39 +154,20 @@
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         Add to Library
                     </button>
-                    
-                    <!-- Dropdown -->
-                    <div x-show="showMenu" 
-                         @click.away="showMenu = false"
-                         x-transition
+                    <div x-show="showMenu" @click.away="showMenu = false" x-transition
                          class="absolute top-full left-0 mt-2 w-48 bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden z-30">
                         <div>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors">
-                                <i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i>
-                                Watching
-                            </button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors">
-                                <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
-                                Planned
-                            </button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors">
-                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
-                                Completed
-                            </button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors">
-                                <i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>
-                                Dropped
-                            </button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors">
-                                <i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i>
-                                Maybe
-                            </button>
+                            <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
+                            <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors"><i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Planned</button>
+                            <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i> Completed</button>
+                            <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors"><i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i> Dropped</button>
+                            <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors"><i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i> Maybe</button>
                         </div>
                     </div>
                 </div>
                 {% endif %}
             </div>
-            
+
             <!-- Description -->
             {% if content.description %}
             <div class="mb-6">
@@ -173,44 +175,132 @@
                 <p class="text-muted-foreground leading-relaxed">{{ content.description }}</p>
             </div>
             {% endif %}
-            
-            <!-- Additional Details -->
-            <div class="grid grid-cols-2 gap-4 text-sm">
+
+            <!-- Quick Info Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
                 {% if content.director %}
                 <div>
-                    <span class="text-muted-foreground">Director</span>
+                    <span class="text-muted-foreground block text-xs uppercase tracking-wider mb-1">Director</span>
                     <p class="font-medium">{{ content.director }}</p>
                 </div>
                 {% endif %}
-                
-                {% if content.author %}
+
+                {% if content.premiere_date %}
                 <div>
-                    <span class="text-muted-foreground">Author</span>
-                    <p class="font-medium">{{ content.author }}</p>
+                    <span class="text-muted-foreground block text-xs uppercase tracking-wider mb-1">Premiered</span>
+                    <p class="font-medium">{{ content.premiere_date.strftime('%B %d, %Y') if content.premiere_date else '—' }}</p>
                 </div>
                 {% endif %}
-                
+
+                {% if content.next_episode_date %}
+                <div>
+                    <span class="text-muted-foreground block text-xs uppercase tracking-wider mb-1">Next Episode</span>
+                    <p class="font-medium text-primary">{{ content.next_episode_date.strftime('%B %d, %Y') }}</p>
+                </div>
+                {% endif %}
+
                 {% if content.imdb_id %}
                 <div>
-                    <span class="text-muted-foreground">IMDb</span>
-                    <a href="https://www.imdb.com/title/{{ content.imdb_id }}" 
-                       target="_blank" 
-                       class="font-medium text-primary hover:underline flex items-center gap-1">
+                    <span class="text-muted-foreground block text-xs uppercase tracking-wider mb-1">IMDb</span>
+                    <a href="https://www.imdb.com/title/{{ content.imdb_id }}" target="_blank" rel="noopener"
+                       class="font-medium text-primary hover:underline inline-flex items-center gap-1">
                         {{ content.imdb_id }}
                         <i data-lucide="external-link" class="w-3 h-3"></i>
                     </a>
                 </div>
                 {% endif %}
-                
-                {% if content.status %}
+
+                {% if content.source %}
                 <div>
-                    <span class="text-muted-foreground">Status</span>
-                    <p class="font-medium">{{ content.status }}</p>
+                    <span class="text-muted-foreground block text-xs uppercase tracking-wider mb-1">Source</span>
+                    <p class="font-medium uppercase">{{ content.source }}</p>
                 </div>
                 {% endif %}
             </div>
         </div>
     </div>
+
+    <!-- Episodes Section (TV Shows only) -->
+    {% if content.content_type == 'tv_show' and seasons_map %}
+    <div class="mt-12" x-data="{ activeSeason: {{ seasons_map.keys()|list|first if seasons_map else 1 }} }">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-2xl font-display font-bold flex items-center gap-2">
+                <i data-lucide="play-square" class="w-6 h-6 text-primary"></i>
+                Episodes
+                <span class="text-base font-normal text-muted-foreground">({{ episodes|length }} total)</span>
+            </h2>
+        </div>
+
+        <!-- Season Tabs -->
+        <div class="flex flex-wrap gap-2 mb-6">
+            {% for season_num in seasons_map.keys()|sort %}
+            <button @click="activeSeason = {{ season_num }}"
+                    :class="activeSeason === {{ season_num }} ? 'bg-primary text-white' : 'bg-white/5 text-muted-foreground hover:bg-white/10'"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                Season {{ season_num }}
+                <span class="ml-1 opacity-60">({{ seasons_map[season_num]|length }})</span>
+            </button>
+            {% endfor %}
+        </div>
+
+        <!-- Episode List -->
+        {% for season_num, eps in seasons_map.items()|sort %}
+        <div x-show="activeSeason === {{ season_num }}" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+            <div class="space-y-2">
+                {% for ep in eps %}
+                <div class="flex items-start gap-4 p-4 bg-card/50 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
+                    <!-- Episode Number -->
+                    <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center">
+                        <span class="text-sm font-bold text-muted-foreground">E{{ "%02d"|format(ep.episode_number) }}</span>
+                    </div>
+
+                    <!-- Episode Details -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <h4 class="font-medium text-sm line-clamp-1">
+                                    {{ ep.title or 'Episode %d'|format(ep.episode_number) }}
+                                </h4>
+                                {% if ep.description %}
+                                <p class="text-xs text-muted-foreground mt-1 line-clamp-2">{{ ep.description }}</p>
+                                {% endif %}
+                            </div>
+                            <div class="flex items-center gap-3 flex-shrink-0 text-xs text-muted-foreground">
+                                {% if ep.rating %}
+                                <span class="flex items-center gap-1">
+                                    <i data-lucide="star" class="w-3 h-3 text-yellow-400 fill-yellow-400"></i>
+                                    {{ "%.1f"|format(ep.rating) }}
+                                </span>
+                                {% endif %}
+                                {% if ep.runtime %}
+                                <span>{{ ep.runtime }}m</span>
+                                {% endif %}
+                                {% if ep.air_date %}
+                                <span>{{ ep.air_date }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% elif content.content_type == 'tv_show' and not seasons_map %}
+    <!-- No episodes yet placeholder -->
+    <div class="mt-12">
+        <div class="flex items-center gap-2 mb-4">
+            <h2 class="text-2xl font-display font-bold flex items-center gap-2">
+                <i data-lucide="play-square" class="w-6 h-6 text-primary"></i>
+                Episodes
+            </h2>
+        </div>
+        <div class="text-center py-10 bg-card/30 rounded-xl border border-white/5">
+            <i data-lucide="loader" class="w-10 h-10 text-muted-foreground mx-auto mb-3"></i>
+            <p class="text-sm text-muted-foreground">Episode data is being synced in the background.</p>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
-

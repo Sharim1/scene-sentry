@@ -59,7 +59,11 @@ class Content(Base):
     episodes = Column(Integer, nullable=True)
     status = Column(String(50), nullable=True)  # 'Returning Series', 'Ended', etc.
     network = Column(String(100), nullable=True)
-    
+
+    # Locale
+    language = Column(String(50), nullable=True)
+    country = Column(String(50), nullable=True)
+
     # Adaptation tracking (for book-to-screen adaptations)
     is_adaptation = Column(Boolean, default=False)
     adapted_from_id = Column(Integer, nullable=True)  # FK to another Content (book)

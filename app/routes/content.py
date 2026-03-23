@@ -1,8 +1,8 @@
 """
-Content routes for Movies and TV Shows - multi-provider discovery
+Content routes for Movies and TV Shows
 """
 import logging
-from fastapi import APIRouter, Request, Depends, Query, Form, BackgroundTasks
+from fastapi import APIRouter, Request, Depends, Query, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
@@ -71,52 +71,6 @@ async def movies_page(
     )
 
 
-@router.post("/movies/refresh")
-async def refresh_movies(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    from app.services.task_manager import get_task_manager, TaskType
-
-    user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-
-    task_manager = get_task_manager()
-    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
-    for existing in existing_tasks:
-        if existing.type == TaskType.MOVIE_DISCOVERY:
-            return RedirectResponse(url="/movies", status_code=303)
-
-    task = await task_manager.create_task(
-        task_type=TaskType.MOVIE_DISCOVERY,
-        user_id=user.id,
-        name="Discovering Movies",
-    )
-
-    async def run_movie_discovery(task, tm):
-        from app.services.content_discovery import ContentDiscoveryService
-
-        await tm.update_task(task.id, progress=10, message="Fetching movies from providers...")
-        try:
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                svc = ContentDiscoveryService(db_session)
-                saved = await svc.discover_and_save_movies(limit=200)
-                await tm.update_task(task.id, progress=90, message=f"Saved {saved} movies")
-                return {"saved": saved}
-            finally:
-                db_session.close()
-        except Exception as e:
-            logger.error(f"Movie discovery error: {e}")
-            raise
-
-    background_tasks.add_task(task_manager.run_task, task.id, run_movie_discovery)
-    return RedirectResponse(url="/movies", status_code=303)
-
-
 @router.get("/tv-shows", response_class=HTMLResponse)
 async def tv_shows_page(
     request: Request,
@@ -168,52 +122,6 @@ async def tv_shows_page(
     )
 
 
-@router.post("/tv-shows/refresh")
-async def refresh_tv_shows(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    from app.services.task_manager import get_task_manager, TaskType
-
-    user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-
-    task_manager = get_task_manager()
-    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
-    for existing in existing_tasks:
-        if existing.type == TaskType.TV_DISCOVERY:
-            return RedirectResponse(url="/tv-shows", status_code=303)
-
-    task = await task_manager.create_task(
-        task_type=TaskType.TV_DISCOVERY,
-        user_id=user.id,
-        name="Discovering TV Shows",
-    )
-
-    async def run_tv_discovery(task, tm):
-        from app.services.content_discovery import ContentDiscoveryService
-
-        await tm.update_task(task.id, progress=10, message="Fetching TV shows from providers...")
-        try:
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                svc = ContentDiscoveryService(db_session)
-                saved = await svc.discover_and_save_tv_shows(limit=200)
-                await tm.update_task(task.id, progress=90, message=f"Saved {saved} TV shows")
-                return {"saved": saved}
-            finally:
-                db_session.close()
-        except Exception as e:
-            logger.error(f"TV discovery error: {e}")
-            raise
-
-    background_tasks.add_task(task_manager.run_task, task.id, run_tv_discovery)
-    return RedirectResponse(url="/tv-shows", status_code=303)
-
-
 @router.post("/add-to-library")
 async def add_to_library(
     request: Request,
@@ -260,6 +168,8 @@ async def content_detail(
     db: Session = Depends(get_db),
 ):
     from app.templates import templates
+    from app.repositories.episode_repo import EpisodeRepository
+    import json as _json
 
     user = get_current_user(request, db)
     if not user:
@@ -271,6 +181,21 @@ async def content_detail(
 
     library_item = LibraryRepository(db).get_by_user_and_content(user.id, content_id)
 
+    episodes = []
+    seasons_map: dict = {}
+    if content.content_type == "tv_show":
+        ep_repo = EpisodeRepository(db)
+        episodes = ep_repo.get_by_content(content_id)
+        for ep in episodes:
+            seasons_map.setdefault(ep.season_number, []).append(ep)
+
+    genres = []
+    if content.genres:
+        try:
+            genres = _json.loads(content.genres)
+        except (ValueError, TypeError):
+            genres = []
+
     return templates.TemplateResponse(
         "content_detail.html",
         {
@@ -278,5 +203,8 @@ async def content_detail(
             "user": user,
             "content": content,
             "library_item": library_item,
+            "episodes": episodes,
+            "seasons_map": seasons_map,
+            "genres": genres,
         },
     )

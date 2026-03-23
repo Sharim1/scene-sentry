@@ -51,7 +51,7 @@ class Gossip(Base):
     image_url = Column(String(500), nullable=True)
     
     # Classification
-    tag = Column(Enum(GossipTag), default=GossipTag.RUMOR)
+    tag = Column(Enum(GossipTag, native_enum=False), default=GossipTag.RUMOR)
     
     # AI analysis
     confidence_score = Column(Float, default=0.5)  # How confident AI is about accuracy

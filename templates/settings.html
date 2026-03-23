@@ -45,6 +45,17 @@
                 <p class="text-xs text-muted-foreground mt-1">Choose which search API to use for content discovery.</p>
             </div>
             
+            <!-- Timezone -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium mb-2">Timezone</label>
+                <select name="user_timezone" class="input">
+                    {% for tz_value, tz_label in timezones %}
+                    <option value="{{ tz_value }}" {% if user.timezone == tz_value %}selected{% endif %}>{{ tz_label }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-muted-foreground mt-1">Used for reminder scheduling and time display.</p>
+            </div>
+
             <!-- Discovery Frequency -->
             <div class="mb-6">
                 <label class="block text-sm font-medium mb-2">Discovery Frequency</label>

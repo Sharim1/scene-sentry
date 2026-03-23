@@ -35,7 +35,7 @@ class LibraryItem(Base):
     
     # Status
     status = Column(
-        Enum(WatchStatus),
+        Enum(WatchStatus, native_enum=False),
         nullable=False,
         default=WatchStatus.PLANNED
     )

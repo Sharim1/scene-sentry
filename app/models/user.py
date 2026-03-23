@@ -37,6 +37,7 @@ class User(Base):
     preferred_genres = Column(Text, nullable=True)  # JSON string of preferred genres
     search_api_preference = Column(String(20), default="tavily")  # 'tavily' or 'brightdata'
     discovery_frequency = Column(Integer, default=30)  # Minutes between AI searches
+    timezone = Column(String(50), default="UTC")
     
     # Feature flags
     email_notifications = Column(Boolean, default=True)

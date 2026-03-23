@@ -39,6 +39,10 @@ class NormalizedContent:
     episodes: Optional[int] = None
     premiered: Optional[str] = None          # YYYY-MM-DD
 
+    language: Optional[str] = None
+    country: Optional[str] = None
+    next_episode_date: Optional[str] = None  # YYYY-MM-DD
+
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     # ----- helpers used by dedup -----
@@ -57,11 +61,31 @@ class NormalizedContent:
             "poster_url", "backdrop_url", "runtime", "status",
             "network", "director", "seasons", "episodes", "premiered",
             "imdb_id", "tmdb_id", "tvdb_id", "tvmaze_id",
+            "language", "country", "next_episode_date",
         ):
             if getattr(self, attr) is None and getattr(other, attr) is not None:
                 setattr(self, attr, getattr(other, attr))
         if not self.genres and other.genres:
             self.genres = other.genres
+
+
+@dataclass
+class NormalizedEpisode:
+    """Platform-agnostic representation of a single episode."""
+
+    title: str
+    season_number: int
+    episode_number: int
+    content_type: str = "tv_show"
+
+    description: Optional[str] = None
+    air_date: Optional[str] = None           # YYYY-MM-DD
+    runtime: Optional[int] = None            # minutes
+    rating: Optional[float] = None
+
+    tvmaze_id: Optional[int] = None
+    tvdb_id: Optional[int] = None
+    imdb_id: Optional[str] = None
 
 
 # ---- utility functions --------------------------------------------------- #
@@ -107,4 +131,14 @@ class ContentProvider(ABC):
 
     def get_trending(self) -> List[NormalizedContent]:
         """Trending content.  Default implementation returns empty list."""
+        return []
+
+    def get_details(self, external_id: str) -> Optional[NormalizedContent]:
+        """Fetch full details for a single item by its provider-specific ID.
+        Default returns None (not all providers support detail lookups)."""
+        return None
+
+    def get_episodes(self, external_id: str) -> List[NormalizedEpisode]:
+        """Fetch all episodes for a TV show by its provider-specific ID.
+        Default returns empty list."""
         return []

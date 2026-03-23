@@ -1,9 +1,13 @@
 """
 Tracks per-provider discovery progress so each run fetches the next page
 of content rather than re-scanning the same data.
+
+Once all pages have been exhausted (empty page returned), ``fully_synced``
+is set to True and subsequent runs switch to "refresh mode" — fetching
+page 1 to pick up newly registered content on the source platform.
 """
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, UniqueConstraint
 
 from app.database import Base
 
@@ -20,6 +24,7 @@ class DiscoveryState(Base):
     content_type = Column(String(20), nullable=False)       # "movie" or "tv_show"
     last_page = Column(Integer, nullable=False, default=0)
     total_items_fetched = Column(Integer, nullable=False, default=0)
+    fully_synced = Column(Boolean, nullable=False, default=False)
     last_synced_at = Column(DateTime(timezone=True), default=utc_now)
 
     __table_args__ = (
@@ -27,4 +32,7 @@ class DiscoveryState(Base):
     )
 
     def __repr__(self):
-        return f"<DiscoveryState {self.provider}/{self.content_type} page={self.last_page}>"
+        return (
+            f"<DiscoveryState {self.provider}/{self.content_type} "
+            f"page={self.last_page} synced={self.fully_synced}>"
+        )

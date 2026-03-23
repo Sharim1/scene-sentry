@@ -1,5 +1,8 @@
 """
 TVDB v4 API content provider (movies and TV shows).
+
+Uses the tvdb_v4_official SDK.  List endpoints for discovery, extended
+endpoints for detail enrichment + episodes.
 """
 from __future__ import annotations
 
@@ -11,6 +14,7 @@ from app.config import settings
 from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
+    NormalizedEpisode,
     _year_from_date,
 )
 
@@ -18,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 _ARTWORKS_BASE = "https://artworks.thetvdb.com"
 
+
+# ---- helper functions ---- #
 
 def _parse_year(item: Dict[str, Any]) -> Optional[int]:
     y = item.get("year")
@@ -60,7 +66,7 @@ def _status_value(item: Dict[str, Any]) -> Optional[str]:
 
 
 def _imdb_from_remote_ids(item: Dict[str, Any]) -> Optional[str]:
-    for rid in item.get("remote_ids") or []:
+    for rid in item.get("remote_ids") or item.get("remoteIds") or []:
         if not isinstance(rid, dict):
             continue
         if rid.get("type") == 2:
@@ -107,9 +113,24 @@ def _genres_list(item: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _safe_int(val: Any) -> Optional[int]:
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_search_result(item: Dict[str, Any], content_type: str) -> NormalizedContent:
     title = (item.get("name") or "").strip() or "Unknown"
     rd = _release_date(item)
+
+    runtime = _safe_int(item.get("runtime") or item.get("averageRuntime"))
+    language = item.get("originalLanguage")
+    country = item.get("originalCountry")
+    next_aired = item.get("nextAired")
+
     return NormalizedContent(
         title=title,
         content_type=content_type,
@@ -123,6 +144,10 @@ def _normalize_search_result(item: Dict[str, Any], content_type: str) -> Normali
         status=_status_value(item),
         network=item.get("network"),
         genres=_genres_list(item),
+        runtime=runtime,
+        language=language,
+        country=country,
+        next_episode_date=next_aired if next_aired else None,
         raw=dict(item),
     )
 
@@ -137,6 +162,22 @@ def _as_item_list(data: Any) -> List[Dict[str, Any]]:
         if isinstance(inner, list):
             return [x for x in inner if isinstance(x, dict)]
     return []
+
+
+def _normalize_tvdb_episode(ep: Dict[str, Any]) -> Optional[NormalizedEpisode]:
+    season = _safe_int(ep.get("seasonNumber"))
+    number = _safe_int(ep.get("number"))
+    if season is None or number is None:
+        return None
+    return NormalizedEpisode(
+        title=ep.get("name") or "",
+        season_number=season,
+        episode_number=number,
+        description=ep.get("overview"),
+        air_date=ep.get("aired"),
+        runtime=_safe_int(ep.get("runtime")),
+        tvdb_id=_safe_int(ep.get("id")),
+    )
 
 
 class TVDBProvider(ContentProvider):
@@ -218,3 +259,51 @@ class TVDBProvider(ContentProvider):
 
     def get_upcoming(self, content_type: str = "tv_show") -> List[NormalizedContent]:
         return []
+
+    # ---- detail + episode enrichment ---- #
+
+    def get_details(self, external_id: str) -> Optional[NormalizedContent]:
+        """Fetch extended series/movie detail by TVDB ID."""
+        if not self.client:
+            return None
+        try:
+            tvdb_id = int(external_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            raw = self.client.get_series_extended(tvdb_id)
+            item = raw if isinstance(raw, dict) else {}
+            if not item:
+                return None
+            return _normalize_search_result(item, "tv_show")
+        except Exception as e:
+            logger.warning("TVDB get_details(%s) failed: %s", external_id, e)
+            return None
+
+    def get_episodes(self, external_id: str) -> List[NormalizedEpisode]:
+        """Fetch all episodes for a series by TVDB ID."""
+        if not self.client:
+            return []
+        try:
+            tvdb_id = int(external_id)
+        except (TypeError, ValueError):
+            return []
+
+        all_eps: List[NormalizedEpisode] = []
+        page = 0
+        while True:
+            try:
+                raw = self.client.get_series_episodes(tvdb_id, page=page)
+                items = _as_item_list(raw.get("episodes") if isinstance(raw, dict) else raw)
+                if not items:
+                    break
+                for ep_data in items:
+                    ne = _normalize_tvdb_episode(ep_data)
+                    if ne is not None:
+                        all_eps.append(ne)
+                page += 1
+            except Exception as e:
+                logger.warning("TVDB get_episodes(%s) page %d failed: %s", external_id, page, e)
+                break
+        return all_eps

@@ -36,8 +36,8 @@ class Reminder(Base):
     content_id = Column(Integer, ForeignKey("content.id"), nullable=True, index=True)
     
     # Reminder details
-    reminder_type = Column(Enum(ReminderType), nullable=False)
-    scheduled_time = Column(DateTime, nullable=False, index=True)
+    reminder_type = Column(Enum(ReminderType, native_enum=False), nullable=False)
+    scheduled_time = Column(DateTime(timezone=True), nullable=False, index=True)
     message = Column(Text, nullable=True)
     platform = Column(String(50), nullable=True)
     quality = Column(String(50), nullable=True)

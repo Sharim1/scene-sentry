@@ -248,11 +248,12 @@
                 </div>
                 <div class="space-y-3">
                     {% for reminder in upcoming_reminders[:4] %}
+                    {% set local_time = reminder.scheduled_time | to_user_tz(user.timezone or 'UTC') %}
                     <div class="flex items-start gap-3 p-3 rounded-lg bg-white/5">
                         <i data-lucide="clock" class="w-4 h-4 text-accent mt-0.5 flex-shrink-0"></i>
                         <div class="min-w-0">
                             <div class="text-sm font-medium line-clamp-1">{{ reminder.message or (reminder.content.title if reminder.content else 'Reminder') }}</div>
-                            <div class="text-xs text-muted-foreground">{{ reminder.scheduled_time.strftime('%b %d, %Y at %I:%M %p') }}</div>
+                            <div class="text-xs text-muted-foreground">{{ local_time.strftime('%b %d, %Y at %I:%M %p') }}</div>
                         </div>
                     </div>
                     {% endfor %}

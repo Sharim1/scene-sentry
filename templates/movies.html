@@ -17,10 +17,6 @@
             <i data-lucide="trash-2" class="w-3 h-3"></i>
             Cleanup
         </button>
-        <button type="button" onclick="startDiscoveryTask('movie_discovery', this)" class="btn btn-outline discover-btn">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-            Discover New
-        </button>
     </div>
 </div>
 
@@ -84,8 +80,9 @@
 <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 animate-in">
     {% for content in movies %}
     <div class="group relative" x-data="{ showMenu: false }">
+        <a href="/{{ content.id }}" class="block">
         <!-- Content Card -->
-        <div class="relative rounded-xl overflow-hidden bg-card border border-white/5 hover:border-primary/30 transition-all duration-300">
+        <div class="relative rounded-xl overflow-hidden bg-card border border-white/5 hover:border-primary/30 transition-all duration-300 cursor-pointer">
             <!-- Image -->
             <div class="aspect-[2/3] relative overflow-hidden">
                 {% if content.poster_url %}
@@ -98,7 +95,7 @@
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
                 
                 <!-- Add to Library Button -->
-                <div class="absolute top-3 right-3 z-20">
+                <div class="absolute top-3 right-3 z-20" @click.prevent.stop>
                     <button 
                         @click="showMenu = !showMenu"
                         class="w-9 h-9 rounded-full bg-black/50 hover:bg-primary text-white flex items-center justify-center transition-all backdrop-blur-sm opacity-0 group-hover:opacity-100"
@@ -191,6 +188,7 @@
                 </div>
             </div>
         </div>
+        </a>
     </div>
     {% endfor %}
 </div>
@@ -222,19 +220,19 @@
 <div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
     <i data-lucide="film" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
     <h2 class="font-display font-semibold text-xl mb-2">No movies found</h2>
+    {% if search_query %}
     <p class="text-muted-foreground mb-6 max-w-md mx-auto">
-        Click "Discover New" to fetch the latest movies or search for specific titles.
+        No results match your search. Try a different query.
     </p>
-    <div class="flex items-center justify-center gap-4">
-        <button type="button" onclick="startDiscoveryTask('movie_discovery', this)" class="btn btn-primary discover-btn">
-            <i data-lucide="sparkles" class="w-4 h-4"></i>
-            Discover Movies
-        </button>
-        <a href="/movies" class="btn btn-outline">
-            <i data-lucide="search" class="w-4 h-4"></i>
-            Browse All
-        </a>
+    {% else %}
+    <p class="text-muted-foreground mb-6 max-w-md mx-auto">
+        Content is synced automatically in the background. New movies will appear here shortly.
+    </p>
+    <div class="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 rounded-lg text-sm text-primary">
+        <i data-lucide="loader" class="w-4 h-4 animate-spin"></i>
+        Background sync in progress
     </div>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

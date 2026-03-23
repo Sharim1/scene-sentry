@@ -1,6 +1,7 @@
 """
 Background task scheduler using APScheduler
 """
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,11 +21,11 @@ def start_scheduler():
 
     scheduler.add_job(
         content_discovery_task,
-        IntervalTrigger(hours=6),
+        IntervalTrigger(hours=settings.discovery_interval_hours),
         id="content_discovery",
         name="Content Discovery Task",
         replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),  # run immediately on startup
+        next_run_time=datetime.now(timezone.utc),
     )
 
     scheduler.add_job(
@@ -41,6 +42,15 @@ def start_scheduler():
         id="content_reranking",
         name="Content Re-ranking Task",
         replace_existing=True,
+    )
+
+    scheduler.add_job(
+        content_enrichment_task,
+        IntervalTrigger(minutes=settings.enrichment_interval_minutes),
+        id="content_enrichment",
+        name="Content Enrichment Task",
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
     )
 
     scheduler.add_job(
@@ -71,28 +81,66 @@ def shutdown_scheduler():
 
 
 async def content_discovery_task():
-    """Pull content from providers. Seeds the catalog on first run, then
-    fetches the next page on each subsequent run so the catalog keeps growing."""
+    """Pull content from providers in batches.
+
+    All provider HTTP calls are synchronous (httpx.Client), so we run the
+    heavy lifting in a thread to avoid blocking the asyncio event loop (and
+    therefore all web requests).
+    """
     logger.info("Running content discovery task...")
     try:
-        from app.database import db_session
-        from app.services.content_discovery import ContentDiscoveryService
-
-        with db_session() as db:
-            svc = ContentDiscoveryService(db)
-
-            if svc.is_catalog_empty():
-                logger.info("Catalog is empty — running initial seed...")
-                total = await svc.seed_catalog()
-                logger.info(f"Initial seed completed: {total} items added")
-            else:
-                movies = await svc.discover_and_save_movies(limit=100)
-                shows = await svc.discover_and_save_tv_shows(limit=100)
-                logger.info(
-                    f"Content discovery completed: {movies} movies, {shows} TV shows (next pages)"
-                )
+        await asyncio.to_thread(_content_discovery_sync)
     except Exception as e:
-        logger.error(f"Error in content discovery task: {e}")
+        logger.error("Error in content discovery task: %s", e)
+
+
+def _content_discovery_sync():
+    """Synchronous worker executed in a thread pool."""
+    from app.database import db_session
+    from app.services.content_discovery import ContentDiscoveryService
+
+    with db_session() as db:
+        svc = ContentDiscoveryService(db)
+
+        if svc.is_catalog_empty():
+            logger.info("Catalog is empty — running initial seed...")
+            total = svc.seed_catalog()
+            logger.info("Initial seed completed: %d items added", total)
+        else:
+            result = svc.run_scheduled_sync()
+            logger.info(
+                "Content discovery completed: %d movies, %d TV shows",
+                result["movies"], result["tv_shows"],
+            )
+
+        enriched = svc.enrich_sparse_content(batch_size=30)
+        if enriched:
+            logger.info("Detail enrichment completed: %d records", enriched)
+
+
+async def content_enrichment_task():
+    """Backfill episodes, runtime, language etc. on sparse content records.
+
+    Runs on its own schedule so it doesn't depend on the 6-hour discovery cycle.
+    """
+    logger.info("Running content enrichment task...")
+    try:
+        await asyncio.to_thread(_content_enrichment_sync)
+    except Exception as e:
+        logger.error("Error in content enrichment task: %s", e)
+
+
+def _content_enrichment_sync():
+    from app.database import db_session
+    from app.services.content_discovery import ContentDiscoveryService
+
+    with db_session() as db:
+        svc = ContentDiscoveryService(db)
+        enriched = svc.enrich_sparse_content(batch_size=50)
+        if enriched:
+            logger.info("Enrichment pass completed: %d records", enriched)
+        else:
+            logger.info("No sparse content to enrich")
 
 
 async def gossip_scraping_task():

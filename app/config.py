@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     session_secret: Optional[str] = None
     
     # Database
-    database_url: str = "sqlite:///./scenesentry.db"
+    database_url: str = "postgresql://scenesentry:scenesentry@localhost:5432/scenesentry"
     
     # Clerk Auth
     clerk_secret_key: Optional[str] = None
@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Background Tasks
     gossip_scrape_interval_minutes: int = 30
     reranking_interval_minutes: int = 120
+    discovery_interval_hours: int = 6
+    discovery_batch_size: int = 10   # pages per provider per scheduled run
+    enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
     
     # Rate limiting
     rate_limit_auth: str = "5/minute"  # For login/register endpoints

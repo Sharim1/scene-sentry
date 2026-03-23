@@ -273,7 +273,7 @@ function taskNotifications() {
                 setTimeout(async () => {
                     this.dismissTask(data.id);
                     // Reload page to show new content after discovery/scrape completes
-                    if (['movie_discovery', 'tv_discovery', 'gossip_scrape', 'content_reranking'].includes(data.type)) {
+                    if (['gossip_scrape', 'content_reranking'].includes(data.type)) {
                         // First check if we're still authenticated before reloading
                         // This prevents redirect to login if token expired
                         try {

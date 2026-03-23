@@ -34,7 +34,7 @@ async def reminders_page(
     m = month or now.month
 
     svc = ReminderService(db)
-    grouped = svc.get_grouped_by_date(user.id, y, m)
+    grouped = svc.get_grouped_by_date(user.id, y, m, tz_name=user.timezone or "UTC")
     calendar_dots = svc.get_calendar_dots(user.id, y, m)
 
     return templates.TemplateResponse(
@@ -55,12 +55,15 @@ async def create_reminder(
     request: Request,
     content_id: int = Form(None),
     reminder_type: str = Form("premiere"),
-    scheduled_time: str = Form(...),
+    date: str = Form(...),
+    time: str = Form("20:00"),
     message: str = Form(""),
     platform: str = Form(None),
     quality: str = Form(None),
     db: Session = Depends(get_db),
 ):
+    from app.utils.timezone import local_to_utc
+
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -69,8 +72,9 @@ async def create_reminder(
     rtype = type_map.get(reminder_type, ReminderType.PREMIERE)
 
     try:
-        sched = datetime.fromisoformat(scheduled_time).replace(tzinfo=timezone.utc)
-    except ValueError:
+        naive = datetime.strptime(f"{date}T{time}", "%Y-%m-%dT%H:%M")
+        sched = local_to_utc(naive, user.timezone or "UTC")
+    except (ValueError, TypeError):
         sched = datetime.now(timezone.utc)
 
     svc = ReminderService(db)

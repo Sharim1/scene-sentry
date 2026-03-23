@@ -425,6 +425,8 @@ async def settings_page(
         'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery',
         'Romance', 'Science Fiction', 'Thriller', 'War', 'Western'
     ]
+
+    from app.utils.timezone import COMMON_TIMEZONES
     
     return templates.TemplateResponse(
         "settings.html",
@@ -432,7 +434,8 @@ async def settings_page(
             "request": request,
             "user": user,
             "current_genres": current_genres,
-            "available_genres": available_genres
+            "available_genres": available_genres,
+            "timezones": COMMON_TIMEZONES,
         }
     )
 
@@ -442,6 +445,7 @@ async def update_settings(
     request: Request,
     search_api: str = Form("tavily"),
     discovery_frequency: int = Form(30),
+    user_timezone: str = Form("UTC"),
     db: Session = Depends(get_db)
 ):
     """Update user settings"""
@@ -459,6 +463,7 @@ async def update_settings(
     user.search_api_preference = search_api
     user.preferred_genres = json.dumps(genres)
     user.discovery_frequency = discovery_frequency
+    user.timezone = user_timezone
     
     db.commit()
     

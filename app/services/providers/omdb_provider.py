@@ -120,6 +120,8 @@ def _normalize_omdb_dict(d: Dict[str, Any]) -> Optional[NormalizedContent]:
         runtime=_parse_runtime(d.get("Runtime")),
         director=_na_or_str(d.get("Director")),
         seasons=_parse_seasons(d.get("totalSeasons")),
+        language=_na_or_str(d.get("Language")),
+        country=_na_or_str(d.get("Country")),
         raw=dict(d),
     )
 

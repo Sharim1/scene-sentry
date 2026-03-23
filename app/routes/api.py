@@ -354,8 +354,6 @@ async def start_task(
         raise HTTPException(status_code=401, detail="Authentication required")
 
     task_type_map = {
-        "movie_discovery": TaskType.MOVIE_DISCOVERY,
-        "tv_discovery": TaskType.TV_DISCOVERY,
         "gossip_scrape": TaskType.GOSSIP_SCRAPE,
         "content_reranking": TaskType.CONTENT_RERANKING,
     }
@@ -372,42 +370,6 @@ async def start_task(
     task = await task_manager.create_task(task_type=task_type_map[task_type], user_id=user.id)
 
     user_id = user.id
-
-    async def run_movie_discovery(task, tm):
-        from app.services.content_discovery import ContentDiscoveryService
-
-        await tm.update_task(task.id, progress=10, message="Fetching movies from providers...")
-        try:
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                svc = ContentDiscoveryService(db_session)
-                saved = await svc.discover_and_save_movies(limit=200)
-                await tm.update_task(task.id, progress=90, message=f"Saved {saved} movies")
-                return {"saved": saved}
-            finally:
-                db_session.close()
-        except Exception as e:
-            logger.error(f"Movie discovery error: {e}")
-            raise
-
-    async def run_tv_discovery(task, tm):
-        from app.services.content_discovery import ContentDiscoveryService
-
-        await tm.update_task(task.id, progress=10, message="Fetching TV shows from providers...")
-        try:
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                svc = ContentDiscoveryService(db_session)
-                saved = await svc.discover_and_save_tv_shows(limit=200)
-                await tm.update_task(task.id, progress=90, message=f"Saved {saved} TV shows")
-                return {"saved": saved}
-            finally:
-                db_session.close()
-        except Exception as e:
-            logger.error(f"TV discovery error: {e}")
-            raise
 
     async def run_gossip_scrape(task, tm):
         from app.services.gossip_service import GossipService as GS
@@ -449,8 +411,6 @@ async def start_task(
             raise
 
     task_functions = {
-        TaskType.MOVIE_DISCOVERY: run_movie_discovery,
-        TaskType.TV_DISCOVERY: run_tv_discovery,
         TaskType.GOSSIP_SCRAPE: run_gossip_scrape,
         TaskType.CONTENT_RERANKING: run_content_reranking,
     }

@@ -112,9 +112,16 @@ def get_ai_status():
     }
 
 
+def to_user_tz_filter(utc_dt, tz_name="UTC"):
+    """Jinja2 filter: convert a UTC datetime to the given timezone."""
+    from app.utils.timezone import utc_to_local
+    return utc_to_local(utc_dt, tz_name)
+
+
 # Register template filters and globals
 templates.env.filters["from_json"] = from_json_filter
 templates.env.filters["time_ago"] = time_ago_filter
+templates.env.filters["to_user_tz"] = to_user_tz_filter
 templates.env.globals["static_url"] = static_url
 templates.env.globals["get_flashed_messages"] = get_flashed_messages
 templates.env.globals["get_ai_status"] = get_ai_status

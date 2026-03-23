@@ -43,11 +43,16 @@ class ReminderService:
             self.db.commit()
         return deleted
 
-    def get_grouped_by_date(self, user_id: int, year: int, month: int) -> Dict[str, List[Reminder]]:
+    def get_grouped_by_date(
+        self, user_id: int, year: int, month: int, tz_name: str = "UTC"
+    ) -> Dict[str, List[Reminder]]:
+        from app.utils.timezone import utc_to_local
+
         reminders = self.repo.get_by_month(user_id, year, month)
         grouped: Dict[str, List[Reminder]] = {}
         for r in reminders:
-            key = r.scheduled_time.strftime("%A, %b %d").upper()
+            local_dt = utc_to_local(r.scheduled_time, tz_name)
+            key = local_dt.strftime("%A, %b %d").upper()
             grouped.setdefault(key, []).append(r)
         return grouped
 
