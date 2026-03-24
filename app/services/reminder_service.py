@@ -56,11 +56,48 @@ class ReminderService:
             grouped.setdefault(key, []).append(r)
         return grouped
 
-    def process_due_reminders(self):
-        """Mark due reminders as sent."""
+    def process_due_reminders(self) -> int:
+        """Find due reminders, create in-app notifications, send emails, mark sent."""
+        from app.services.notification_service import NotificationService
+        from app.services.email_service import send_reminder_email
+        from app.utils.timezone import utc_to_local
+
         due = self.repo.get_due()
+        if not due:
+            return 0
+
+        notif_svc = NotificationService(self.db)
+
         for reminder in due:
-            logger.info(f"Reminder due for user {reminder.user_id}: {reminder.message}")
+            try:
+                notif_svc.create_from_reminder(reminder)
+            except Exception as exc:
+                logger.error("Failed to create notification for reminder %s: %s", reminder.id, exc)
+
+            user = reminder.user
+            if user and user.email and user.email_notifications:
+                try:
+                    tz = user.timezone or "UTC"
+                    local_dt = utc_to_local(reminder.scheduled_time, tz)
+                    time_str = local_dt.strftime("%b %d, %Y at %I:%M %p %Z")
+
+                    content_title = (
+                        reminder.content.title if reminder.content else "Untitled"
+                    )
+                    rtype = reminder.reminder_type.value.replace("_", " ").title()
+
+                    send_reminder_email(
+                        to_email=user.email,
+                        subject=f"Reminder: {content_title}",
+                        content_title=content_title,
+                        reminder_message=reminder.message or f"{rtype} reminder for {content_title}",
+                        reminder_type=rtype,
+                        scheduled_time_display=time_str,
+                    )
+                except Exception as exc:
+                    logger.error("Failed to email reminder %s: %s", reminder.id, exc)
+
             self.repo.mark_sent(reminder.id)
+
         self.db.commit()
         return len(due)

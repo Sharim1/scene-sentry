@@ -18,6 +18,9 @@ Usage:
     python manage.py enrich --provider tvmaze            # Use only a specific provider
     python manage.py enrich --all                        # Loop until nothing left
     python manage.py enrich --status                     # Show how many records need enrichment
+
+    python manage.py fix-emails            # Backfill real emails from Clerk for placeholder users
+    python manage.py fix-emails --dry-run  # Preview what would be updated
 """
 import argparse
 import logging
@@ -184,6 +187,72 @@ def _show_enrichment_status(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# fix-emails
+# ---------------------------------------------------------------------------
+
+def cmd_fix_emails(args: argparse.Namespace) -> None:
+    """Backfill real emails and fix bad usernames for Clerk users."""
+    _init_app()
+
+    from app.database import db_session
+    from app.models.user import User
+    from app.middleware.clerk import (
+        fetch_clerk_user_email,
+        _is_placeholder_email,
+        _is_placeholder_username,
+    )
+
+    with db_session() as db:
+        users = db.query(User).filter(User.clerk_id.isnot(None)).all()
+
+        needs_fix = [
+            u for u in users
+            if _is_placeholder_email(u.email) or _is_placeholder_username(u.username)
+        ]
+
+        if not needs_fix:
+            print("All Clerk users have valid emails and usernames. Nothing to do.")
+            return
+
+        print(f"Found {len(needs_fix)} user(s) needing fixes:\n")
+
+        updated = 0
+        for user in needs_fix:
+            real_email = None
+            changes = []
+
+            if _is_placeholder_email(user.email):
+                real_email = fetch_clerk_user_email(user.clerk_id)
+                if real_email:
+                    changes.append(f"email: {user.email} -> {real_email}")
+                    if not args.dry_run:
+                        user.email = real_email
+                else:
+                    changes.append(f"email: {user.email} -> [could not resolve]")
+
+            if _is_placeholder_username(user.username):
+                email_for_name = real_email or user.email
+                if email_for_name and not _is_placeholder_email(email_for_name):
+                    new_name = email_for_name.split("@")[0]
+                else:
+                    short_id = user.clerk_id.removeprefix("user_")[:8]
+                    new_name = f"user_{short_id}"
+                changes.append(f"username: {user.username} -> {new_name}")
+                if not args.dry_run:
+                    user.username = new_name
+
+            if changes:
+                updated += 1
+                print(f"  {user.clerk_id[:16]}...: {', '.join(changes)}")
+
+        if args.dry_run:
+            print(f"\nDry run — {updated} user(s) would be updated. Re-run without --dry-run to apply.")
+        else:
+            db.commit()
+            print(f"\nUpdated {updated} user(s).")
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -244,6 +313,14 @@ def main():
         help="Show enrichment backlog counts and exit",
     )
     enrich.set_defaults(func=cmd_enrich)
+
+    # -- fix-emails --
+    fe = sub.add_parser("fix-emails", help="Backfill real emails from Clerk for placeholder users")
+    fe.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview changes without applying them",
+    )
+    fe.set_defaults(func=cmd_fix_emails)
 
     args = parser.parse_args()
     if not args.command:

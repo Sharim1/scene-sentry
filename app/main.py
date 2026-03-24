@@ -137,13 +137,14 @@ async def favicon():
 
 
 # Include routers -- content router last since it has a catch-all /{content_id} route
-from app.routes import auth, dashboard, library, gossip, api, content, reminders
+from app.routes import auth, dashboard, library, gossip, api, content, reminders, notifications
 
 app.include_router(auth.router, tags=["auth"])
 app.include_router(dashboard.router, tags=["dashboard"])
 app.include_router(library.router, prefix="/library", tags=["library"])
 app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
 app.include_router(api.router, prefix="/api", tags=["api"])
+app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
 app.include_router(content.router, tags=["content"])
 

@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     tvdb_enabled: bool = True
     omdb_enabled: bool = True
     tvmaze_enabled: bool = True
+
+    # Email delivery (Mailgun primary, Resend fallback)
+    mailgun_api_key: Optional[str] = None
+    mailgun_domain: Optional[str] = None
+    mailgun_from_email: Optional[str] = None  # defaults to noreply@<mailgun_domain>
+    resend_api_key: Optional[str] = None
+    resend_from_email: Optional[str] = None   # e.g. "Scene Sentry <noreply@alerts.scenesentry.com>"
     
     # Background Tasks
     gossip_scrape_interval_minutes: int = 30
@@ -52,6 +59,7 @@ class Settings(BaseSettings):
     discovery_interval_hours: int = 6
     discovery_batch_size: int = 10   # pages per provider per scheduled run
     enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
+    reminder_check_interval_minutes: int = 1  # how often to check for due reminders
     
     # Rate limiting
     rate_limit_auth: str = "5/minute"  # For login/register endpoints

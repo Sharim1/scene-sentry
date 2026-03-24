@@ -95,6 +95,27 @@ def _run_migrations():
                 conn.execute(text(stmt))
                 logger.info("Migration: altered %s.%s to %s", table, column, new_type)
 
+        # Fix FK constraints that need ON DELETE behaviour
+        fk_fixes: list[tuple[str, str, str, str, str]] = [
+            # (table, constraint_name, column, references, on_delete)
+            ("notifications", "notifications_reminder_id_fkey", "reminder_id", "reminders(id)", "SET NULL"),
+        ]
+        for table, constraint, column, references, on_delete in fk_fixes:
+            if table not in existing_tables:
+                continue
+            row = conn.execute(text(
+                "SELECT confdeltype FROM pg_constraint "
+                "WHERE conname = :name"
+            ), {"name": constraint}).fetchone()
+            # 'a' = NO ACTION (default), 'n' = SET NULL, 'c' = CASCADE
+            if row and row[0] != "n":
+                conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{constraint}"'))
+                conn.execute(text(
+                    f'ALTER TABLE "{table}" ADD CONSTRAINT "{constraint}" '
+                    f'FOREIGN KEY ("{column}") REFERENCES {references} ON DELETE {on_delete}'
+                ))
+                logger.info("Migration: updated FK %s to ON DELETE %s", constraint, on_delete)
+
 
 def init_db(drop_all: bool = False):
     """Initialize database tables.
@@ -102,7 +123,7 @@ def init_db(drop_all: bool = False):
     Args:
         drop_all: If True, drops all tables before creating (use only in development)
     """
-    from app.models import user, content, episode, library, gossip, reminder, ranking, discovery_state  # noqa: F401
+    from app.models import user, content, episode, library, gossip, reminder, notification, ranking, discovery_state  # noqa: F401
 
     if drop_all:
         Base.metadata.drop_all(bind=engine)

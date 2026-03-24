@@ -55,10 +55,11 @@ def start_scheduler():
 
     scheduler.add_job(
         reminder_task,
-        IntervalTrigger(minutes=60),
+        IntervalTrigger(minutes=settings.reminder_check_interval_minutes),
         id="send_reminders",
         name="Send Reminders Task",
         replace_existing=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
     )
 
     scheduler.add_job(
@@ -197,7 +198,7 @@ async def cleanup_task():
     logger.info("Running cleanup task...")
     try:
         from app.database import db_session
-        from app.models import Reminder, Gossip
+        from app.models import Reminder, Gossip, Notification
         from app.models.ranking import UserContentRank
 
         cutoff_30_days = datetime.now(timezone.utc) - timedelta(days=30)
@@ -209,11 +210,19 @@ async def cleanup_task():
                 Reminder.created_at < cutoff_7_days,
             ).delete()
 
+            old_notifications = db.query(Notification).filter(
+                Notification.is_read == True,
+                Notification.created_at < cutoff_30_days,
+            ).delete()
+
             old_gossip = db.query(Gossip).filter(
                 Gossip.is_featured == False,
                 Gossip.scraped_at < cutoff_30_days,
             ).delete()
 
-            logger.info(f"Cleanup: {old_reminders} reminders, {old_gossip} gossip items deleted")
+            logger.info(
+                "Cleanup: %d reminders, %d notifications, %d gossip items deleted",
+                old_reminders, old_notifications, old_gossip,
+            )
     except Exception as e:
         logger.error(f"Error in cleanup task: {e}")

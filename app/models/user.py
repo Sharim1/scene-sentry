@@ -46,6 +46,7 @@ class User(Base):
     # Relationships
     library_items = relationship("LibraryItem", back_populates="user", cascade="all, delete-orphan")
     reminders = relationship("Reminder", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     
     def set_password(self, password: str):
         """Hash and set password"""
