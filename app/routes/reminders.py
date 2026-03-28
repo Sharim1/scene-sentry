@@ -19,8 +19,7 @@ router = APIRouter()
 @router.get("", response_class=HTMLResponse)
 async def reminders_page(
     request: Request,
-    year: int = Query(None),
-    month: int = Query(None),
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
     from app.templates import templates
@@ -29,23 +28,27 @@ async def reminders_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    now = datetime.now(timezone.utc)
-    y = year or now.year
-    m = month or now.month
-
+    tz = user.timezone or "UTC"
     svc = ReminderService(db)
-    grouped = svc.get_grouped_by_date(user.id, y, m, tz_name=user.timezone or "UTC")
-    calendar_dots = svc.get_calendar_dots(user.id, y, m)
+
+    grouped, current_page, total_pages = svc.get_upcoming_grouped(
+        user.id, page=page, tz_name=tz,
+    )
+
+    now = datetime.now(timezone.utc)
+    calendar_dots = svc.get_calendar_dots(user.id, now.year, now.month, tz_name=tz)
 
     return templates.TemplateResponse(
         "reminders.html",
         {
             "request": request,
             "user": user,
-            "year": y,
-            "month": m,
             "grouped_reminders": grouped,
             "calendar_dots": calendar_dots,
+            "calendar_year": now.year,
+            "calendar_month": now.month,
+            "page": current_page,
+            "total_pages": total_pages,
         },
     )
 
@@ -63,6 +66,7 @@ async def create_reminder(
     db: Session = Depends(get_db),
 ):
     from app.utils.timezone import local_to_utc
+    from app.templates import flash
 
     user = get_current_user(request, db)
     if not user:
@@ -71,11 +75,14 @@ async def create_reminder(
     type_map = {t.value: t for t in ReminderType}
     rtype = type_map.get(reminder_type, ReminderType.PREMIERE)
 
+    tz = user.timezone or "UTC"
+
     try:
         naive = datetime.strptime(f"{date}T{time}", "%Y-%m-%dT%H:%M")
-        sched = local_to_utc(naive, user.timezone or "UTC")
+        sched = local_to_utc(naive, tz)
     except (ValueError, TypeError):
-        sched = datetime.now(timezone.utc)
+        flash("Invalid date or time format. Please try again.", "error")
+        return RedirectResponse(url="/reminders", status_code=303)
 
     svc = ReminderService(db)
     svc.create_reminder(
@@ -132,6 +139,7 @@ async def calendar_data(
     if not user:
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
+    tz = user.timezone or "UTC"
     svc = ReminderService(db)
-    dots = svc.get_calendar_dots(user.id, year, month)
+    dots = svc.get_calendar_dots(user.id, year, month, tz_name=tz)
     return {"year": year, "month": month, "dates": dots}

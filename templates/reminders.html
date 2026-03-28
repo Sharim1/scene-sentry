@@ -137,12 +137,19 @@
                                 
                                 <!-- Actions -->
                                 <div class="flex items-center gap-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <label class="relative inline-flex items-center cursor-pointer" title="Toggle notification">
-                                        <input type="checkbox" class="sr-only peer" checked>
-                                        <div class="w-9 h-5 bg-white/10 peer-checked:bg-primary rounded-full peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
-                                    </label>
+                                    <form method="POST" action="/reminders/{{ reminder.id }}/toggle" class="inline">
+                                        <button type="submit" class="h-8 px-3 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-foreground font-medium flex items-center gap-1 transition-colors" title="{{ 'Disable' if reminder.is_enabled else 'Enable' }} reminder">
+                                            {% if reminder.is_enabled %}
+                                            <i data-lucide="bell" class="w-3 h-3 text-primary"></i>
+                                            On
+                                            {% else %}
+                                            <i data-lucide="bell-off" class="w-3 h-3 text-muted-foreground"></i>
+                                            Off
+                                            {% endif %}
+                                        </button>
+                                    </form>
                                     {% if reminder.content %}
-                                    <a href="/content/{{ reminder.content.id }}" class="h-8 px-3 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-foreground font-medium flex items-center gap-1 transition-colors">
+                                    <a href="/{{ reminder.content.id }}" class="h-8 px-3 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-foreground font-medium flex items-center gap-1 transition-colors">
                                         Details
                                     </a>
                                     {% endif %}
@@ -158,10 +165,29 @@
                     </div>
                 </div>
                 {% endfor %}
+
+                <!-- Pagination -->
+                {% if total_pages > 1 %}
+                <div class="flex items-center justify-center gap-4 pt-6">
+                    {% if page > 1 %}
+                    <a href="/reminders?page={{ page - 1 }}" class="btn btn-ghost text-sm">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                        Previous
+                    </a>
+                    {% endif %}
+                    <span class="text-sm text-muted-foreground">Page {{ page }} of {{ total_pages }}</span>
+                    {% if page < total_pages %}
+                    <a href="/reminders?page={{ page + 1 }}" class="btn btn-ghost text-sm">
+                        Next
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </a>
+                    {% endif %}
+                </div>
+                {% endif %}
             {% else %}
             <div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
                 <i data-lucide="bell-off" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
-                <h2 class="font-display font-semibold text-xl mb-2">No reminders yet</h2>
+                <h2 class="font-display font-semibold text-xl mb-2">No upcoming reminders</h2>
                 <p class="text-muted-foreground mb-6 max-w-md mx-auto">
                     Set up reminders for premieres, releases, and events you don't want to miss.
                 </p>
@@ -239,15 +265,16 @@
 {% block scripts %}
 <script>
 function remindersPage() {
-    const dots = {{ calendar_dots | tojson if calendar_dots else '{}' }};
-    const initYear = {{ year }};
-    const initMonth = {{ month }};
+    const initYear = {{ calendar_year }};
+    const initMonth = {{ calendar_month }};
     const today = new Date();
     
     return {
         calYear: initYear,
         calMonth: initMonth,
+        dots: {{ calendar_dots | tojson if calendar_dots else '{}' }},
         showModal: false,
+        loading: false,
         
         get monthName() {
             return new Date(this.calYear, this.calMonth - 1).toLocaleString('default', { month: 'long' });
@@ -265,7 +292,22 @@ function remindersPage() {
             return d === today.getDate() && this.calMonth === today.getMonth() + 1 && this.calYear === today.getFullYear();
         },
         hasDot(d) {
-            return dots[d] !== undefined && dots[d] > 0;
+            return this.dots[d] !== undefined && this.dots[d] > 0;
+        },
+        
+        async fetchDots() {
+            this.loading = true;
+            try {
+                const resp = await fetch(`/reminders/api/calendar?year=${this.calYear}&month=${this.calMonth}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.dots = data.dates || {};
+                }
+            } catch (e) {
+                console.error('Failed to fetch calendar dots:', e);
+            } finally {
+                this.loading = false;
+            }
         },
         
         prevMonth() {
@@ -275,6 +317,7 @@ function remindersPage() {
             } else {
                 this.calMonth--;
             }
+            this.fetchDots();
         },
         nextMonth() {
             if (this.calMonth === 12) {
@@ -283,6 +326,7 @@ function remindersPage() {
             } else {
                 this.calMonth++;
             }
+            this.fetchDots();
         },
         
         scrollToDate(d) {

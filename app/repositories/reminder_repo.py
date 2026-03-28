@@ -2,7 +2,7 @@
 Reminder repository - database access for Reminder model
 """
 import logging
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,24 @@ class ReminderRepository:
             Reminder.scheduled_time <= end,
         ).order_by(Reminder.scheduled_time.asc()).all()
 
+    def get_upcoming_paged(
+        self, user_id: int, offset: int = 0, limit: int = 10,
+    ) -> Tuple[List[Reminder], int]:
+        """Return upcoming (future, unsent) reminders with total count for pagination."""
+        now = datetime.now(timezone.utc)
+        base = self.db.query(Reminder).filter(
+            Reminder.user_id == user_id,
+            Reminder.scheduled_time >= now,
+        )
+        total = base.count()
+        items = (
+            base.order_by(Reminder.scheduled_time.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return items, total
+
     def get_upcoming(self, user_id: int, limit: int = 5) -> List[Reminder]:
         now = datetime.now(timezone.utc)
         return self.db.query(Reminder).filter(
@@ -53,11 +71,36 @@ class ReminderRepository:
             Reminder.is_enabled == True,
         ).all()
 
-    def get_calendar_dots(self, user_id: int, year: int, month: int) -> Dict[int, int]:
-        reminders = self.get_by_month(user_id, year, month)
+    def get_calendar_dots(
+        self, user_id: int, year: int, month: int, tz_name: str = "UTC",
+    ) -> Dict[int, int]:
+        """Return {day_number: count} for upcoming reminders in the given month.
+
+        Only includes reminders whose scheduled_time >= now so dots
+        match what appears in the upcoming-only feed.
+        """
+        from app.utils.timezone import utc_to_local
+        from calendar import monthrange
+
+        now = datetime.now(timezone.utc)
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        _, last_day = monthrange(year, month)
+        end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+
+        floor = max(start, now)
+        if floor > end:
+            return {}
+
+        reminders = self.db.query(Reminder).filter(
+            Reminder.user_id == user_id,
+            Reminder.scheduled_time >= floor,
+            Reminder.scheduled_time <= end,
+        ).all()
+
         dots: Dict[int, int] = {}
         for r in reminders:
-            day = r.scheduled_time.day
+            local_dt = utc_to_local(r.scheduled_time, tz_name)
+            day = local_dt.day
             dots[day] = dots.get(day, 0) + 1
         return dots
 

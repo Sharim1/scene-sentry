@@ -2,7 +2,8 @@
 Reminder service - business logic for reminders
 """
 import logging
-from typing import List, Optional, Dict
+import math
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,8 @@ from app.repositories.reminder_repo import ReminderRepository
 from app.models.reminder import Reminder
 
 logger = logging.getLogger(__name__)
+
+REMINDERS_PER_PAGE = 10
 
 
 class ReminderService:
@@ -23,8 +26,10 @@ class ReminderService:
     def get_by_month(self, user_id: int, year: int, month: int) -> List[Reminder]:
         return self.repo.get_by_month(user_id, year, month)
 
-    def get_calendar_dots(self, user_id: int, year: int, month: int) -> Dict[int, int]:
-        return self.repo.get_calendar_dots(user_id, year, month)
+    def get_calendar_dots(
+        self, user_id: int, year: int, month: int, tz_name: str = "UTC",
+    ) -> Dict[int, int]:
+        return self.repo.get_calendar_dots(user_id, year, month, tz_name=tz_name)
 
     def create_reminder(self, user_id: int, **kwargs) -> Reminder:
         reminder = self.repo.create(user_id=user_id, **kwargs)
@@ -42,6 +47,31 @@ class ReminderService:
         if deleted:
             self.db.commit()
         return deleted
+
+    def get_upcoming_grouped(
+        self,
+        user_id: int,
+        page: int = 1,
+        tz_name: str = "UTC",
+    ) -> Tuple[Dict[str, List[Reminder]], int, int]:
+        """Return upcoming reminders grouped by local date, with pagination metadata.
+
+        Returns (grouped_dict, current_page, total_pages).
+        """
+        from app.utils.timezone import utc_to_local
+
+        per_page = REMINDERS_PER_PAGE
+        offset = (page - 1) * per_page
+        items, total = self.repo.get_upcoming_paged(user_id, offset=offset, limit=per_page)
+        total_pages = max(1, math.ceil(total / per_page))
+
+        grouped: Dict[str, List[Reminder]] = {}
+        for r in items:
+            local_dt = utc_to_local(r.scheduled_time, tz_name)
+            key = local_dt.strftime("%A, %b %d").upper()
+            grouped.setdefault(key, []).append(r)
+
+        return grouped, page, total_pages
 
     def get_grouped_by_date(
         self, user_id: int, year: int, month: int, tz_name: str = "UTC"

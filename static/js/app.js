@@ -917,58 +917,11 @@ async function addToLibrary(contentId, status, buttonElement = null) {
     }
 }
 
-/**
- * Cleanup article-style entries using AJAX
- * Handles auth errors gracefully
- */
-async function cleanupArticles(buttonElement = null) {
-    // Show loading state
-    let originalHTML = '';
-    if (buttonElement) {
-        originalHTML = buttonElement.innerHTML;
-        buttonElement.disabled = true;
-        buttonElement.innerHTML = '<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
-    }
-    
-    try {
-        const response = await fetch('/cleanup-articles', {
-            method: 'POST',
-            redirect: 'manual'
-        });
-        
-        if (response.ok || response.type === 'opaqueredirect' || response.status === 303) {
-            const redirectUrl = response.headers.get('Location') || '';
-            if (redirectUrl.includes('/login')) {
-                showToast('Session expired. Please refresh the page.', 'warning');
-            } else {
-                showToast('Cleanup complete!', 'success');
-                setTimeout(() => window.location.reload(), 1000);
-            }
-        } else if (response.status === 401) {
-            showToast('Session expired. Please refresh the page.', 'warning');
-        } else {
-            showToast('Cleanup failed. Please try again.', 'error');
-        }
-    } catch (error) {
-        console.error('Cleanup error:', error);
-        showToast('Cleanup failed. Please try again.', 'error');
-    } finally {
-        if (buttonElement && originalHTML) {
-            buttonElement.disabled = false;
-            buttonElement.innerHTML = originalHTML;
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-        }
-    }
-}
-
 // Make functions available globally
 window.startBackgroundTask = startBackgroundTask;
 window.startDiscoveryTask = startDiscoveryTask;
 window.updateStatus = updateStatus;
 window.updateProgress = updateProgress;
 window.addToLibrary = addToLibrary;
-window.cleanupArticles = cleanupArticles;
 window.copyToClipboard = copyToClipboard;
 window.confirmAction = confirmAction;

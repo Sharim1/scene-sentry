@@ -320,22 +320,6 @@ class TaskManager:
                 error=str(e)
             )
     
-    def cleanup_old_tasks(self, max_age_hours: int = 24):
-        """Remove tasks older than max_age_hours"""
-        cutoff = datetime.now(timezone.utc)
-        to_remove = []
-        
-        for task_id, task in self._tasks.items():
-            if task.completed_at:
-                age = (cutoff - task.completed_at).total_seconds() / 3600
-                if age > max_age_hours:
-                    to_remove.append(task_id)
-        
-        for task_id in to_remove:
-            del self._tasks[task_id]
-        
-        if to_remove:
-            logger.info(f"Cleaned up {len(to_remove)} old tasks")
 
 
 # Global singleton instance
