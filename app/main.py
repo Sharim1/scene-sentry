@@ -12,7 +12,8 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, get_db
+from app.models.user import User
 from app.templates import templates, static_path, flash, get_flashed_messages
 
 # Configure logging
@@ -87,8 +88,6 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Landing page"""
-    from app.database import get_db
-    
     user = None
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
@@ -96,7 +95,6 @@ async def index(request: Request):
     if clerk_user_id or session_user_id:
         db = next(get_db())
         try:
-            from app.models.user import User
             user_id = clerk_user_id or session_user_id
             user = db.query(User).filter(User.id == user_id).first()
         finally:
@@ -137,8 +135,10 @@ async def favicon():
 
 
 # Include routers -- content router last since it has a catch-all /{content_id} route
-from app.routes import auth, dashboard, library, gossip, api, content, reminders, notifications
+from app.routes import auth, dashboard, library, gossip, api, content, reminders, notifications, search_page, contact
 
+
+app.include_router(contact.router, tags=["pages"])
 app.include_router(auth.router, tags=["auth"])
 app.include_router(dashboard.router, tags=["dashboard"])
 app.include_router(library.router, prefix="/library", tags=["library"])
@@ -146,6 +146,7 @@ app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
 app.include_router(api.router, prefix="/api", tags=["api"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
+app.include_router(search_page.router, tags=["search"])
 app.include_router(content.router, tags=["content"])
 
 

@@ -36,7 +36,11 @@
             {{ featured_gossip.title }}
         </h1>
         <p class="text-lg md:text-xl text-white/70 mb-8 line-clamp-2 animate-in" style="animation-delay: 0.2s;">
-            {{ featured_gossip.preview_text or featured_gossip.content[:180] }}...
+            {% if featured_gossip.preview_text %}
+            {{ featured_gossip.preview_text }}
+            {% else %}
+            {{ featured_gossip.content[:180] }}{% if featured_gossip.content and featured_gossip.content|length > 180 %}…{% endif %}
+            {% endif %}
         </p>
         <div class="flex flex-wrap gap-4 animate-in" style="animation-delay: 0.3s;">
             <a href="{{ featured_gossip.source_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-8 py-3 bg-white text-black font-semibold rounded-full hover:bg-white/90 transition-all duration-200 shadow-lg">
@@ -185,15 +189,8 @@
                 <div class="space-y-4">
                     {% if trending %}
                         {% for item in trending %}
-                        <a href="/{{ item.id }}" class="flex items-center gap-3 group cursor-pointer">
-                            <div class="font-display font-bold text-2xl text-white/10 group-hover:text-primary transition-colors w-8">
-                                {{ "%02d"|format(loop.index) }}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="font-medium text-sm group-hover:text-primary transition-colors line-clamp-1">{{ item.title }}</div>
-                                <div class="text-xs text-muted-foreground">{{ item.content_type|replace('_', ' ')|title }}</div>
-                            </div>
-                        </a>
+                        {% set rank = loop.index %}
+                        {% include 'partials/_trending_item.html' %}
                         {% endfor %}
                     {% else %}
                         {% for i in range(5) %}

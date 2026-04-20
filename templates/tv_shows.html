@@ -18,32 +18,16 @@
 
 <!-- Search Bar -->
 <div class="mb-6">
-    <form action="/tv-shows" method="GET" class="relative">
-        {% if current_filter != 'all' %}
-        <input type="hidden" name="filter" value="{{ current_filter }}">
-        {% endif %}
-        <div class="relative">
-            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none"></i>
-            <input 
-                type="text" 
-                name="q" 
-                value="{{ search_query or '' }}"
-                placeholder="Search TV shows by title..."
-                class="w-full h-12 pl-12 pr-32 bg-card/50 border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-            >
-            <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
-                {% if search_query %}
-                <a href="/tv-shows{% if current_filter != 'all' %}?filter={{ current_filter }}{% endif %}" class="h-8 px-3 bg-muted hover:bg-muted/80 text-muted-foreground rounded-lg text-sm font-medium flex items-center gap-1 transition-colors">
-                    <i data-lucide="x" class="w-4 h-4"></i>
-                    Clear
-                </a>
-                {% endif %}
-                <button type="submit" class="h-8 px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
-                    Search
-                </button>
-            </div>
-        </div>
-    </form>
+    {% set search_form_action = '/tv-shows' %}
+    {% set search_placeholder = 'Search TV shows by title...' %}
+    {% set search_value = search_query or '' %}
+    {% set search_hidden_filter = current_filter %}
+    {% if search_query %}
+    {%- set search_clear_href -%}
+/tv-shows{%- if current_filter != 'all' -%}?filter={{ current_filter }}{%- endif -%}
+    {%- endset -%}
+    {% endif %}
+    {% include 'partials/_search_bar.html' %}
 </div>
 
 <!-- Tabs -->

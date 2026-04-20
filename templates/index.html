@@ -3,41 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Scene Sentry — AI-powered discovery for movies, TV, and entertainment gossip. Curated recommendations, alerts, and your personal watch library.">
+    <meta name="theme-color" content="#1a1625">
+    <meta property="og:title" content="Scene Sentry - Your Cinematic Intelligence">
+    <meta property="og:description" content="AI-powered discovery engine for movies, TV shows, and entertainment gossip.">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
     <title>Scene Sentry - Your Cinematic Intelligence</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        background: 'hsl(240 10% 4%)',
-                        foreground: 'hsl(0 0% 98%)',
-                        card: 'hsl(240 10% 7%)',
-                        'card-foreground': 'hsl(0 0% 98%)',
-                        primary: { DEFAULT: 'hsl(270 70% 60%)', foreground: 'hsl(0 0% 100%)' },
-                        secondary: { DEFAULT: 'hsl(240 5% 15%)', foreground: 'hsl(0 0% 98%)' },
-                        accent: { DEFAULT: 'hsl(320 80% 60%)', foreground: 'hsl(0 0% 100%)' },
-                        muted: { DEFAULT: 'hsl(240 5% 15%)', foreground: 'hsl(240 5% 65%)' },
-                        border: 'hsl(240 5% 15%)',
-                    },
-                    fontFamily: {
-                        sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
-                        display: ['Outfit', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    {% include 'partials/_tailwind_cdn.html' %}
     
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
 </head>
 <body class="bg-background text-foreground font-sans antialiased">
     
@@ -51,10 +33,8 @@
                 <span class="font-display font-bold text-2xl tracking-tight">Scene Sentry</span>
             </div>
             <div class="hidden md:flex items-center gap-8">
-                <a href="#" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Home</a>
-                <a href="#features" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Explore</a>
-                <a href="#gossip" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Gossip</a>
-                <a href="#library" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Library</a>
+                <a href="#top" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Home</a>
+                <a href="#features" class="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors">Features</a>
             </div>
             <div class="flex items-center gap-4">
                 <a href="/login" class="px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground transition-colors hidden sm:inline-block">Sign in</a>
@@ -66,7 +46,7 @@
     </nav>
     
     <!-- Hero Section -->
-    <section class="min-h-screen flex items-center justify-center px-4 pt-20 relative overflow-hidden">
+    <section id="top" class="min-h-screen flex items-center justify-center px-4 pt-20 relative overflow-hidden scroll-mt-20">
         <div class="absolute inset-0 overflow-hidden">
             <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl"></div>
             <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl"></div>
@@ -187,8 +167,10 @@
                     <p class="text-lg text-muted-foreground mb-8 max-w-xl mx-auto">
                         Join the cinephiles who trust Scene Sentry for their entertainment intelligence.
                     </p>
-                    <form class="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto" onsubmit="event.preventDefault(); window.location.href='/register';">
-                        <input type="email" placeholder="you@example.com" class="w-full h-12 px-5 bg-card/50 border border-white/10 rounded-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all">
+                    <form action="/register" method="get" class="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
+                        <label for="cta-email" class="sr-only">Email</label>
+                        <input id="cta-email" name="email" type="email" required placeholder="you@example.com" autocomplete="email"
+                               class="w-full h-12 px-5 bg-card/50 border border-white/10 rounded-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all">
                         <button type="submit" class="w-full sm:w-auto px-8 h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 text-white rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/30 whitespace-nowrap flex items-center justify-center gap-2">
                             <i data-lucide="arrow-right" class="w-4 h-4"></i>
                             Get Access
@@ -209,9 +191,9 @@
                 <span class="font-display font-bold">Scene Sentry</span>
             </div>
             <div class="flex items-center gap-6 text-sm text-muted-foreground">
-                <a href="#" class="hover:text-foreground transition-colors">Privacy</a>
-                <a href="#" class="hover:text-foreground transition-colors">Terms</a>
-                <a href="#" class="hover:text-foreground transition-colors">Contact</a>
+                <a href="/privacy" class="hover:text-foreground transition-colors">Privacy</a>
+                <a href="/terms" class="hover:text-foreground transition-colors">Terms</a>
+                <a href="/contact" class="hover:text-foreground transition-colors">Contact</a>
             </div>
             <p class="text-sm text-muted-foreground">
                 &copy; 2026 Scene Sentry. The Digital Auteur Experience.

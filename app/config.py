@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
     reminder_check_interval_minutes: int = 1  # how often to check for due reminders
     
+    # Public contact form (override CONTACT_TO_EMAIL in .env)
+    contact_to_email: Optional[str] = "contact@example.com"
+    contact_from_email: Optional[str] = None  # defaults via effective_contact_from_address
+
     # Rate limiting
     rate_limit_auth: str = "5/minute"  # For login/register endpoints
     rate_limit_api: str = "60/minute"  # For API endpoints
@@ -100,6 +104,17 @@ class Settings(BaseSettings):
     def is_clerk_configured(self) -> bool:
         """Check if Clerk authentication is properly configured (requires secret for SDK verification)."""
         return bool(self.clerk_secret_key and self.clerk_publishable_key)
+
+    @property
+    def effective_contact_from_address(self) -> str:
+        """From-address for outbound contact-form emails."""
+        if self.contact_from_email:
+            return self.contact_from_email
+        if self.resend_from_email:
+            return self.resend_from_email
+        if self.mailgun_domain:
+            return self.mailgun_from_email or f"Scene Sentry <noreply@{self.mailgun_domain}>"
+        return "Scene Sentry <noreply@localhost>"
 
 
 @lru_cache()

@@ -135,6 +135,26 @@ async def login(
     )
 
 
+def _register_template_context(
+    request: Request,
+    *,
+    error: Optional[str] = None,
+    prefill_email: str = "",
+) -> dict:
+    """Shared template context for GET/POST register responses."""
+    fallback = request.query_params.get("fallback") == "1"
+    clerk_enabled = settings.is_clerk_configured and not fallback
+    raw = (prefill_email or "").strip()[:120]
+    return {
+        "request": request,
+        "error": error,
+        "clerk_enabled": clerk_enabled,
+        "clerk_publishable_key": settings.clerk_publishable_key or "",
+        "clear_clerk_session": False,
+        "prefill_email": raw,
+    }
+
+
 @router.get("/register", response_class=HTMLResponse, name="register")
 async def register_page(request: Request):
     """Registration page - shows Clerk SignUp or traditional form"""
@@ -142,19 +162,11 @@ async def register_page(request: Request):
     session_user_id = getattr(request.state, "session_user_id", None)
     if clerk_user_id or session_user_id:
         return RedirectResponse(url="/dashboard", status_code=303)
-    
-    fallback = request.query_params.get("fallback") == "1"
-    clerk_enabled = settings.is_clerk_configured and not fallback
-    
+
+    raw_email = (request.query_params.get("email") or "").strip()
     return templates.TemplateResponse(
         "auth/register.html",
-        {
-            "request": request,
-            "error": None,
-            "clerk_enabled": clerk_enabled,
-            "clerk_publishable_key": settings.clerk_publishable_key or "",
-            "clear_clerk_session": False
-        }
+        _register_template_context(request, prefill_email=raw_email),
     )
 
 
@@ -176,30 +188,46 @@ async def register(
     if len(username) < 3 or len(username) > 80:
         return templates.TemplateResponse(
             "auth/register.html",
-            {"request": request, "error": "Username must be between 3 and 80 characters"},
-            status_code=400
+            _register_template_context(
+                request,
+                error="Username must be between 3 and 80 characters",
+                prefill_email=email,
+            ),
+            status_code=400,
         )
-    
+
     if len(password) < 8:
         return templates.TemplateResponse(
             "auth/register.html",
-            {"request": request, "error": "Password must be at least 8 characters"},
-            status_code=400
+            _register_template_context(
+                request,
+                error="Password must be at least 8 characters",
+                prefill_email=email,
+            ),
+            status_code=400,
         )
-    
+
     # Check if user exists
     if db.query(User).filter(User.username == username).first():
         return templates.TemplateResponse(
             "auth/register.html",
-            {"request": request, "error": "Username already exists"},
-            status_code=400
+            _register_template_context(
+                request,
+                error="Username already exists",
+                prefill_email=email,
+            ),
+            status_code=400,
         )
-    
+
     if db.query(User).filter(User.email == email).first():
         return templates.TemplateResponse(
             "auth/register.html",
-            {"request": request, "error": "Email already exists"},
-            status_code=400
+            _register_template_context(
+                request,
+                error="Email already exists",
+                prefill_email=email,
+            ),
+            status_code=400,
         )
     
     # Create user

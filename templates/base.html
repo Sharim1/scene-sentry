@@ -10,58 +10,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        background: 'hsl(240 10% 4%)',
-                        foreground: 'hsl(0 0% 98%)',
-                        card: 'hsl(240 10% 7%)',
-                        'card-foreground': 'hsl(0 0% 98%)',
-                        primary: {
-                            DEFAULT: 'hsl(270 70% 60%)',
-                            foreground: 'hsl(0 0% 100%)',
-                        },
-                        secondary: {
-                            DEFAULT: 'hsl(240 5% 15%)',
-                            foreground: 'hsl(0 0% 98%)',
-                        },
-                        muted: {
-                            DEFAULT: 'hsl(240 5% 15%)',
-                            foreground: 'hsl(240 5% 65%)',
-                        },
-                        accent: {
-                            DEFAULT: 'hsl(320 80% 60%)',
-                            foreground: 'hsl(0 0% 100%)',
-                        },
-                        destructive: {
-                            DEFAULT: 'hsl(0 62% 30%)',
-                            foreground: 'hsl(0 0% 98%)',
-                        },
-                        border: 'hsl(240 5% 15%)',
-                        sidebar: {
-                            DEFAULT: 'hsl(240 10% 3%)',
-                            foreground: 'hsl(240 5% 90%)',
-                        },
-                    },
-                    fontFamily: {
-                        sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
-                        display: ['Outfit', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
+    {% include 'partials/_tailwind_cdn.html' %}
     
-    <!-- Alpine.js for interactivity -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Alpine.js for interactivity (pinned major version) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
     
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <!-- Lucide Icons (pinned) -->
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
@@ -101,7 +56,7 @@
     
     {% block head %}{% endblock %}
 </head>
-<body class="bg-background text-foreground font-sans antialiased" x-data="{ mobileMenuOpen: false }">
+<body class="bg-background text-foreground font-sans antialiased" data-authenticated="{{ 'true' if user else 'false' }}" x-data="{ mobileMenuOpen: false, globalSearchOpen: false }">
     <div class="min-h-screen flex overflow-hidden">
         
         <!-- Desktop Sidebar - Fixed structure to prevent profile scrolling -->
@@ -144,6 +99,11 @@
                     <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' %}active{% endif %}">
                         <i data-lucide="library" class="w-5 h-5"></i>
                         <span>My Library</span>
+                    </a>
+                    
+                    <a href="/search" class="sidebar-nav-item {% if request.url.path == '/search' %}active{% endif %}">
+                        <i data-lucide="search" class="w-5 h-5"></i>
+                        <span>Search</span>
                     </a>
                     
                     <a href="/reminders" class="sidebar-nav-item {% if '/reminders' in request.url.path %}active{% endif %}">
@@ -254,16 +214,6 @@
                 <span class="font-display font-bold text-lg">Scene Sentry</span>
             </div>
             <div class="flex items-center gap-1">
-                {% if user %}
-                <div x-data="{ mobileNotifCount: 0 }" x-init="fetch('/api/notifications/unread-count').then(r=>r.json()).then(d=>{mobileNotifCount=d.unread_count||0}).catch(()=>{})">
-                    <a href="/reminders" class="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
-                        <i data-lucide="bell" class="w-5 h-5 text-muted-foreground"></i>
-                        <span x-show="mobileNotifCount > 0" x-cloak
-                              x-text="mobileNotifCount > 9 ? '9+' : mobileNotifCount"
-                              class="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white px-0.5"></span>
-                    </a>
-                </div>
-                {% endif %}
                 <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 hover:bg-white/5 rounded-lg transition-colors">
                     <i data-lucide="menu" class="w-6 h-6" x-show="!mobileMenuOpen"></i>
                     <i data-lucide="x" class="w-6 h-6" x-show="mobileMenuOpen" x-cloak></i>
@@ -321,6 +271,10 @@
                     <i data-lucide="library" class="w-5 h-5"></i>
                     <span>My Library</span>
                 </a>
+                <a href="/search" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
+                    <i data-lucide="search" class="w-5 h-5"></i>
+                    <span>Search</span>
+                </a>
                 <a href="/reminders" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="bell" class="w-5 h-5"></i>
                     <span>Reminders</span>
@@ -344,9 +298,12 @@
         <!-- Main Content - Add left margin to account for fixed sidebar -->
         <main class="flex-1 overflow-y-auto overflow-x-hidden md:ml-64 md:p-6 p-4 pt-20 md:pt-6">
             {% if user %}
-            <!-- Notification Bell -->
-            <div class="flex justify-end mb-2" x-data="notificationBell()" x-init="init()" @keydown.escape.window="open = false">
-                <div class="relative">
+            <!-- Catalog search + notifications (fixed on mobile below top bar — single notification control, no duplicate /reminders link) -->
+            <div class="flex justify-end items-center gap-1 mb-2 max-md:fixed max-md:top-3 max-md:right-14 max-md:z-[60] max-md:mb-0 max-md:pointer-events-auto" id="app-header-actions">
+                <button type="button" @click="globalSearchOpen = true; $nextTick(() => { const el = document.getElementById('global-search-q'); if (el) el.focus(); })" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Search catalog" title="Search catalog">
+                    <i data-lucide="search" class="w-5 h-5 text-muted-foreground"></i>
+                </button>
+                <div class="relative" x-data="notificationBell()" x-init="init()" @keydown.escape.window="open = false">
                     <button @click="toggle()" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Notifications">
                         <i data-lucide="bell" class="w-5 h-5 text-muted-foreground"></i>
                         <span x-show="unreadCount > 0"
@@ -365,7 +322,7 @@
                          x-transition:leave-start="opacity-100 scale-100"
                          x-transition:leave-end="opacity-0 scale-95"
                          @click.away="open = false"
-                         class="absolute right-0 mt-2 w-80 max-h-[28rem] bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+                         class="absolute max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto right-0 mt-2 w-80 max-h-[28rem] bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[70]">
                         <!-- Header -->
                         <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
                             <h3 class="text-sm font-semibold">Notifications</h3>
@@ -394,9 +351,42 @@
                             </template>
                         </div>
                         <!-- Footer -->
-                        <div class="border-t border-white/5 px-4 py-2">
-                            <a href="/reminders" class="text-xs text-primary hover:underline">View all reminders</a>
+                        <div class="border-t border-white/5 px-4 py-2 flex flex-wrap gap-x-3 gap-y-1">
+                            <a href="/reminders" class="text-xs text-primary hover:underline">Reminders</a>
+                            <a href="/search" class="text-xs text-muted-foreground hover:text-primary hover:underline">Full catalog search</a>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global catalog search modal -->
+            <div x-show="globalSearchOpen" x-cloak
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 class="fixed inset-0 z-[80] flex items-start justify-center pt-24 px-4 bg-black/70 backdrop-blur-sm"
+                 @click.self="globalSearchOpen = false"
+                 @keydown.escape.window="globalSearchOpen = false">
+                <div id="global-search-root" class="w-full max-w-lg bg-card border border-white/10 rounded-2xl shadow-2xl overflow-hidden" @click.stop role="dialog" aria-modal="true" aria-labelledby="global-search-dialog-title">
+                    <div class="p-4 border-b border-white/5 flex items-center gap-3">
+                        <i data-lucide="search" class="w-5 h-5 text-muted-foreground flex-shrink-0"></i>
+                        <input type="search" id="global-search-q" data-global-search-input autocomplete="off"
+                               class="flex-1 bg-transparent border-0 text-foreground placeholder:text-muted-foreground focus:ring-0 text-base"
+                               placeholder="Search movies and TV in your catalog…"
+                               aria-label="Search catalog">
+                        <button type="button" @click="globalSearchOpen = false" class="p-2 rounded-lg hover:bg-white/10 text-muted-foreground" aria-label="Close search">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div id="global-search-results" data-global-search-results class="max-h-[min(60vh,24rem)] overflow-y-auto p-2 text-sm text-muted-foreground">
+                        <p class="px-3 py-6 text-center" id="global-search-hint">Type at least one character to search.</p>
+                    </div>
+                    <div class="px-4 py-2 border-t border-white/5 text-xs text-muted-foreground flex justify-between">
+                        <span id="global-search-dialog-title">Catalog search</span>
+                        <a href="/search" class="text-primary hover:underline" @click="globalSearchOpen = false">Open search page</a>
                     </div>
                 </div>
             </div>
@@ -443,9 +433,10 @@
         </main>
     </div>
     
-    <!-- Global Task Notifications Container - only show when tasks exist -->
+    <!-- Global Task Notifications: authenticated app shell only (avoids /api/tasks 401 for guests) -->
+    {% if user %}
     <div id="task-notifications" 
-         class="fixed top-4 right-4 z-50 space-y-2 w-80"
+         class="fixed max-md:top-20 top-4 right-4 z-50 space-y-2 w-80 max-w-[calc(100vw-2rem)]"
          x-data="taskNotifications()"
          x-show="tasks.length > 0"
          x-cloak>
@@ -511,6 +502,7 @@
             </div>
         </template>
     </div>
+    {% endif %}
     
     <!-- Initialize Lucide Icons (only once) -->
     <script>
