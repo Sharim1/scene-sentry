@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install commitizen
+
+      - name: Bump and changelog
+        id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cz bump --changelog --yes 2>&1 && echo "bumped=true" >> "$GITHUB_OUTPUT" || echo "bumped=false" >> "$GITHUB_OUTPUT"
+
+      - name: Push tag and commit
+        if: steps.bump.outputs.bumped == 'true'
+        run: git push origin main --tags
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          BODY=$(cz changelog --dry-run --start-rev "$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")" 2>/dev/null || echo "See CHANGELOG.md")
+          gh release create "$TAG" --title "$TAG" --notes "$BODY"
