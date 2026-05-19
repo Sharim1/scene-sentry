@@ -2,29 +2,29 @@
 Gossip routes for entertainment news
 """
 import logging
-from fastapi import APIRouter, Request, Depends, Query, BackgroundTasks
-from fastapi.responses import RedirectResponse, HTMLResponse
-from sqlalchemy.orm import Session
+from typing import Annotated
 
-from app.database import get_db
+from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi.responses import RedirectResponse, HTMLResponse
+
+from app.dependencies import DbDep, OptionalUserDep
 from app.models.gossip import GossipTag
-from app.routes.auth import get_current_user
-from app.services.gossip_service import GossipService
 from app.repositories.library_repo import LibraryRepository
+from app.services.gossip_service import GossipService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/gossip", tags=["gossip"])
 
 
 @router.get("", response_class=HTMLResponse)
-async def gossip_feed(
+def gossip_feed(
     request: Request,
-    tag: str = Query(None),
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
+    tag: Annotated[str | None, Query()] = None,
 ):
     from app.templates import templates
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -46,13 +46,13 @@ async def gossip_feed(
 
 
 @router.get("/{gossip_id}")
-async def gossip_detail(
+def gossip_detail(
     request: Request,
     gossip_id: int,
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
 ):
     """Redirect to the original article source."""
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -70,12 +70,12 @@ async def gossip_detail(
 @router.post("/refresh")
 async def refresh_gossip(
     request: Request,
+    user: OptionalUserDep,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: DbDep,
 ):
     from app.services.task_manager import get_task_manager, TaskType
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -97,14 +97,24 @@ async def refresh_gossip(
     async def run_gossip_scrape(task, tm):
         from app.services.gossip_service import GossipService as GS
 
-        await tm.update_task(task.id, progress=10, message=f"Scanning news for {len(tracked_titles)} tracked titles...")
+        await tm.update_task(
+            task.id,
+            progress=10,
+            message=f"Scanning news for {len(tracked_titles)} tracked titles...",
+        )
         try:
+            from app.database import get_db
+
             db_gen = get_db()
             db_session = next(db_gen)
             try:
                 svc = GS(db_session)
                 results = await svc.scrape_latest(tracked_titles)
-                await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
+                await tm.update_task(
+                    task.id,
+                    progress=90,
+                    message=f"Found {len(results)} gossip items",
+                )
                 return {"scraped": len(results)}
             finally:
                 db_session.close()

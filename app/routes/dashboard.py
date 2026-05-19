@@ -2,21 +2,20 @@
 Dashboard routes
 """
 import logging
+
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
-from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.database import get_db
+from app.dependencies import DbDep, OptionalUserDep
 from app.models import User, LibraryItem, Content
 from app.models.library import WatchStatus
-from app.routes.auth import get_current_user
 from app.services.gossip_service import GossipService
 from app.services.reminder_service import ReminderService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["dashboard"])
 
 
 def get_ai_agent_status():
@@ -45,10 +44,9 @@ def get_ai_agent_status():
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
+def dashboard(request: Request, user: OptionalUserDep, db: DbDep):
     from app.templates import templates
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -56,18 +54,26 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     reminder_svc = ReminderService(db)
 
     library_stats = {
-        "watching": db.query(LibraryItem).filter(
+        "watching": db.query(LibraryItem)
+        .filter(
             LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.WATCHING
-        ).count(),
-        "planned": db.query(LibraryItem).filter(
+        )
+        .count(),
+        "planned": db.query(LibraryItem)
+        .filter(
             LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.PLANNED
-        ).count(),
-        "completed": db.query(LibraryItem).filter(
+        )
+        .count(),
+        "completed": db.query(LibraryItem)
+        .filter(
             LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.COMPLETED
-        ).count(),
-        "maybe": db.query(LibraryItem).filter(
+        )
+        .count(),
+        "maybe": db.query(LibraryItem)
+        .filter(
             LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.MAYBE
-        ).count(),
+        )
+        .count(),
     }
 
     upcoming_reminders = reminder_svc.get_upcoming(user.id, limit=5)

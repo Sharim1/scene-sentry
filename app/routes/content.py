@@ -1,53 +1,59 @@
 """
 Content routes for Movies and TV Shows
 """
+import json as _json
 import logging
-from fastapi import APIRouter, Request, Depends, Query, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from typing import Annotated
 
-from app.database import get_db
-from app.models import User, Content, LibraryItem, WatchStatus
-from app.routes.auth import get_current_user
+from fastapi import APIRouter, Form, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from app.dependencies import DbDep, OptionalUserDep
+from app.models import WatchStatus
 from app.repositories.content_repo import ContentRepository
+from app.repositories.episode_repo import EpisodeRepository
 from app.repositories.library_repo import LibraryRepository
 from app.services.ranking_service import RankingService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["content"])
 
 PER_PAGE = 40
 
 
 @router.get("/movies", response_class=HTMLResponse)
-async def movies_page(
+def movies_page(
     request: Request,
-    filter: str = Query("all"),
-    q: str = Query(None),
-    page: int = Query(1, ge=1),
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
+    filter: Annotated[str, Query()] = "all",
+    q: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
 ):
     from app.templates import templates
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
     repo = ContentRepository(db)
     total = repo.count("movie")
-    offset = (page - 1) * PER_PAGE
 
     if q:
         movies = repo.search(q, content_type="movie", limit=PER_PAGE)
         total = len(movies)
     else:
         ranking_svc = RankingService(db)
-        ranked = ranking_svc.get_personalized_content(user.id, content_type="movie", limit=PER_PAGE)
+        ranked = ranking_svc.get_personalized_content(
+            user.id, content_type="movie", limit=PER_PAGE
+        )
         if ranked and ranked[0][1] is not None:
             movies = [r[0] for r in ranked]
         else:
-            movies = repo.get_movies(filter_by=filter, search=q, limit=PER_PAGE, offset=offset)
+            offset = (page - 1) * PER_PAGE
+            movies = repo.get_movies(
+                filter_by=filter, search=q, limit=PER_PAGE, offset=offset
+            )
 
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
 
@@ -72,33 +78,37 @@ async def movies_page(
 
 
 @router.get("/tv-shows", response_class=HTMLResponse)
-async def tv_shows_page(
+def tv_shows_page(
     request: Request,
-    filter: str = Query("all"),
-    q: str = Query(None),
-    page: int = Query(1, ge=1),
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
+    filter: Annotated[str, Query()] = "all",
+    q: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
 ):
     from app.templates import templates
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
     repo = ContentRepository(db)
     total = repo.count("tv_show")
-    offset = (page - 1) * PER_PAGE
 
     if q:
         tv_shows = repo.search(q, content_type="tv_show", limit=PER_PAGE)
         total = len(tv_shows)
     else:
         ranking_svc = RankingService(db)
-        ranked = ranking_svc.get_personalized_content(user.id, content_type="tv_show", limit=PER_PAGE)
+        ranked = ranking_svc.get_personalized_content(
+            user.id, content_type="tv_show", limit=PER_PAGE
+        )
         if ranked and ranked[0][1] is not None:
             tv_shows = [r[0] for r in ranked]
         else:
-            tv_shows = repo.get_tv_shows(filter_by=filter, search=q, limit=PER_PAGE, offset=offset)
+            offset = (page - 1) * PER_PAGE
+            tv_shows = repo.get_tv_shows(
+                filter_by=filter, search=q, limit=PER_PAGE, offset=offset
+            )
 
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
 
@@ -123,13 +133,13 @@ async def tv_shows_page(
 
 
 @router.post("/add-to-library")
-async def add_to_library(
+def add_to_library(
     request: Request,
-    content_id: int = Form(...),
-    status: str = Form("planned"),
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
+    content_id: Annotated[int, Form()],
+    status: Annotated[str, Form()] = "planned",
 ):
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -151,7 +161,11 @@ async def add_to_library(
     else:
         content = ContentRepository(db).get_by_id(content_id)
         if content:
-            lib_repo.create(user_id=user.id, content_id=content_id, status=watch_status)
+            lib_repo.create(
+                user_id=user.id,
+                content_id=content_id,
+                status=watch_status,
+            )
 
     db.commit()
 
@@ -162,16 +176,14 @@ async def add_to_library(
 
 
 @router.get("/{content_id}", response_class=HTMLResponse)
-async def content_detail(
+def content_detail(
     request: Request,
     content_id: int,
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
 ):
     from app.templates import templates
-    from app.repositories.episode_repo import EpisodeRepository
-    import json as _json
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 

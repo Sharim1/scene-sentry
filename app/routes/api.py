@@ -2,27 +2,30 @@
 JSON API routes for AJAX interactions
 """
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Request, Depends, HTTPException, Query, BackgroundTasks
+from typing import Annotated, Any, List, Optional
+
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict
 
 from app.database import get_db
-from app.models import User, Content, LibraryItem, Gossip
+from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
+from app.models import LibraryItem
 from app.models.library import WatchStatus
-from app.routes.auth import get_current_user
-from app.services.task_manager import get_task_manager, TaskType, TaskStatus
+from app.services.task_manager import get_task_manager, TaskType
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/api", tags=["api"])
 
 _running_tasks: set = set()
 
 
 class ContentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     content_type: str
@@ -30,11 +33,10 @@ class ContentResponse(BaseModel):
     rating: Optional[float]
     year: Optional[str]
 
-    class Config:
-        from_attributes = True
-
 
 class GossipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     preview_text: Optional[str]
@@ -43,19 +45,15 @@ class GossipResponse(BaseModel):
     tag: str
     time_ago: str
 
-    class Config:
-        from_attributes = True
-
 
 class LibraryItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     content: ContentResponse
     status: str
     progress: int
     rating: Optional[int]
-
-    class Config:
-        from_attributes = True
 
 
 class SearchResponse(BaseModel):
@@ -84,18 +82,57 @@ class TaskStartRequest(BaseModel):
     query: Optional[str] = None
 
 
-@router.get("/search", response_model=SearchResponse)
-async def search_content(
-    request: Request,
-    q: str = Query(..., min_length=1),
-    type: str = Query(None),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+class LibraryMutationResponse(BaseModel):
+    success: bool
+    status: Optional[str] = None
+    progress: Optional[int] = None
+    rating: Optional[int] = None
 
+
+class RankedItemResponse(BaseModel):
+    content: ContentResponse
+    rank_score: Optional[float]
+    reasoning: Optional[str]
+
+
+class TaskPayload(BaseModel):
+    id: str
+    type: str
+    name: str
+    user_id: int
+    status: str
+    progress: int
+    message: str
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class TaskListResponse(BaseModel):
+    tasks: List[TaskPayload]
+
+
+class TaskActionResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    task: Optional[TaskPayload] = None
+
+
+class TaskCancelResponse(BaseModel):
+    success: bool
+
+
+@router.get("/search", response_model=SearchResponse)
+def search_content(
+    user: RequireAuthDep,
+    db: DbDep,
+    q: Annotated[str, Query(min_length=1)],
+    type: Annotated[str | None, Query()] = None,
+):
     from app.repositories.content_repo import ContentRepository
+
     repo = ContentRepository(db)
     results = repo.search(q, content_type=type, limit=20)
 
@@ -117,16 +154,14 @@ async def search_content(
 
 
 @router.get("/library", response_model=List[LibraryItemResponse])
-async def get_library(
-    request: Request,
-    status: str = Query(None),
-    db: Session = Depends(get_db),
+def get_library(
+    user: RequireAuthDep,
+    db: DbDep,
+    status: Annotated[str | None, Query()] = None,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     from app.repositories.library_repo import LibraryRepository
+
     ws = None
     if status:
         status_map = {
@@ -160,15 +195,19 @@ async def get_library(
     ]
 
 
-@router.put("/library/{item_id}/status")
-async def update_item_status(
-    request: Request, item_id: int, update: StatusUpdate, db: Session = Depends(get_db)
+@router.put(
+    "/library/{item_id}/status",
+    response_model=LibraryMutationResponse,
+)
+def update_item_status(
+    item_id: int,
+    update: StatusUpdate,
+    user: RequireAuthDep,
+    db: DbDep,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     from app.repositories.library_repo import LibraryRepository
+
     status_map = {
         "watching": WatchStatus.WATCHING,
         "planned": WatchStatus.PLANNED,
@@ -186,21 +225,26 @@ async def update_item_status(
     db.commit()
 
     from app.services.ranking_service import RankingService
+
     RankingService(db).invalidate_ranks(user.id)
 
-    return {"success": True, "status": update.status}
+    return LibraryMutationResponse(success=True, status=update.status)
 
 
-@router.put("/library/{item_id}/progress")
-async def update_item_progress(
-    request: Request, item_id: int, update: ProgressUpdate, db: Session = Depends(get_db)
+@router.put(
+    "/library/{item_id}/progress",
+    response_model=LibraryMutationResponse,
+)
+def update_item_progress(
+    item_id: int,
+    update: ProgressUpdate,
+    user: RequireAuthDep,
+    db: DbDep,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id, LibraryItem.user_id == user.id
+        LibraryItem.id == item_id,
+        LibraryItem.user_id == user.id,
     ).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -212,18 +256,22 @@ async def update_item_progress(
         item.current_episode = update.episode
     item.updated_at = datetime.now(timezone.utc)
     db.commit()
-    return {"success": True, "progress": update.progress}
+    return LibraryMutationResponse(success=True, progress=update.progress)
 
 
-@router.put("/library/{item_id}/rating")
-async def update_item_rating(
-    request: Request, item_id: int, update: RatingUpdate, db: Session = Depends(get_db)
+@router.put(
+    "/library/{item_id}/rating",
+    response_model=LibraryMutationResponse,
+)
+def update_item_rating(
+    item_id: int,
+    update: RatingUpdate,
+    user: RequireAuthDep,
+    db: DbDep,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     from app.repositories.library_repo import LibraryRepository
+
     repo = LibraryRepository(db)
     item = repo.update_rating(item_id, user.id, update.rating, update.notes)
     if not item:
@@ -231,16 +279,20 @@ async def update_item_rating(
     db.commit()
 
     from app.services.ranking_service import RankingService
+
     RankingService(db).invalidate_ranks(user.id)
 
-    return {"success": True, "rating": item.rating}
+    return LibraryMutationResponse(success=True, rating=item.rating)
 
 
 @router.get("/gossip/latest", response_model=List[GossipResponse])
-async def get_latest_gossip(
-    request: Request, limit: int = Query(10, le=50), db: Session = Depends(get_db)
+def get_latest_gossip(
+    request: Request,
+    db: DbDep,
+    limit: Annotated[int, Query(le=50)] = 10,
 ):
     from app.services.gossip_service import GossipService
+
     svc = GossipService(db)
     items = svc.get_latest(limit=limit)
 
@@ -258,59 +310,61 @@ async def get_latest_gossip(
     ]
 
 
-@router.get("/rankings")
-async def get_rankings(
-    request: Request,
-    content_type: str = Query(None),
-    limit: int = Query(10, le=50),
-    db: Session = Depends(get_db),
+@router.get("/rankings", response_model=list[RankedItemResponse])
+def get_rankings(
+    user: RequireAuthDep,
+    db: DbDep,
+    content_type: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(le=50)] = 10,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     from app.services.ranking_service import RankingService
+
     svc = RankingService(db)
-    ranked = svc.get_personalized_content(user.id, content_type=content_type, limit=limit)
+    ranked = svc.get_personalized_content(
+        user.id, content_type=content_type, limit=limit
+    )
 
     return [
-        {
-            "content": ContentResponse(
+        RankedItemResponse(
+            content=ContentResponse(
                 id=content.id,
                 title=content.title,
                 content_type=content.content_type,
                 poster_url=content.poster_url,
                 rating=content.rating,
                 year=content.release_date[:4] if content.release_date else None,
-            ).model_dump(),
-            "rank_score": score,
-            "reasoning": reasoning,
-        }
+            ),
+            rank_score=score,
+            reasoning=reasoning,
+        )
         for content, score, reasoning in ranked
     ]
 
 
 # ==================== TASK MANAGEMENT ENDPOINTS ====================
 
-@router.get("/tasks")
+
+@router.get("/tasks", response_model=TaskListResponse)
 async def get_user_tasks(
-    request: Request, active_only: bool = Query(True), db: Session = Depends(get_db)
+    user: RequireAuthDep,
+    active_only: Annotated[bool, Query()] = True,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     task_manager = get_task_manager()
     tasks = await task_manager.get_user_tasks(user.id, active_only=active_only)
-    return {"tasks": [task.to_dict() for task in tasks]}
+    return TaskListResponse(
+        tasks=[TaskPayload.model_validate(t.to_dict()) for t in tasks]
+    )
 
 
 @router.get("/tasks/stream")
-async def task_stream(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
+async def task_stream(request: Request, user: OptionalUserDep):
     if not user:
+
         async def empty_stream():
             yield "data: {}\n\n"
+
         return StreamingResponse(empty_stream(), media_type="text/event-stream")
 
     task_manager = get_task_manager()
@@ -322,7 +376,7 @@ async def task_stream(request: Request, db: Session = Depends(get_db)):
             while True:
                 try:
                     task_data = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {__import__('json').dumps(task_data)}\n\n"
+                    yield f"data: {json.dumps(task_data)}\n\n"
                 except asyncio.TimeoutError:
                     yield 'data: {"type": "keepalive"}\n\n'
                 except asyncio.CancelledError:
@@ -341,17 +395,17 @@ async def task_stream(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/tasks/{task_type}/start")
+@router.post(
+    "/tasks/{task_type}/start",
+    response_model=TaskActionResponse,
+)
 async def start_task(
-    request: Request,
     task_type: str,
-    background_tasks: BackgroundTasks,
-    body: TaskStartRequest = None,
-    db: Session = Depends(get_db),
+    user: RequireAuthDep,
+    db: DbDep,
+    body: Annotated[TaskStartRequest | None, Body()] = None,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    _ = body
 
     task_type_map = {
         "gossip_scrape": TaskType.GOSSIP_SCRAPE,
@@ -359,21 +413,31 @@ async def start_task(
     }
 
     if task_type not in task_type_map:
-        raise HTTPException(status_code=400, detail=f"Invalid task type: {task_type}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid task type: {task_type}",
+        )
 
     task_manager = get_task_manager()
     existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
     for existing in existing_tasks:
         if existing.type == task_type_map[task_type]:
-            return {"success": False, "message": "A task of this type is already running", "task": existing.to_dict()}
+            return TaskActionResponse(
+                success=False,
+                message="A task of this type is already running",
+                task=TaskPayload.model_validate(existing.to_dict()),
+            )
 
-    task = await task_manager.create_task(task_type=task_type_map[task_type], user_id=user.id)
+    task = await task_manager.create_task(
+        task_type=task_type_map[task_type],
+        user_id=user.id,
+    )
 
     user_id = user.id
 
     async def run_gossip_scrape(task, tm):
-        from app.services.gossip_service import GossipService as GS
         from app.repositories.library_repo import LibraryRepository
+        from app.services.gossip_service import GossipService as GS
 
         await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
         try:
@@ -381,10 +445,18 @@ async def start_task(
             db_session = next(db_gen)
             try:
                 tracked = LibraryRepository(db_session).get_all_tracked_titles()
-                await tm.update_task(task.id, progress=30, message=f"Scanning news for {len(tracked)} titles...")
+                await tm.update_task(
+                    task.id,
+                    progress=30,
+                    message=f"Scanning news for {len(tracked)} titles...",
+                )
                 svc = GS(db_session)
                 results = await svc.scrape_latest(tracked)
-                await tm.update_task(task.id, progress=90, message=f"Found {len(results)} gossip items")
+                await tm.update_task(
+                    task.id,
+                    progress=90,
+                    message=f"Found {len(results)} gossip items",
+                )
                 return {"scraped": len(results)}
             finally:
                 db_session.close()
@@ -402,7 +474,11 @@ async def start_task(
             try:
                 svc = RankingService(db_session)
                 count = await svc.run_reranking(user_id)
-                await tm.update_task(task.id, progress=90, message=f"Ranked {count} items")
+                await tm.update_task(
+                    task.id,
+                    progress=90,
+                    message=f"Ranked {count} items",
+                )
                 return {"ranked": count}
             finally:
                 db_session.close()
@@ -427,16 +503,18 @@ async def start_task(
     bg_task = asyncio.create_task(run_and_cleanup())
     _running_tasks.add(bg_task)
 
-    return {"success": True, "message": f"Task started: {task.name}", "task": task.to_dict()}
+    return TaskActionResponse(
+        success=True,
+        message=f"Task started: {task.name}",
+        task=TaskPayload.model_validate(task.to_dict()),
+    )
 
 
-@router.post("/tasks/{task_id}/cancel")
+@router.post("/tasks/{task_id}/cancel", response_model=TaskCancelResponse)
 async def cancel_task(
-    request: Request, task_id: str, db: Session = Depends(get_db)
+    task_id: str,
+    user: RequireAuthDep,
 ):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
 
     task_manager = get_task_manager()
     task = await task_manager.get_task(task_id)
@@ -446,4 +524,4 @@ async def cancel_task(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     success = await task_manager.cancel_task(task_id)
-    return {"success": success}
+    return TaskCancelResponse(success=success)

@@ -69,12 +69,10 @@ cp .env.example .env
 
 5. Run the application:
 ```bash
-python run.py
-# Or:
-uvicorn app.main:app --reload --port 5000
+fastapi dev
 ```
 
-6. Open http://localhost:5000 in your browser
+6. Open http://localhost:8000 in your browser
 
 ### Content Provider API Keys
 

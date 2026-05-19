@@ -5,82 +5,95 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from typing import Optional
 
-from app.database import get_db
-from app.routes.auth import get_current_user
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
 from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/api", tags=["notifications"])
+
+
+class NotificationItem(BaseModel):
+    id: int
+    title: str
+    body: Optional[str]
+    link: Optional[str]
+    is_read: bool
+    created_at: Optional[str]
+
+
+class NotificationListResponse(BaseModel):
+    notifications: list[NotificationItem]
+    unread_count: int
+
+
+class UnreadCountResponse(BaseModel):
+    unread_count: int
+
+
+class SuccessResponse(BaseModel):
+    success: bool
+
+
+class MarkAllReadResponse(BaseModel):
+    success: bool
+    count: int
 
 
 @router.get("/notifications")
-async def list_notifications(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401)
-
+def list_notifications(user: RequireAuthDep, db: DbDep) -> NotificationListResponse:
     svc = NotificationService(db)
     items = svc.get_for_user(user.id, limit=30)
     unread = svc.count_unread(user.id)
-    return {
-        "notifications": [svc.to_dict(n) for n in items],
-        "unread_count": unread,
-    }
+    return NotificationListResponse(
+        notifications=[NotificationItem(**svc.to_dict(n)) for n in items],
+        unread_count=unread,
+    )
 
 
 @router.get("/notifications/unread-count")
-async def unread_count(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401)
-
+def unread_count(user: RequireAuthDep, db: DbDep) -> UnreadCountResponse:
     svc = NotificationService(db)
-    return {"unread_count": svc.count_unread(user.id)}
+    return UnreadCountResponse(unread_count=svc.count_unread(user.id))
 
 
 @router.post("/notifications/{notification_id}/read")
-async def mark_read(
-    request: Request, notification_id: int, db: Session = Depends(get_db)
-):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401)
-
+def mark_read(
+    notification_id: int,
+    user: RequireAuthDep,
+    db: DbDep,
+) -> SuccessResponse:
     svc = NotificationService(db)
     n = svc.mark_read(notification_id, user.id)
     if not n:
         raise HTTPException(status_code=404, detail="Notification not found")
-    return {"success": True}
+    return SuccessResponse(success=True)
 
 
 @router.post("/notifications/read-all")
-async def mark_all_read(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user:
-        raise HTTPException(status_code=401)
-
+def mark_all_read(user: RequireAuthDep, db: DbDep) -> MarkAllReadResponse:
     svc = NotificationService(db)
     count = svc.mark_all_read(user.id)
-    return {"success": True, "count": count}
+    return MarkAllReadResponse(success=True, count=count)
 
 
 @router.get("/notifications/stream")
-async def notification_stream(request: Request, db: Session = Depends(get_db)):
+async def notification_stream(request: Request, user: OptionalUserDep):
     """SSE endpoint that pushes new notification events to the connected client.
 
     The stream polls the database every few seconds for new unread
-    notifications created after the connection was established.  This is
-    lightweight enough for a single-instance deployment; for multi-instance
-    you would swap to Redis Pub/Sub.
+    notifications created after the connection was established.
     """
-    user = get_current_user(request, db)
     if not user:
+
         async def empty():
             yield 'data: {"type":"auth_required"}\n\n'
+
         return StreamingResponse(empty(), media_type="text/event-stream")
 
     user_id = user.id
@@ -94,6 +107,7 @@ async def notification_stream(request: Request, db: Session = Depends(get_db)):
                 await asyncio.sleep(5)
 
                 from app.database import SessionLocal
+
                 poll_db = SessionLocal()
                 try:
                     svc = NotificationService(poll_db)

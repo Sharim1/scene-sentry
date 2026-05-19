@@ -1,7 +1,18 @@
 """
 FastAPI Routers
 """
-from app.routes import auth, dashboard, library, gossip, api, content, reminders, search_page, contact
+from app.routes import (
+    api,
+    auth,
+    contact,
+    content,
+    dashboard,
+    gossip,
+    library,
+    notifications,
+    reminders,
+    search_page,
+)
 
 __all__ = [
     "auth",
@@ -11,6 +22,7 @@ __all__ = [
     "api",
     "content",
     "reminders",
+    "notifications",
     "search_page",
     "contact",
 ]

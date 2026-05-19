@@ -3,28 +3,29 @@ Reminders routes
 """
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, Depends, Form, Query
-from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
-from sqlalchemy.orm import Session
+from typing import Annotated
 
-from app.database import get_db
-from app.routes.auth import get_current_user
-from app.services.reminder_service import ReminderService
+from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse, HTMLResponse
+from pydantic import BaseModel
+
+from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
 from app.models.reminder import ReminderType
+from app.services.reminder_service import ReminderService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/reminders", tags=["reminders"])
 
 
 @router.get("", response_class=HTMLResponse)
-async def reminders_page(
+def reminders_page(
     request: Request,
-    page: int = Query(1, ge=1),
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
+    page: Annotated[int, Query(ge=1)] = 1,
 ):
     from app.templates import templates
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -32,7 +33,7 @@ async def reminders_page(
     svc = ReminderService(db)
 
     grouped, current_page, total_pages = svc.get_upcoming_grouped(
-        user.id, page=page, tz_name=tz,
+        user.id, page=page, tz_name=tz
     )
 
     now = datetime.now(timezone.utc)
@@ -54,21 +55,21 @@ async def reminders_page(
 
 
 @router.post("/create")
-async def create_reminder(
+def create_reminder(
     request: Request,
-    content_id: int = Form(None),
-    reminder_type: str = Form("premiere"),
-    date: str = Form(...),
-    time: str = Form("20:00"),
-    message: str = Form(""),
-    platform: str = Form(None),
-    quality: str = Form(None),
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
+    date: Annotated[str, Form()],
+    reminder_type: Annotated[str, Form()] = "premiere",
+    time: Annotated[str, Form()] = "20:00",
+    message: Annotated[str, Form()] = "",
+    platform: Annotated[str | None, Form()] = None,
+    quality: Annotated[str | None, Form()] = None,
+    content_id: Annotated[int | None, Form()] = None,
 ):
-    from app.utils.timezone import local_to_utc
     from app.templates import flash
+    from app.utils.timezone import local_to_utc
 
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -99,12 +100,12 @@ async def create_reminder(
 
 
 @router.post("/{reminder_id}/toggle")
-async def toggle_reminder(
+def toggle_reminder(
     request: Request,
     reminder_id: int,
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
 ):
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -114,12 +115,12 @@ async def toggle_reminder(
 
 
 @router.post("/{reminder_id}/delete")
-async def delete_reminder(
+def delete_reminder(
     request: Request,
     reminder_id: int,
-    db: Session = Depends(get_db),
+    user: OptionalUserDep,
+    db: DbDep,
 ):
-    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -128,18 +129,20 @@ async def delete_reminder(
     return RedirectResponse(url="/reminders", status_code=303)
 
 
-@router.get("/api/calendar")
-async def calendar_data(
-    request: Request,
-    year: int = Query(...),
-    month: int = Query(...),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(request, db)
-    if not user:
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+class CalendarResponse(BaseModel):
+    year: int
+    month: int
+    dates: dict[str, int]
 
+
+@router.get("/api/calendar")
+def calendar_data(
+    user: RequireAuthDep,
+    db: DbDep,
+    year: Annotated[int, Query()],
+    month: Annotated[int, Query()],
+) -> CalendarResponse:
     tz = user.timezone or "UTC"
     svc = ReminderService(db)
     dots = svc.get_calendar_dots(user.id, year, month, tz_name=tz)
-    return {"year": year, "month": month, "dates": dots}
+    return CalendarResponse(year=year, month=month, dates=dots)
