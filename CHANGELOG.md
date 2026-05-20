@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.0.2 (2026-05-20)
+
+### Refactor
+
+- **library**: extract LibraryService for all Library Item mutations
+
 ## v2.0.1 (2026-05-20)
 
 ### Fix
