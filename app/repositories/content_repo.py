@@ -4,11 +4,12 @@ Content repository - database access for Content model.
 Supports multi-provider upsert with deduplication via external IDs and
 title+year matching.
 """
+
 import json
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -19,7 +20,7 @@ from app.services.providers.base import NormalizedContent
 logger = logging.getLogger(__name__)
 
 
-def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
+def _parse_datetime(date_str: str | None) -> datetime | None:
     """Best-effort parse of YYYY-MM-DD (or YYYY) into a tz-aware datetime."""
     if not date_str:
         return None
@@ -27,12 +28,12 @@ def _parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y"):
         try:
             dt = datetime.strptime(s, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
         except ValueError:
             continue
     m = re.match(r"(\d{4})", s)
     if m:
-        return datetime(int(m.group(1)), 1, 1, tzinfo=timezone.utc)
+        return datetime(int(m.group(1)), 1, 1, tzinfo=UTC)
     return None
 
 
@@ -42,24 +43,22 @@ class ContentRepository:
 
     # ---- single-row lookups ---- #
 
-    def get_by_id(self, content_id: int) -> Optional[Content]:
+    def get_by_id(self, content_id: int) -> Content | None:
         return self.db.query(Content).filter(Content.id == content_id).first()
 
-    def get_by_imdb_id(self, imdb_id: str) -> Optional[Content]:
+    def get_by_imdb_id(self, imdb_id: str) -> Content | None:
         return self.db.query(Content).filter(Content.imdb_id == imdb_id).first()
 
-    def get_by_tmdb_id(self, tmdb_id: int) -> Optional[Content]:
+    def get_by_tmdb_id(self, tmdb_id: int) -> Content | None:
         return self.db.query(Content).filter(Content.tmdb_id == tmdb_id).first()
 
-    def get_by_tvdb_id(self, tvdb_id: int) -> Optional[Content]:
+    def get_by_tvdb_id(self, tvdb_id: int) -> Content | None:
         return self.db.query(Content).filter(Content.tvdb_id == tvdb_id).first()
 
-    def get_by_tvmaze_id(self, tvmaze_id: int) -> Optional[Content]:
+    def get_by_tvmaze_id(self, tvmaze_id: int) -> Content | None:
         return self.db.query(Content).filter(Content.tvmaze_id == tvmaze_id).first()
 
-    def get_by_title_year_type(
-        self, title: str, year: Optional[int], content_type: str
-    ) -> Optional[Content]:
+    def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
         q = self.db.query(Content).filter(
             Content.title == title,
             Content.content_type == content_type,
@@ -71,36 +70,40 @@ class ContentRepository:
     # ---- list queries ---- #
 
     def get_movies(
-        self, filter_by: str = "all", search: Optional[str] = None,
-        limit: int = 40, offset: int = 0,
-    ) -> List[Content]:
+        self,
+        filter_by: str = "all",
+        search: str | None = None,
+        limit: int = 40,
+        offset: int = 0,
+    ) -> list[Content]:
         query = self.db.query(Content).filter(Content.content_type == "movie")
         query = self._apply_filters(query, filter_by, search)
         return query.offset(offset).limit(limit).all()
 
     def get_tv_shows(
-        self, filter_by: str = "all", search: Optional[str] = None,
-        limit: int = 40, offset: int = 0,
-    ) -> List[Content]:
+        self,
+        filter_by: str = "all",
+        search: str | None = None,
+        limit: int = 40,
+        offset: int = 0,
+    ) -> list[Content]:
         query = self.db.query(Content).filter(Content.content_type == "tv_show")
         query = self._apply_filters(query, filter_by, search)
         return query.offset(offset).limit(limit).all()
 
-    def count(self, content_type: Optional[str] = None) -> int:
+    def count(self, content_type: str | None = None) -> int:
         query = self.db.query(Content)
         if content_type:
             query = query.filter(Content.content_type == content_type)
         return query.count()
 
-    def search(
-        self, query_str: str, content_type: Optional[str] = None, limit: int = 20
-    ) -> List[Content]:
+    def search(self, query_str: str, content_type: str | None = None, limit: int = 20) -> list[Content]:
         query = self.db.query(Content).filter(Content.title.ilike(f"%{query_str}%"))
         if content_type:
             query = query.filter(Content.content_type == content_type)
         return query.limit(limit).all()
 
-    def get_all_ids(self, content_type: Optional[str] = None) -> List[int]:
+    def get_all_ids(self, content_type: str | None = None) -> list[int]:
         query = self.db.query(Content.id)
         if content_type:
             query = query.filter(Content.content_type == content_type)
@@ -108,7 +111,7 @@ class ContentRepository:
 
     # ---- dedup-aware upsert from NormalizedContent ---- #
 
-    def find_existing(self, nc: NormalizedContent) -> Optional[Content]:
+    def find_existing(self, nc: NormalizedContent) -> Content | None:
         """Find an existing Content row matching by external IDs or title+year."""
         if nc.imdb_id:
             hit = self.get_by_imdb_id(nc.imdb_id)
@@ -164,7 +167,7 @@ class ContentRepository:
         self.db.flush()
         return content
 
-    def bulk_upsert_normalized(self, items: List[NormalizedContent]) -> int:
+    def bulk_upsert_normalized(self, items: list[NormalizedContent]) -> int:
         """Upsert a list of NormalizedContent items. Returns count saved."""
         count = 0
         for nc in items:
@@ -176,7 +179,7 @@ class ContentRepository:
         return count
 
     # Legacy method kept for backward compat with old TMDB-dict ingestion
-    def upsert_from_api(self, data: Dict[str, Any], content_type: str) -> Content:
+    def upsert_from_api(self, data: dict[str, Any], content_type: str) -> Content:
         tmdb_id = data.get("id")
         existing = self.get_by_tmdb_id(tmdb_id) if tmdb_id else None
         title = data.get("title") or data.get("name", "")
@@ -190,7 +193,7 @@ class ContentRepository:
         self.db.flush()
         return content
 
-    def bulk_upsert(self, items: List[Dict[str, Any]], content_type: str) -> int:
+    def bulk_upsert(self, items: list[dict[str, Any]], content_type: str) -> int:
         count = 0
         for item in items:
             try:
@@ -245,9 +248,9 @@ class ContentRepository:
             content.premiere_date = _parse_datetime(nc.premiered)
         if nc.next_episode_date:
             content.next_episode_date = _parse_datetime(nc.next_episode_date)
-        content.updated_at = datetime.now(timezone.utc)
+        content.updated_at = datetime.now(UTC)
 
-    def _apply_filters(self, query, filter_by: str, search: Optional[str]):
+    def _apply_filters(self, query, filter_by: str, search: str | None):
         if search:
             query = query.filter(
                 or_(
@@ -263,7 +266,7 @@ class ContentRepository:
             query = query.order_by(Content.title)
         return query
 
-    def _create_from_api(self, data: Dict[str, Any], content_type: str) -> Content:
+    def _create_from_api(self, data: dict[str, Any], content_type: str) -> Content:
         title = data.get("title") or data.get("name", "")
         poster_path = data.get("poster_path", "")
         backdrop_path = data.get("backdrop_path", "")
@@ -274,15 +277,19 @@ class ContentRepository:
             content_type=content_type,
             description=(data.get("overview") or "")[:500],
             tmdb_id=data.get("id"),
-            poster_url=f"{img_base}{poster_path}" if poster_path and not poster_path.startswith("http") else poster_path,
-            backdrop_url=f"{backdrop_base}{backdrop_path}" if backdrop_path and not backdrop_path.startswith("http") else backdrop_path,
+            poster_url=f"{img_base}{poster_path}"
+            if poster_path and not poster_path.startswith("http")
+            else poster_path,
+            backdrop_url=f"{backdrop_base}{backdrop_path}"
+            if backdrop_path and not backdrop_path.startswith("http")
+            else backdrop_path,
             rating=data.get("vote_average"),
             release_date=data.get("release_date") or data.get("first_air_date"),
             genres=str(data.get("genre_ids", [])),
             source="tmdb",
         )
 
-    def _update_from_api(self, content: Content, data: Dict[str, Any], content_type: str):
+    def _update_from_api(self, content: Content, data: dict[str, Any], content_type: str):
         img_base = "https://image.tmdb.org/t/p/w500"
         backdrop_base = "https://image.tmdb.org/t/p/original"
         if data.get("overview") and not content.description:
@@ -297,4 +304,4 @@ class ContentRepository:
             content.rating = data["vote_average"]
         if data.get("id") and not content.tmdb_id:
             content.tmdb_id = data["id"]
-        content.updated_at = datetime.now(timezone.utc)
+        content.updated_at = datetime.now(UTC)

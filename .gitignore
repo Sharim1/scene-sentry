@@ -7,3 +7,22 @@ attached_assets/
 .DS_Store
 .cursor/
 temp_design_directory_for_reference/
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Testing / coverage
+coverage.xml
+htmlcov/
+.coverage

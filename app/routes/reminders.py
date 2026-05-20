@@ -1,12 +1,13 @@
 """
 Reminders routes
 """
+
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi import APIRouter, Form, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
@@ -32,11 +33,9 @@ def reminders_page(
     tz = user.timezone or "UTC"
     svc = ReminderService(db)
 
-    grouped, current_page, total_pages = svc.get_upcoming_grouped(
-        user.id, page=page, tz_name=tz
-    )
+    grouped, current_page, total_pages = svc.get_upcoming_grouped(user.id, page=page, tz_name=tz)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     calendar_dots = svc.get_calendar_dots(user.id, now.year, now.month, tz_name=tz)
 
     return templates.TemplateResponse(

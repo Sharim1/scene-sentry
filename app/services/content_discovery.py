@@ -8,9 +8,9 @@ an empty page the provider is marked ``fully_synced`` and subsequent runs
 switch to "refresh mode" — fetching page 1 to pick up newly-registered
 content on the source platform.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -25,17 +25,17 @@ logger = logging.getLogger(__name__)
 SEED_PAGES = 5  # pages to fetch on first-ever run per provider
 
 
-def _deduplicate(items: List[NormalizedContent]) -> List[NormalizedContent]:
+def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
     """Merge duplicates across providers using external IDs then title+year."""
-    by_imdb: Dict[str, NormalizedContent] = {}
-    by_tmdb: Dict[int, NormalizedContent] = {}
-    by_tvdb: Dict[int, NormalizedContent] = {}
-    by_tvmaze: Dict[int, NormalizedContent] = {}
-    by_key: Dict[str, NormalizedContent] = {}
-    result: List[NormalizedContent] = []
+    by_imdb: dict[str, NormalizedContent] = {}
+    by_tmdb: dict[int, NormalizedContent] = {}
+    by_tvdb: dict[int, NormalizedContent] = {}
+    by_tvmaze: dict[int, NormalizedContent] = {}
+    by_key: dict[str, NormalizedContent] = {}
+    result: list[NormalizedContent] = []
 
     for nc in items:
-        existing: Optional[NormalizedContent] = None
+        existing: NormalizedContent | None = None
 
         if nc.imdb_id and nc.imdb_id in by_imdb:
             existing = by_imdb[nc.imdb_id]
@@ -77,11 +77,7 @@ class ContentDiscoveryService:
     # ---- state management ------------------------------------------------ #
 
     def _get_state(self, provider: str, content_type: str) -> DiscoveryState:
-        state = (
-            self.db.query(DiscoveryState)
-            .filter_by(provider=provider, content_type=content_type)
-            .first()
-        )
+        state = self.db.query(DiscoveryState).filter_by(provider=provider, content_type=content_type).first()
         if not state:
             state = DiscoveryState(
                 provider=provider,
@@ -97,15 +93,18 @@ class ContentDiscoveryService:
     def _advance_state(self, state: DiscoveryState, items_fetched: int) -> None:
         state.last_page += 1
         state.total_items_fetched += items_fetched
-        state.last_synced_at = datetime.now(timezone.utc)
+        state.last_synced_at = datetime.now(UTC)
 
     def _mark_fully_synced(self, state: DiscoveryState) -> None:
         """Mark provider+content_type as fully synced (end of catalog reached)."""
         state.fully_synced = True
-        state.last_synced_at = datetime.now(timezone.utc)
+        state.last_synced_at = datetime.now(UTC)
         logger.info(
             "%s/%s fully synced at page %d (%d total items)",
-            state.provider, state.content_type, state.last_page, state.total_items_fetched,
+            state.provider,
+            state.content_type,
+            state.last_page,
+            state.total_items_fetched,
         )
 
     # ---- provider fetch with page progression ----------------------------- #
@@ -115,10 +114,10 @@ class ContentDiscoveryService:
         provider: ContentProvider,
         content_type: str,
         pages: int = 1,
-    ) -> List[NormalizedContent]:
+    ) -> list[NormalizedContent]:
         """Fetch *pages* consecutive pages from a provider, advancing state."""
         state = self._get_state(provider.name, content_type)
-        all_items: List[NormalizedContent] = []
+        all_items: list[NormalizedContent] = []
 
         if state.fully_synced:
             return self._refresh_provider(provider, content_type, state)
@@ -133,21 +132,29 @@ class ContentDiscoveryService:
             except Exception as e:
                 logger.warning(
                     "%s page %d (%s) failed: %s",
-                    provider.name, next_page, content_type, e,
+                    provider.name,
+                    next_page,
+                    content_type,
+                    e,
                 )
                 break
 
             if not items:
                 logger.info(
                     "%s: empty page %d for %s — marking fully synced",
-                    provider.name, next_page, content_type,
+                    provider.name,
+                    next_page,
+                    content_type,
                 )
                 self._mark_fully_synced(state)
                 break
 
             logger.info(
                 "%s: fetched %d %s items from page %d",
-                provider.name, len(items), content_type, next_page,
+                provider.name,
+                len(items),
+                content_type,
+                next_page,
             )
             all_items.extend(items)
             self._advance_state(state, len(items))
@@ -159,7 +166,7 @@ class ContentDiscoveryService:
         provider: ContentProvider,
         content_type: str,
         state: DiscoveryState,
-    ) -> List[NormalizedContent]:
+    ) -> list[NormalizedContent]:
         """Fetch page 1 from a fully-synced provider to pick up new content."""
         try:
             if content_type == "movie":
@@ -167,16 +174,16 @@ class ContentDiscoveryService:
             else:
                 items = provider.discover_tv_shows(page=1)
         except Exception as e:
-            logger.warning(
-                "%s refresh (%s) failed: %s", provider.name, content_type, e
-            )
+            logger.warning("%s refresh (%s) failed: %s", provider.name, content_type, e)
             return []
 
-        state.last_synced_at = datetime.now(timezone.utc)
+        state.last_synced_at = datetime.now(UTC)
         if items:
             logger.info(
                 "%s: refresh fetched %d %s items (page 1)",
-                provider.name, len(items), content_type,
+                provider.name,
+                len(items),
+                content_type,
             )
         return items or []
 
@@ -184,6 +191,7 @@ class ContentDiscoveryService:
 
     def is_catalog_empty(self) -> bool:
         from app.models.content import Content
+
         return self.db.query(Content.id).first() is None
 
     def seed_catalog(self) -> int:
@@ -194,7 +202,7 @@ class ContentDiscoveryService:
         total += self._discover("tv_show", pages=SEED_PAGES)
         return total
 
-    def run_scheduled_sync(self) -> Dict[str, int]:
+    def run_scheduled_sync(self) -> dict[str, int]:
         """Called by the scheduler — uses configured batch_size."""
         batch = settings.discovery_batch_size
         movies = self._discover("movie", pages=batch)
@@ -203,30 +211,22 @@ class ContentDiscoveryService:
 
     def run_full_sync(
         self,
-        provider_name: Optional[str] = None,
+        provider_name: str | None = None,
         max_pages: int = 500,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """CLI-triggered exhaustive sync — page through until empty or max_pages."""
-        movies = self._discover(
-            "movie", pages=max_pages, provider_filter=provider_name
-        )
-        shows = self._discover(
-            "tv_show", pages=max_pages, provider_filter=provider_name
-        )
+        movies = self._discover("movie", pages=max_pages, provider_filter=provider_name)
+        shows = self._discover("tv_show", pages=max_pages, provider_filter=provider_name)
         return {"movies": movies, "tv_shows": shows}
 
     def run_n_pages(
         self,
         pages: int,
-        provider_name: Optional[str] = None,
-    ) -> Dict[str, int]:
+        provider_name: str | None = None,
+    ) -> dict[str, int]:
         """CLI-triggered N-page sync."""
-        movies = self._discover(
-            "movie", pages=pages, provider_filter=provider_name
-        )
-        shows = self._discover(
-            "tv_show", pages=pages, provider_filter=provider_name
-        )
+        movies = self._discover("movie", pages=pages, provider_filter=provider_name)
+        shows = self._discover("tv_show", pages=pages, provider_filter=provider_name)
         return {"movies": movies, "tv_shows": shows}
 
     def _discover(
@@ -234,7 +234,7 @@ class ContentDiscoveryService:
         content_type: str,
         pages: int = 1,
         limit: int = 0,
-        provider_filter: Optional[str] = None,
+        provider_filter: str | None = None,
     ) -> int:
         providers = self.providers
         if provider_filter:
@@ -243,7 +243,7 @@ class ContentDiscoveryService:
                 logger.warning("No active provider matching '%s'", provider_filter)
                 return 0
 
-        all_items: List[NormalizedContent] = []
+        all_items: list[NormalizedContent] = []
         for provider in providers:
             items = self._fetch_from_provider(provider, content_type, pages=pages)
             all_items.extend(items)
@@ -257,12 +257,15 @@ class ContentDiscoveryService:
         self.db.commit()
         logger.info(
             "%s discovery: saved %d items (from %d raw, %d deduped)",
-            content_type, saved, len(all_items), len(deduped),
+            content_type,
+            saved,
+            len(all_items),
+            len(deduped),
         )
         return saved
 
     def refresh_trending(self) -> int:
-        all_items: List[NormalizedContent] = []
+        all_items: list[NormalizedContent] = []
         for provider in self.providers:
             try:
                 items = provider.get_trending()
@@ -276,10 +279,10 @@ class ContentDiscoveryService:
         return saved
 
     def search_all_providers(
-        self, query: str, content_type: Optional[str] = None, limit: int = 20
-    ) -> List[NormalizedContent]:
+        self, query: str, content_type: str | None = None, limit: int = 20
+    ) -> list[NormalizedContent]:
         """Search all providers and return deduplicated results (not persisted)."""
-        all_items: List[NormalizedContent] = []
+        all_items: list[NormalizedContent] = []
         for provider in self.providers:
             try:
                 items = provider.search(query, content_type)
@@ -293,9 +296,9 @@ class ContentDiscoveryService:
     def enrich_sparse_content(
         self,
         batch_size: int = 50,
-        content_type: Optional[str] = None,
-        content_id: Optional[int] = None,
-        provider_filter: Optional[str] = None,
+        content_type: str | None = None,
+        content_id: int | None = None,
+        provider_filter: str | None = None,
     ) -> int:
         """Backfill missing detail data (runtime, episodes, language, etc.)
         on content records that have sparse information.
@@ -358,9 +361,7 @@ class ContentDiscoveryService:
         logger.info("Enriched %d content records", enriched)
         return enriched
 
-    def _find_sparse(
-        self, batch_size: int, content_type: Optional[str] = None
-    ) -> list:
+    def _find_sparse(self, batch_size: int, content_type: str | None = None) -> list:
         """Return content records that need enrichment."""
         from app.models.content import Content
 
@@ -382,7 +383,7 @@ class ContentDiscoveryService:
         sparse = q.order_by(Content.id).limit(batch_size).all()
         return sparse
 
-    def count_sparse(self, content_type: Optional[str] = None) -> dict:
+    def count_sparse(self, content_type: str | None = None) -> dict:
         """Return counts of records that still need enrichment."""
         from app.models.content import Content
 
@@ -401,11 +402,9 @@ class ContentDiscoveryService:
             "missing_runtime": q_runtime.count(),
         }
 
-    def _get_detail_for_content(
-        self, content, providers: Optional[list] = None
-    ) -> Optional[NormalizedContent]:
+    def _get_detail_for_content(self, content, providers: list | None = None) -> NormalizedContent | None:
         """Try each provider's get_details() using the matching external ID."""
-        for provider in (providers or self.providers):
+        for provider in providers or self.providers:
             try:
                 ext_id = self._external_id_for(content, provider)
                 if ext_id:
@@ -415,15 +414,15 @@ class ContentDiscoveryService:
             except Exception as e:
                 logger.debug(
                     "%s get_details for %r failed: %s",
-                    provider.name, content.title, e,
+                    provider.name,
+                    content.title,
+                    e,
                 )
         return None
 
-    def _get_episodes_for_content(
-        self, content, providers: Optional[list] = None
-    ) -> List:
+    def _get_episodes_for_content(self, content, providers: list | None = None) -> list:
         """Try each provider's get_episodes() using the matching external ID."""
-        for provider in (providers or self.providers):
+        for provider in providers or self.providers:
             try:
                 ext_id = self._external_id_for(content, provider)
                 if ext_id:
@@ -433,12 +432,14 @@ class ContentDiscoveryService:
             except Exception as e:
                 logger.debug(
                     "%s get_episodes for %r failed: %s",
-                    provider.name, content.title, e,
+                    provider.name,
+                    content.title,
+                    e,
                 )
         return []
 
     @staticmethod
-    def _external_id_for(content, provider) -> Optional[str]:
+    def _external_id_for(content, provider) -> str | None:
         """Return the appropriate external ID string for a given provider."""
         if provider.name == "tvmaze" and content.tvmaze_id:
             return str(content.tvmaze_id)

@@ -1,11 +1,11 @@
 """
 Notification REST + SSE endpoints
 """
+
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -21,10 +21,10 @@ router = APIRouter(prefix="/api", tags=["notifications"])
 class NotificationItem(BaseModel):
     id: int
     title: str
-    body: Optional[str]
-    link: Optional[str]
+    body: str | None
+    link: str | None
     is_read: bool
-    created_at: Optional[str]
+    created_at: str | None
 
 
 class NotificationListResponse(BaseModel):
@@ -99,8 +99,8 @@ async def notification_stream(request: Request, user: OptionalUserDep):
     user_id = user.id
 
     async def event_generator():
-        last_check = datetime.now(timezone.utc)
-        yield f'data: {json.dumps({"type": "connected"})}\n\n'
+        last_check = datetime.now(UTC)
+        yield f"data: {json.dumps({'type': 'connected'})}\n\n"
 
         while True:
             try:
@@ -121,16 +121,16 @@ async def notification_stream(request: Request, user: OptionalUserDep):
                             "items": [svc.to_dict(n) for n in recent],
                         }
                         yield f"data: {json.dumps(payload)}\n\n"
-                        last_check = datetime.now(timezone.utc)
+                        last_check = datetime.now(UTC)
                     else:
-                        yield f'data: {json.dumps({"type": "keepalive"})}\n\n'
+                        yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
                 finally:
                     poll_db.close()
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.debug("SSE poll error: %s", exc)
-                yield f'data: {json.dumps({"type": "keepalive"})}\n\n'
+                yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
                 await asyncio.sleep(10)
 
     return StreamingResponse(

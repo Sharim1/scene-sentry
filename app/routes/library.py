@@ -9,7 +9,7 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.dependencies import DbDep, OptionalUserDep
-from app.models import LibraryItem, Content
+from app.models import Content, LibraryItem
 from app.models.library import WatchStatus
 from app.repositories.library_repo import LibraryRepository
 from app.services.library_service import LibraryService
@@ -38,9 +38,7 @@ def library(
 
     search_query = q
     if q:
-        query = query.filter(
-            Content.title.ilike(f"%{q}%") | Content.description.ilike(f"%{q}%")
-        )
+        query = query.filter(Content.title.ilike(f"%{q}%") | Content.description.ilike(f"%{q}%"))
 
     if type != "all":
         query = query.filter(Content.content_type == type)

@@ -1,26 +1,26 @@
 """
 FastAPI Application Entry Point
 """
+
 import logging
 import traceback
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from starlette.middleware.sessions import SessionMiddleware
-
 from starlette.exceptions import HTTPException as StarletteHTTPException
-
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import Response as StarletteResponse
 
 from app.config import settings
 from app.database import get_db, init_db
 from app.models.user import User
-from app.templates import templates, static_path
+from app.templates import static_path, templates
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -44,6 +44,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         ]
         response.headers["Content-Security-Policy"] = "; ".join(csp_parts)
         return response
+
 
 # Configure logging
 logging.basicConfig(
@@ -112,6 +113,7 @@ app.add_middleware(
 )
 
 import re
+
 from starlette_csrf import CSRFMiddleware
 
 app.add_middleware(SecurityHeadersMiddleware)

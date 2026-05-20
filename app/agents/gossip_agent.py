@@ -7,18 +7,19 @@ image, and a short preview snippet. "Read More" links redirect to the
 original article.
 """
 
-import json
 import logging
 import re
-import httpx
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
 try:
     from tavily import TavilyClient
+
     TAVILY_AVAILABLE = True
 except ImportError:
     logger.warning("Tavily not available")
@@ -26,7 +27,7 @@ except ImportError:
     TAVILY_AVAILABLE = False
 
 from app.database import db_session
-from app.models import Gossip, Content
+from app.models import Content, Gossip
 from app.models.gossip import GossipTag
 
 
@@ -52,6 +53,7 @@ class GossipScraperAgent:
         if not TAVILY_AVAILABLE or TavilyClient is None:
             return None
         from app.config import settings
+
         api_key = settings.tavily_api_key
         if not api_key:
             logger.warning("TAVILY_API_KEY not found, gossip scraping disabled")
@@ -67,6 +69,7 @@ class GossipScraperAgent:
         """Reject private/internal URLs to prevent SSRF."""
         import ipaddress
         import socket
+
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False
@@ -88,7 +91,7 @@ class GossipScraperAgent:
                 return False
         return True
 
-    async def _fetch_og_image(self, url: str) -> Optional[str]:
+    async def _fetch_og_image(self, url: str) -> str | None:
         try:
             if not self._is_safe_url(url):
                 return None
@@ -129,13 +132,13 @@ class GossipScraperAgent:
                 return True
         return False
 
-    async def scrape_gossip(self, tracked_titles: List[str] = None) -> List[Dict[str, Any]]:
+    async def scrape_gossip(self, tracked_titles: list[str] = None) -> list[dict[str, Any]]:
         logger.info("Starting gossip scraping...")
         if not self.tavily:
             logger.warning("Tavily not available, skipping gossip scrape")
             return []
 
-        gossip_items: List[Dict[str, Any]] = []
+        gossip_items: list[dict[str, Any]] = []
         queries = self._build_search_queries(tracked_titles)
 
         for query in queries[:5]:
@@ -150,7 +153,7 @@ class GossipScraperAgent:
         logger.info(f"Gossip scraping completed: {len(gossip_items)} items")
         return gossip_items
 
-    def _build_search_queries(self, tracked_titles: List[str] = None) -> List[str]:
+    def _build_search_queries(self, tracked_titles: list[str] = None) -> list[str]:
         current_year = datetime.now().year
         queries = [
             f"exclusive casting news {current_year} TV series announced",
@@ -164,7 +167,7 @@ class GossipScraperAgent:
                 queries.append(f'"{title}" news cast production {current_year}')
         return queries
 
-    def _search_news(self, query: str) -> List[Dict[str, Any]]:
+    def _search_news(self, query: str) -> list[dict[str, Any]]:
         try:
             resp = self.tavily.search(
                 query=query,
@@ -180,8 +183,8 @@ class GossipScraperAgent:
             return []
 
     async def _process_news_result(
-        self, result: Dict[str, Any], tracked_titles: List[str] = None
-    ) -> Optional[Dict[str, Any]]:
+        self, result: dict[str, Any], tracked_titles: list[str] = None
+    ) -> dict[str, Any] | None:
         try:
             url = result.get("url", "")
             title = result.get("title", "")

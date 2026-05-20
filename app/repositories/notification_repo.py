@@ -1,9 +1,10 @@
 """
 Notification repository - database access for Notification model
 """
+
 import logging
-from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
@@ -21,9 +22,7 @@ class NotificationRepository:
         self.db.flush()
         return notification
 
-    def get_by_user(
-        self, user_id: int, unread_only: bool = False, limit: int = 30
-    ) -> List[Notification]:
+    def get_by_user(self, user_id: int, unread_only: bool = False, limit: int = 30) -> list[Notification]:
         q = self.db.query(Notification).filter(Notification.user_id == user_id)
         if unread_only:
             q = q.filter(Notification.is_read == False)
@@ -31,12 +30,10 @@ class NotificationRepository:
 
     def count_unread(self, user_id: int) -> int:
         return (
-            self.db.query(Notification)
-            .filter(Notification.user_id == user_id, Notification.is_read == False)
-            .count()
+            self.db.query(Notification).filter(Notification.user_id == user_id, Notification.is_read == False).count()
         )
 
-    def mark_read(self, notification_id: int, user_id: int) -> Optional[Notification]:
+    def mark_read(self, notification_id: int, user_id: int) -> Notification | None:
         n = (
             self.db.query(Notification)
             .filter(Notification.id == notification_id, Notification.user_id == user_id)
@@ -44,12 +41,12 @@ class NotificationRepository:
         )
         if n and not n.is_read:
             n.is_read = True
-            n.read_at = datetime.now(timezone.utc)
+            n.read_at = datetime.now(UTC)
             self.db.flush()
         return n
 
     def mark_all_read(self, user_id: int) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         count = (
             self.db.query(Notification)
             .filter(Notification.user_id == user_id, Notification.is_read == False)
@@ -73,11 +70,9 @@ class NotificationRepository:
     def delete_old(self, days: int = 30) -> int:
         from datetime import timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         count = (
-            self.db.query(Notification)
-            .filter(Notification.is_read == True, Notification.created_at < cutoff)
-            .delete()
+            self.db.query(Notification).filter(Notification.is_read == True, Notification.created_at < cutoff).delete()
         )
         self.db.flush()
         return count

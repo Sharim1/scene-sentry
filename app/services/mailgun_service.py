@@ -3,9 +3,10 @@ Mailgun email service for sending reminder notification emails.
 
 Requires MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_FROM_EMAIL in config.
 """
+
 import logging
+
 import httpx
-from typing import Optional
 
 from app.config import settings
 
@@ -25,7 +26,7 @@ def send_reminder_email(
     reminder_message: str,
     reminder_type: str,
     scheduled_time_display: str,
-    app_link: Optional[str] = None,
+    app_link: str | None = None,
 ) -> bool:
     """Send a reminder notification email via Mailgun.
 

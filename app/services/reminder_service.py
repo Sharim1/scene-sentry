@@ -1,14 +1,14 @@
 """
 Reminder service - business logic for reminders
 """
+
 import logging
 import math
-from typing import List, Optional, Dict, Tuple
-from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
-from app.repositories.reminder_repo import ReminderRepository
 from app.models.reminder import Reminder
+from app.repositories.reminder_repo import ReminderRepository
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +20,19 @@ class ReminderService:
         self.repo = ReminderRepository(db)
         self.db = db
 
-    def get_upcoming(self, user_id: int, limit: int = 5) -> List[Reminder]:
+    def get_upcoming(self, user_id: int, limit: int = 5) -> list[Reminder]:
         return self.repo.get_upcoming(user_id, limit=limit)
 
-    def get_by_month(self, user_id: int, year: int, month: int) -> List[Reminder]:
+    def get_by_month(self, user_id: int, year: int, month: int) -> list[Reminder]:
         return self.repo.get_by_month(user_id, year, month)
 
     def get_calendar_dots(
-        self, user_id: int, year: int, month: int, tz_name: str = "UTC",
-    ) -> Dict[int, int]:
+        self,
+        user_id: int,
+        year: int,
+        month: int,
+        tz_name: str = "UTC",
+    ) -> dict[int, int]:
         return self.repo.get_calendar_dots(user_id, year, month, tz_name=tz_name)
 
     def create_reminder(self, user_id: int, **kwargs) -> Reminder:
@@ -36,7 +40,7 @@ class ReminderService:
         self.db.commit()
         return reminder
 
-    def toggle_reminder(self, reminder_id: int, user_id: int) -> Optional[Reminder]:
+    def toggle_reminder(self, reminder_id: int, user_id: int) -> Reminder | None:
         reminder = self.repo.toggle(reminder_id, user_id)
         if reminder:
             self.db.commit()
@@ -53,7 +57,7 @@ class ReminderService:
         user_id: int,
         page: int = 1,
         tz_name: str = "UTC",
-    ) -> Tuple[Dict[str, List[Reminder]], int, int]:
+    ) -> tuple[dict[str, list[Reminder]], int, int]:
         """Return upcoming reminders grouped by local date, with pagination metadata.
 
         Returns (grouped_dict, current_page, total_pages).
@@ -65,7 +69,7 @@ class ReminderService:
         items, total = self.repo.get_upcoming_paged(user_id, offset=offset, limit=per_page)
         total_pages = max(1, math.ceil(total / per_page))
 
-        grouped: Dict[str, List[Reminder]] = {}
+        grouped: dict[str, list[Reminder]] = {}
         for r in items:
             local_dt = utc_to_local(r.scheduled_time, tz_name)
             key = local_dt.strftime("%A, %b %d").upper()
@@ -75,11 +79,11 @@ class ReminderService:
 
     def get_grouped_by_date(
         self, user_id: int, year: int, month: int, tz_name: str = "UTC"
-    ) -> Dict[str, List[Reminder]]:
+    ) -> dict[str, list[Reminder]]:
         from app.utils.timezone import utc_to_local
 
         reminders = self.repo.get_by_month(user_id, year, month)
-        grouped: Dict[str, List[Reminder]] = {}
+        grouped: dict[str, list[Reminder]] = {}
         for r in reminders:
             local_dt = utc_to_local(r.scheduled_time, tz_name)
             key = local_dt.strftime("%A, %b %d").upper()
@@ -88,8 +92,8 @@ class ReminderService:
 
     def process_due_reminders(self) -> int:
         """Find due reminders, create in-app notifications, send emails, mark sent."""
-        from app.services.notification_service import NotificationService
         from app.services.email_service import send_reminder_email
+        from app.services.notification_service import NotificationService
         from app.utils.timezone import utc_to_local
 
         due = self.repo.get_due()
@@ -111,9 +115,7 @@ class ReminderService:
                     local_dt = utc_to_local(reminder.scheduled_time, tz)
                     time_str = local_dt.strftime("%b %d, %Y at %I:%M %p %Z")
 
-                    content_title = (
-                        reminder.content.title if reminder.content else "Untitled"
-                    )
+                    content_title = reminder.content.title if reminder.content else "Untitled"
                     rtype = reminder.reminder_type.value.replace("_", " ").title()
 
                     send_reminder_email(

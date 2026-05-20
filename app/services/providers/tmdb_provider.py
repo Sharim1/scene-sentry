@@ -4,9 +4,10 @@ TMDb content provider — wraps TMDbService behind ContentProvider.
 Without ``TMDB_API_KEY``, all methods return empty lists (TMDb is optional /
 license-sensitive for commercial use).
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.config import settings
 from app.services.content_service import TMDbService
@@ -24,10 +25,10 @@ class TMDbProvider(ContentProvider):
     def _configured(self) -> bool:
         return bool(settings.tmdb_api_key)
 
-    def _normalize(self, item: Dict[str, Any], content_type: str) -> NormalizedContent:
+    def _normalize(self, item: dict[str, Any], content_type: str) -> NormalizedContent:
         release = item.get("release_date") or item.get("first_air_date")
         vote = item.get("vote_average")
-        rating: Optional[float] = None
+        rating: float | None = None
         if vote is not None:
             try:
                 rating = float(vote)
@@ -52,25 +53,25 @@ class TMDbProvider(ContentProvider):
             raw=item,
         )
 
-    def _normalize_list(self, items: List[Dict[str, Any]], content_type: str) -> List[NormalizedContent]:
+    def _normalize_list(self, items: list[dict[str, Any]], content_type: str) -> list[NormalizedContent]:
         return [self._normalize(i, content_type) for i in items if isinstance(i, dict)]
 
-    def discover_movies(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_movies(self, page: int = 1) -> list[NormalizedContent]:
         if not self._configured():
             return []
         raw = self.tmdb.discover_movies(page=page)
         return self._normalize_list(raw, "movie")
 
-    def discover_tv_shows(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
         if not self._configured():
             return []
         raw = self.tmdb.discover_tv_shows(page=page)
         return self._normalize_list(raw, "tv_show")
 
-    def search(self, query: str, content_type: Optional[str] = None) -> List[NormalizedContent]:
+    def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if not self._configured():
             return []
-        out: List[NormalizedContent] = []
+        out: list[NormalizedContent] = []
 
         def run_movie() -> None:
             hit = self.tmdb.search_content(query, "movie")
@@ -91,18 +92,18 @@ class TMDbProvider(ContentProvider):
             run_tv()
         return out
 
-    def get_upcoming(self, content_type: str = "tv_show") -> List[NormalizedContent]:
+    def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         if not self._configured():
             return []
         raw = self.tmdb.get_upcoming(content_type)
         ct = "movie" if content_type == "movie" else "tv_show"
         return self._normalize_list(raw, ct)
 
-    def get_trending(self) -> List[NormalizedContent]:
+    def get_trending(self) -> list[NormalizedContent]:
         if not self._configured():
             return []
         raw = self.tmdb.get_trending("all", "week")
-        out: List[NormalizedContent] = []
+        out: list[NormalizedContent] = []
         for item in raw:
             if not isinstance(item, dict):
                 continue

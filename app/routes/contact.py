@@ -1,10 +1,10 @@
 """
 Public pages: privacy, terms, contact — and contact form API.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["pages"])
 
 
-def _optional_user(request: Request) -> Optional[User]:
+def _optional_user(request: Request) -> User | None:
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
     if not clerk_user_id and not session_user_id:
@@ -40,7 +40,7 @@ class ContactSubmissionIn(BaseModel):
 
     name: str = Field(min_length=2, max_length=80)
     email: EmailStr
-    subject: Optional[str] = Field(default=None, max_length=120)
+    subject: str | None = Field(default=None, max_length=120)
     message: str = Field(min_length=10, max_length=2000)
     website: str = Field(default="", max_length=256)
 
@@ -57,8 +57,8 @@ class ContactSubmissionIn(BaseModel):
 
 class ContactResponse(BaseModel):
     ok: bool
-    delivered: Optional[bool] = None
-    method: Optional[str] = None
+    delivered: bool | None = None
+    method: str | None = None
 
 
 @router.get("/privacy", response_class=HTMLResponse)

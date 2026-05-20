@@ -1,21 +1,22 @@
 """
 JSON API routes for AJAX interactions
 """
+
 import asyncio
 import json
 import logging
-from typing import Annotated, Any, List, Optional
+from typing import Annotated, Any
 
+import pydantic
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-import pydantic
 from pydantic import BaseModel, ConfigDict
 
 from app.config import settings
 from app.database import get_db
 from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
 from app.routes.auth import limiter
-from app.services.task_manager import get_task_manager, TaskType
+from app.services.task_manager import TaskType, get_task_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["api"])
@@ -29,9 +30,9 @@ class ContentResponse(BaseModel):
     id: int
     title: str
     content_type: str
-    poster_url: Optional[str]
-    rating: Optional[float]
-    year: Optional[str]
+    poster_url: str | None
+    rating: float | None
+    year: str | None
 
 
 class GossipResponse(BaseModel):
@@ -39,9 +40,9 @@ class GossipResponse(BaseModel):
 
     id: int
     title: str
-    preview_text: Optional[str]
+    preview_text: str | None
     source_name: str
-    image_url: Optional[str]
+    image_url: str | None
     tag: str
     time_ago: str
 
@@ -53,12 +54,12 @@ class LibraryItemResponse(BaseModel):
     content: ContentResponse
     status: str
     progress: int
-    rating: Optional[int]
+    rating: int | None
 
 
 class SearchResponse(BaseModel):
     query: str
-    results: List[ContentResponse]
+    results: list[ContentResponse]
     count: int
 
 
@@ -68,31 +69,31 @@ class StatusUpdate(BaseModel):
 
 class ProgressUpdate(BaseModel):
     progress: int = pydantic.Field(ge=0, le=100)
-    season: Optional[int] = None
-    episode: Optional[int] = None
+    season: int | None = None
+    episode: int | None = None
 
 
 class RatingUpdate(BaseModel):
     rating: int
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class TaskStartRequest(BaseModel):
-    preferences: Optional[str] = None
-    query: Optional[str] = None
+    preferences: str | None = None
+    query: str | None = None
 
 
 class LibraryMutationResponse(BaseModel):
     success: bool
-    status: Optional[str] = None
-    progress: Optional[int] = None
-    rating: Optional[int] = None
+    status: str | None = None
+    progress: int | None = None
+    rating: int | None = None
 
 
 class RankedItemResponse(BaseModel):
     content: ContentResponse
-    rank_score: Optional[float]
-    reasoning: Optional[str]
+    rank_score: float | None
+    reasoning: str | None
 
 
 class TaskPayload(BaseModel):
@@ -103,21 +104,21 @@ class TaskPayload(BaseModel):
     status: str
     progress: int
     message: str
-    result: Optional[dict[str, Any]] = None
-    error: Optional[str] = None
-    created_at: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 class TaskListResponse(BaseModel):
-    tasks: List[TaskPayload]
+    tasks: list[TaskPayload]
 
 
 class TaskActionResponse(BaseModel):
     success: bool
-    message: Optional[str] = None
-    task: Optional[TaskPayload] = None
+    message: str | None = None
+    task: TaskPayload | None = None
 
 
 class TaskCancelResponse(BaseModel):
@@ -155,14 +156,14 @@ def search_content(
     )
 
 
-@router.get("/library", response_model=List[LibraryItemResponse])
+@router.get("/library", response_model=list[LibraryItemResponse])
 def get_library(
     user: RequireAuthDep,
     db: DbDep,
     status: Annotated[str | None, Query()] = None,
 ):
-    from app.repositories.library_repo import LibraryRepository
     from app.models.library import WatchStatus as WS
+    from app.repositories.library_repo import LibraryRepository
 
     ws = None
     if status:
@@ -257,7 +258,7 @@ def update_item_rating(
     return LibraryMutationResponse(success=True, rating=item.rating)
 
 
-@router.get("/gossip/latest", response_model=List[GossipResponse])
+@router.get("/gossip/latest", response_model=list[GossipResponse])
 @limiter.limit(settings.rate_limit_api)
 def get_latest_gossip(
     request: Request,
@@ -295,9 +296,7 @@ def get_rankings(
     from app.services.ranking_service import RankingService
 
     svc = RankingService(db)
-    ranked = svc.get_personalized_content(
-        user.id, content_type=content_type, limit=limit
-    )
+    ranked = svc.get_personalized_content(user.id, content_type=content_type, limit=limit)
 
     return [
         RankedItemResponse(
@@ -327,9 +326,7 @@ async def get_user_tasks(
 
     task_manager = get_task_manager()
     tasks = await task_manager.get_user_tasks(user.id, active_only=active_only)
-    return TaskListResponse(
-        tasks=[TaskPayload.model_validate(t.to_dict()) for t in tasks]
-    )
+    return TaskListResponse(tasks=[TaskPayload.model_validate(t.to_dict()) for t in tasks])
 
 
 @router.get("/tasks/stream")
@@ -351,7 +348,7 @@ async def task_stream(request: Request, user: OptionalUserDep):
                 try:
                     task_data = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {json.dumps(task_data)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield 'data: {"type": "keepalive"}\n\n'
                 except asyncio.CancelledError:
                     break

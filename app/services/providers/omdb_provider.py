@@ -1,12 +1,13 @@
 """
 OMDb API content provider (search + detail by IMDb ID).
 """
+
 from __future__ import annotations
 
 import logging
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "http://www.omdbapi.com/"
 
 
-def _parse_year(year_val: Any) -> Optional[int]:
+def _parse_year(year_val: Any) -> int | None:
     if year_val is None:
         return None
     s = str(year_val).strip()
@@ -28,7 +29,7 @@ def _parse_year(year_val: Any) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def _parse_released(val: Any) -> Optional[str]:
+def _parse_released(val: Any) -> str | None:
     if val is None:
         return None
     s = str(val).strip()
@@ -42,7 +43,7 @@ def _parse_released(val: Any) -> Optional[str]:
     return s
 
 
-def _parse_rating(val: Any) -> Optional[float]:
+def _parse_rating(val: Any) -> float | None:
     if val is None:
         return None
     s = str(val).strip()
@@ -54,7 +55,7 @@ def _parse_rating(val: Any) -> Optional[float]:
         return None
 
 
-def _parse_runtime(val: Any) -> Optional[int]:
+def _parse_runtime(val: Any) -> int | None:
     if val is None:
         return None
     s = str(val).strip()
@@ -64,7 +65,7 @@ def _parse_runtime(val: Any) -> Optional[int]:
     return int(m.group(0)) if m else None
 
 
-def _parse_seasons(val: Any) -> Optional[int]:
+def _parse_seasons(val: Any) -> int | None:
     if val is None:
         return None
     s = str(val).strip()
@@ -76,7 +77,7 @@ def _parse_seasons(val: Any) -> Optional[int]:
         return None
 
 
-def _na_or_str(val: Any) -> Optional[str]:
+def _na_or_str(val: Any) -> str | None:
     if val is None:
         return None
     s = str(val).strip()
@@ -94,7 +95,7 @@ def _content_type_from_omdb_type(omdb_type: str) -> str:
     return "movie"
 
 
-def _normalize_omdb_dict(d: Dict[str, Any]) -> Optional[NormalizedContent]:
+def _normalize_omdb_dict(d: dict[str, Any]) -> NormalizedContent | None:
     title = _na_or_str(d.get("Title"))
     if not title:
         return None
@@ -135,23 +136,23 @@ class OMDbProvider(ContentProvider):
         if not self._api_key:
             logger.warning("OMDb API key is not set; OMDbProvider will return empty results")
 
-    def discover_movies(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_movies(self, page: int = 1) -> list[NormalizedContent]:
         return []
 
-    def discover_tv_shows(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
         return []
 
-    def get_upcoming(self, content_type: str = "tv_show") -> List[NormalizedContent]:
+    def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         return []
 
-    def search(self, query: str, content_type: Optional[str] = None) -> List[NormalizedContent]:
+    def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if not self._api_key:
             return []
         q = (query or "").strip()
         if not q:
             return []
 
-        params: Dict[str, Any] = {"apikey": self._api_key, "s": q, "page": 1}
+        params: dict[str, Any] = {"apikey": self._api_key, "s": q, "page": 1}
         if content_type == "movie":
             params["type"] = "movie"
         elif content_type == "tv_show":
@@ -172,7 +173,7 @@ class OMDbProvider(ContentProvider):
         if not isinstance(items, list):
             return []
 
-        out: List[NormalizedContent] = []
+        out: list[NormalizedContent] = []
         for item in items:
             if isinstance(item, dict):
                 norm = _normalize_omdb_dict(item)
@@ -180,7 +181,7 @@ class OMDbProvider(ContentProvider):
                     out.append(norm)
         return out
 
-    def get_details(self, imdb_id: str) -> Optional[NormalizedContent]:
+    def get_details(self, imdb_id: str) -> NormalizedContent | None:
         if not self._api_key:
             return None
         iid = (imdb_id or "").strip()

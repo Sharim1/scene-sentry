@@ -1,19 +1,22 @@
 """
 UserContentRank model for personalized content scoring
 """
-from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, Float, Text, DateTime, ForeignKey, UniqueConstraint
+
+from datetime import UTC, datetime
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 
 
 def utc_now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class UserContentRank(Base):
     """Stores per-user relevance scores produced by the re-ranking agent."""
+
     __tablename__ = "user_content_ranks"
 
     id = Column(Integer, primary_key=True)
@@ -23,9 +26,7 @@ class UserContentRank(Base):
     reasoning = Column(Text, nullable=True)
     ranked_at = Column(DateTime(timezone=True), default=utc_now)
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "content_id", name="uq_user_content_rank"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "content_id", name="uq_user_content_rank"),)
 
     user = relationship("User")
     content = relationship("Content")

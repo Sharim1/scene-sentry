@@ -1,6 +1,7 @@
 """
 HTML catalog search page (server-rendered; complements /api/search for the modal).
 """
+
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request

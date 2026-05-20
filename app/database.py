@@ -1,11 +1,13 @@
 """
 Database configuration and session management
 """
+
 import logging
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
+
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
 
@@ -82,10 +84,10 @@ def _run_migrations():
         for table, column, new_type in alter_types:
             if table not in existing_tables:
                 continue
-            result = conn.execute(text(
-                "SELECT data_type FROM information_schema.columns "
-                "WHERE table_name = :tbl AND column_name = :col"
-            ), {"tbl": table, "col": column})
+            result = conn.execute(
+                text("SELECT data_type FROM information_schema.columns WHERE table_name = :tbl AND column_name = :col"),
+                {"tbl": table, "col": column},
+            )
             row = result.fetchone()
             if row and row[0] != "timestamp with time zone":
                 stmt = (
@@ -103,17 +105,18 @@ def _run_migrations():
         for table, constraint, column, references, on_delete in fk_fixes:
             if table not in existing_tables:
                 continue
-            row = conn.execute(text(
-                "SELECT confdeltype FROM pg_constraint "
-                "WHERE conname = :name"
-            ), {"name": constraint}).fetchone()
+            row = conn.execute(
+                text("SELECT confdeltype FROM pg_constraint WHERE conname = :name"), {"name": constraint}
+            ).fetchone()
             # 'a' = NO ACTION (default), 'n' = SET NULL, 'c' = CASCADE
             if row and row[0] != "n":
                 conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{constraint}"'))
-                conn.execute(text(
-                    f'ALTER TABLE "{table}" ADD CONSTRAINT "{constraint}" '
-                    f'FOREIGN KEY ("{column}") REFERENCES {references} ON DELETE {on_delete}'
-                ))
+                conn.execute(
+                    text(
+                        f'ALTER TABLE "{table}" ADD CONSTRAINT "{constraint}" '
+                        f'FOREIGN KEY ("{column}") REFERENCES {references} ON DELETE {on_delete}'
+                    )
+                )
                 logger.info("Migration: updated FK %s to ON DELETE %s", constraint, on_delete)
 
 
@@ -123,7 +126,17 @@ def init_db(drop_all: bool = False):
     Args:
         drop_all: If True, drops all tables before creating (use only in development)
     """
-    from app.models import user, content, episode, library, gossip, reminder, notification, ranking, discovery_state  # noqa: F401
+    from app.models import (  # noqa: F401
+        content,
+        discovery_state,
+        episode,
+        gossip,
+        library,
+        notification,
+        ranking,
+        reminder,
+        user,
+    )
 
     if drop_all:
         Base.metadata.drop_all(bind=engine)

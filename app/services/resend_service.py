@@ -4,8 +4,8 @@ Resend email service for sending reminder notification emails.
 Used as a fallback when Mailgun is not configured.
 Requires RESEND_API_KEY and RESEND_FROM_EMAIL in config.
 """
+
 import logging
-from typing import Optional
 
 import resend
 
@@ -25,7 +25,7 @@ def send_reminder_email(
     reminder_message: str,
     reminder_type: str,
     scheduled_time_display: str,
-    app_link: Optional[str] = None,
+    app_link: str | None = None,
 ) -> bool:
     """Send a reminder notification email via Resend.
 
