@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Scene Sentry"
     app_version: str = "2.0.0"
-    debug: bool = True
+    debug: bool = False
     env: str = "development"  # development, staging, production
     secret_key: str = "dev-secret-key-change-in-production"
     session_secret: Optional[str] = None

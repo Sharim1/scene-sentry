@@ -378,13 +378,17 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         redirect_url = self._get_url_without_handshake(request)
         response = RedirectResponse(url=redirect_url, status_code=307)
         
-        # Apply each cookie instruction from the handshake
+        ALLOWED_HANDSHAKE_COOKIES = {"__session", "__client_uat", "__clerk_db_jwt"}
+
         for cookie_str in cookie_instructions:
             cookie_data = parse_set_cookie_header(cookie_str)
             if not cookie_data.get("name"):
                 continue
             
             name = cookie_data["name"]
+            if name not in ALLOWED_HANDSHAKE_COOKIES:
+                logger.warning(f"Handshake: rejecting unrecognized cookie {name}")
+                continue
             value = cookie_data.get("value", "")
             
             # Check if this is a delete instruction (expires in past or empty value with past expiry)
@@ -407,14 +411,15 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                     except ValueError:
                         pass
                 
+                is_production = settings.env == "production"
                 response.set_cookie(
                     key=name,
                     value=value,
                     path=cookie_data.get("path", "/"),
                     domain=cookie_data.get("domain"),
                     max_age=max_age,
-                    secure=cookie_data.get("secure", False),
-                    httponly=cookie_data.get("httponly", False),
+                    secure=cookie_data.get("secure", False) or is_production,
+                    httponly=cookie_data.get("httponly", True),
                     samesite=cookie_data.get("samesite", "lax").lower() if cookie_data.get("samesite") else "lax",
                 )
                 logger.debug(f"Handshake: setting cookie {name}")

@@ -14,10 +14,36 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+
 from app.config import settings
 from app.database import get_db, init_db
 from app.models.user import User
 from app.templates import templates, static_path
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: StarletteResponse = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if settings.env == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        csp_parts = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://unpkg.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://fonts.googleapis.com",
+            "img-src 'self' data: https: http:",
+            "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
+            "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://cdn.tailwindcss.com",
+            "frame-src https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+            "worker-src 'self' blob:",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_parts)
+        return response
 
 # Configure logging
 logging.basicConfig(
@@ -83,6 +109,21 @@ app.add_middleware(
     max_age=86400 * 7,  # 7 days
     same_site="lax",
     https_only=settings.env == "production",
+)
+
+import re
+from starlette_csrf import CSRFMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CSRFMiddleware,
+    secret=settings.session_secret or settings.secret_key,
+    sensitive_cookies={"scenesentry_session"},
+    exempt_urls=[re.compile(r"/webhooks/.*"), re.compile(r"/health")],
+    cookie_name="csrftoken",
+    cookie_secure=settings.env == "production",
+    cookie_samesite="lax",
+    header_name="x-csrftoken",
 )
 
 # Mount static files
@@ -199,7 +240,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     logger.error(traceback.format_exc())
 
-    error_message = str(exc) if settings.debug else "An unexpected error occurred"
+    error_message = "An unexpected error occurred"
 
     return templates.TemplateResponse(
         "errors/error.html",

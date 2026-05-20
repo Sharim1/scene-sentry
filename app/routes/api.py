@@ -9,12 +9,15 @@ from typing import Annotated, Any, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+import pydantic
 from pydantic import BaseModel, ConfigDict
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
 from app.models import LibraryItem
 from app.models.library import WatchStatus
+from app.routes.auth import limiter
 from app.services.task_manager import get_task_manager, TaskType
 
 logger = logging.getLogger(__name__)
@@ -67,7 +70,7 @@ class StatusUpdate(BaseModel):
 
 
 class ProgressUpdate(BaseModel):
-    progress: int
+    progress: int = pydantic.Field(ge=0, le=100)
     season: Optional[int] = None
     episode: Optional[int] = None
 
@@ -125,7 +128,9 @@ class TaskCancelResponse(BaseModel):
 
 
 @router.get("/search", response_model=SearchResponse)
+@limiter.limit(settings.rate_limit_api)
 def search_content(
+    request: Request,
     user: RequireAuthDep,
     db: DbDep,
     q: Annotated[str, Query(min_length=1)],
@@ -286,8 +291,10 @@ def update_item_rating(
 
 
 @router.get("/gossip/latest", response_model=List[GossipResponse])
+@limiter.limit(settings.rate_limit_api)
 def get_latest_gossip(
     request: Request,
+    user: RequireAuthDep,
     db: DbDep,
     limit: Annotated[int, Query(le=50)] = 10,
 ):
@@ -399,7 +406,9 @@ async def task_stream(request: Request, user: OptionalUserDep):
     "/tasks/{task_type}/start",
     response_model=TaskActionResponse,
 )
+@limiter.limit("5/minute")
 async def start_task(
+    request: Request,
     task_type: str,
     user: RequireAuthDep,
     db: DbDep,
@@ -444,7 +453,7 @@ async def start_task(
             db_gen = get_db()
             db_session = next(db_gen)
             try:
-                tracked = LibraryRepository(db_session).get_all_tracked_titles()
+                tracked = LibraryRepository(db_session).get_tracked_titles(user_id)
                 await tm.update_task(
                     task.id,
                     progress=30,
