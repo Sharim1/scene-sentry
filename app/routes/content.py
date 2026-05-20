@@ -3,17 +3,16 @@ Content routes for Movies and TV Shows
 """
 import json as _json
 import logging
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.dependencies import DbDep, OptionalUserDep
-from app.models import WatchStatus
 from app.repositories.content_repo import ContentRepository
 from app.repositories.episode_repo import EpisodeRepository
 from app.repositories.library_repo import LibraryRepository
+from app.services.library_service import LibraryService
 from app.services.ranking_service import RankingService
 
 logger = logging.getLogger(__name__)
@@ -143,33 +142,13 @@ def add_to_library(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    status_map = {
-        "watching": WatchStatus.WATCHING,
-        "planned": WatchStatus.PLANNED,
-        "completed": WatchStatus.COMPLETED,
-        "dropped": WatchStatus.DROPPED,
-        "maybe": WatchStatus.MAYBE,
-    }
-    watch_status = status_map.get(status, WatchStatus.PLANNED)
-
-    lib_repo = LibraryRepository(db)
-    existing = lib_repo.get_by_user_and_content(user.id, content_id)
+    svc = LibraryService(db)
+    existing = LibraryRepository(db).get_by_user_and_content(user.id, content_id)
 
     if existing:
-        existing.status = watch_status
-        existing.updated_at = datetime.now(timezone.utc)
+        svc.update_status(user.id, existing.id, status)
     else:
-        content = ContentRepository(db).get_by_id(content_id)
-        if content:
-            lib_repo.create(
-                user_id=user.id,
-                content_id=content_id,
-                status=watch_status,
-            )
-
-    db.commit()
-
-    RankingService(db).invalidate_ranks(user.id)
+        svc.add(user.id, content_id, status)
 
     referer = request.headers.get("referer", "/movies")
     if not referer.startswith("/"):
