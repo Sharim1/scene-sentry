@@ -1,9 +1,11 @@
 """
 Content service for TMDb API
 """
+
 import logging
+from typing import Any
+
 import httpx
-from typing import Optional, Dict, Any, List
 
 from app.config import settings
 
@@ -22,7 +24,7 @@ class TMDbService:
         if not self.api_key:
             logger.warning("TMDB_API_KEY not found, TMDb features will be limited")
 
-    def _get(self, endpoint: str, params: Optional[dict] = None) -> Optional[dict]:
+    def _get(self, endpoint: str, params: dict | None = None) -> dict | None:
         if not self.api_key:
             return None
         base_params = {"api_key": self.api_key, "language": "en-US"}
@@ -44,7 +46,7 @@ class TMDbService:
             item["backdrop_path"] = f"{self.BACKDROP_BASE_URL}{item['backdrop_path']}"
         return item
 
-    def _format_results(self, data: Optional[dict]) -> List[Dict[str, Any]]:
+    def _format_results(self, data: dict | None) -> list[dict[str, Any]]:
         if not data:
             return []
         results = data.get("results", [])
@@ -52,14 +54,14 @@ class TMDbService:
 
     # --- Search ---
 
-    def search_content(self, title: str, content_type: str) -> Optional[Dict[str, Any]]:
+    def search_content(self, title: str, content_type: str) -> dict[str, Any] | None:
         endpoint = "search/movie" if content_type == "movie" else "search/tv"
         data = self._get(endpoint, {"query": title})
         if data and data.get("results"):
             return self._format_poster(data["results"][0])
         return None
 
-    def get_content_details(self, tmdb_id: int, content_type: str) -> Optional[Dict[str, Any]]:
+    def get_content_details(self, tmdb_id: int, content_type: str) -> dict[str, Any] | None:
         endpoint = "movie" if content_type == "movie" else "tv"
         data = self._get(f"{endpoint}/{tmdb_id}")
         return self._format_poster(data) if data else None
@@ -68,11 +70,11 @@ class TMDbService:
 
     def discover_movies(
         self,
-        genre_ids: Optional[str] = None,
+        genre_ids: str | None = None,
         sort_by: str = "popularity.desc",
-        year: Optional[int] = None,
+        year: int | None = None,
         page: int = 1,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         params: dict = {"sort_by": sort_by, "page": page, "include_adult": "false"}
         if genre_ids:
             params["with_genres"] = genre_ids
@@ -82,10 +84,10 @@ class TMDbService:
 
     def discover_tv_shows(
         self,
-        genre_ids: Optional[str] = None,
+        genre_ids: str | None = None,
         sort_by: str = "popularity.desc",
         page: int = 1,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         params: dict = {"sort_by": sort_by, "page": page}
         if genre_ids:
             params["with_genres"] = genre_ids
@@ -93,18 +95,18 @@ class TMDbService:
 
     # --- Trending ---
 
-    def get_trending(self, media_type: str = "all", time_window: str = "week") -> List[Dict[str, Any]]:
+    def get_trending(self, media_type: str = "all", time_window: str = "week") -> list[dict[str, Any]]:
         return self._format_results(self._get(f"trending/{media_type}/{time_window}"))
 
     # --- Upcoming ---
 
-    def get_upcoming(self, content_type: str = "movie") -> List[Dict[str, Any]]:
+    def get_upcoming(self, content_type: str = "movie") -> list[dict[str, Any]]:
         endpoint = "movie/upcoming" if content_type == "movie" else "tv/on_the_air"
         return self._format_results(self._get(endpoint))
 
     # --- Genres ---
 
-    def get_genres(self, media_type: str = "movie") -> List[Dict[str, Any]]:
+    def get_genres(self, media_type: str = "movie") -> list[dict[str, Any]]:
         endpoint = f"genre/{media_type}/list"
         data = self._get(endpoint)
         return data.get("genres", []) if data else []

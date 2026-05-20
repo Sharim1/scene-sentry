@@ -22,6 +22,7 @@ Usage:
     python manage.py fix-emails            # Backfill real emails from Clerk for placeholder users
     python manage.py fix-emails --dry-run  # Preview what would be updated
 """
+
 import argparse
 import logging
 import sys
@@ -36,12 +37,14 @@ logger = logging.getLogger("manage")
 def _init_app():
     """Bootstrap database so models are available."""
     from app.database import init_db
+
     init_db()
 
 
 # ---------------------------------------------------------------------------
 # discover
 # ---------------------------------------------------------------------------
+
 
 def cmd_discover(args: argparse.Namespace) -> None:
     """Run content discovery from the CLI."""
@@ -58,9 +61,7 @@ def cmd_discover(args: argparse.Namespace) -> None:
         svc = ContentDiscoveryService(db)
 
         if not svc.providers:
-            logger.error(
-                "No active content providers. Check feature flags and API keys in .env"
-            )
+            logger.error("No active content providers. Check feature flags and API keys in .env")
             sys.exit(1)
 
         active = ", ".join(p.name for p in svc.providers)
@@ -74,7 +75,8 @@ def cmd_discover(args: argparse.Namespace) -> None:
                 f", provider={args.provider}" if args.provider else "",
             )
             result = svc.run_full_sync(
-                provider_name=args.provider, max_pages=max_pg,
+                provider_name=args.provider,
+                max_pages=max_pg,
             )
         elif args.pages:
             logger.info(
@@ -83,7 +85,8 @@ def cmd_discover(args: argparse.Namespace) -> None:
                 f", provider={args.provider}" if args.provider else "",
             )
             result = svc.run_n_pages(
-                pages=args.pages, provider_name=args.provider,
+                pages=args.pages,
+                provider_name=args.provider,
             )
         else:
             logger.info("Running one scheduled batch...")
@@ -91,7 +94,8 @@ def cmd_discover(args: argparse.Namespace) -> None:
 
         logger.info(
             "Done — movies: %d, tv_shows: %d",
-            result["movies"], result["tv_shows"],
+            result["movies"],
+            result["tv_shows"],
         )
 
 
@@ -101,9 +105,14 @@ def _show_discovery_status():
     from app.models.discovery_state import DiscoveryState
 
     with db_session() as db:
-        rows = db.query(DiscoveryState).order_by(
-            DiscoveryState.provider, DiscoveryState.content_type,
-        ).all()
+        rows = (
+            db.query(DiscoveryState)
+            .order_by(
+                DiscoveryState.provider,
+                DiscoveryState.content_type,
+            )
+            .all()
+        )
 
     if not rows:
         print("No discovery state recorded yet.")
@@ -124,6 +133,7 @@ def _show_discovery_status():
 # enrich
 # ---------------------------------------------------------------------------
 
+
 def cmd_enrich(args: argparse.Namespace) -> None:
     """Run the detail enrichment pass from the CLI."""
     _init_app()
@@ -141,9 +151,7 @@ def cmd_enrich(args: argparse.Namespace) -> None:
         svc = ContentDiscoveryService(db)
 
         if not svc.providers:
-            logger.error(
-                "No active content providers. Check feature flags and API keys in .env"
-            )
+            logger.error("No active content providers. Check feature flags and API keys in .env")
             sys.exit(1)
 
         kwargs = dict(
@@ -190,25 +198,23 @@ def _show_enrichment_status(args: argparse.Namespace) -> None:
 # fix-emails
 # ---------------------------------------------------------------------------
 
+
 def cmd_fix_emails(args: argparse.Namespace) -> None:
     """Backfill real emails and fix bad usernames for Clerk users."""
     _init_app()
 
     from app.database import db_session
-    from app.models.user import User
     from app.middleware.clerk import (
-        fetch_clerk_user_email,
         _is_placeholder_email,
         _is_placeholder_username,
+        fetch_clerk_user_email,
     )
+    from app.models.user import User
 
     with db_session() as db:
         users = db.query(User).filter(User.clerk_id.isnot(None)).all()
 
-        needs_fix = [
-            u for u in users
-            if _is_placeholder_email(u.email) or _is_placeholder_username(u.username)
-        ]
+        needs_fix = [u for u in users if _is_placeholder_email(u.email) or _is_placeholder_username(u.username)]
 
         if not needs_fix:
             print("All Clerk users have valid emails and usernames. Nothing to do.")
@@ -256,6 +262,7 @@ def cmd_fix_emails(args: argparse.Namespace) -> None:
 # main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Scene Sentry management commands",
@@ -265,23 +272,31 @@ def main():
     # -- discover --
     disc = sub.add_parser("discover", help="Run content discovery")
     disc.add_argument(
-        "--full", action="store_true",
+        "--full",
+        action="store_true",
         help="Exhaust all pages from providers until catalog is fully synced",
     )
     disc.add_argument(
-        "--pages", type=int, default=None,
+        "--pages",
+        type=int,
+        default=None,
         help="Fetch N pages per provider (overrides discovery_batch_size)",
     )
     disc.add_argument(
-        "--max-pages", type=int, default=None,
+        "--max-pages",
+        type=int,
+        default=None,
         help="Upper bound for --full mode (default 500)",
     )
     disc.add_argument(
-        "--provider", type=str, default=None,
+        "--provider",
+        type=str,
+        default=None,
         help="Limit to a single provider (e.g. tvmaze, tvdb, omdb, tmdb)",
     )
     disc.add_argument(
-        "--status", action="store_true",
+        "--status",
+        action="store_true",
         help="Show current discovery state and exit",
     )
     disc.set_defaults(func=cmd_discover)
@@ -289,27 +304,38 @@ def main():
     # -- enrich --
     enrich = sub.add_parser("enrich", help="Backfill missing detail data on sparse records")
     enrich.add_argument(
-        "--batch-size", type=int, default=50,
+        "--batch-size",
+        type=int,
+        default=50,
         help="Number of records to enrich per run (default 50)",
     )
     enrich.add_argument(
-        "--type", type=str, default=None, choices=["movie", "tv_show"],
+        "--type",
+        type=str,
+        default=None,
+        choices=["movie", "tv_show"],
         help="Limit to a content type (movie or tv_show)",
     )
     enrich.add_argument(
-        "--id", type=int, default=None,
+        "--id",
+        type=int,
+        default=None,
         help="Enrich a specific content record by its database ID",
     )
     enrich.add_argument(
-        "--provider", type=str, default=None,
+        "--provider",
+        type=str,
+        default=None,
         help="Use only this provider for detail/episode lookups (e.g. tvmaze, tvdb, omdb)",
     )
     enrich.add_argument(
-        "--all", action="store_true",
+        "--all",
+        action="store_true",
         help="Loop until no sparse records remain",
     )
     enrich.add_argument(
-        "--status", action="store_true",
+        "--status",
+        action="store_true",
         help="Show enrichment backlog counts and exit",
     )
     enrich.set_defaults(func=cmd_enrich)
@@ -317,7 +343,8 @@ def main():
     # -- fix-emails --
     fe = sub.add_parser("fix-emails", help="Backfill real emails from Clerk for placeholder users")
     fe.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Preview changes without applying them",
     )
     fe.set_defaults(func=cmd_fix_emails)

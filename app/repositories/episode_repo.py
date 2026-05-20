@@ -1,9 +1,9 @@
 """
 Episode repository - database access for the Episode model.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ class EpisodeRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_content(self, content_id: int) -> List[Episode]:
+    def get_by_content(self, content_id: int) -> list[Episode]:
         return (
             self.db.query(Episode)
             .filter(Episode.content_id == content_id)
@@ -26,23 +26,18 @@ class EpisodeRepository:
         )
 
     def count_by_content(self, content_id: int) -> int:
-        return (
-            self.db.query(Episode)
-            .filter(Episode.content_id == content_id)
-            .count()
-        )
+        return self.db.query(Episode).filter(Episode.content_id == content_id).count()
 
     def get_season_count(self, content_id: int) -> int:
         from sqlalchemy import func
-        row = (
-            self.db.query(func.max(Episode.season_number))
-            .filter(Episode.content_id == content_id)
-            .scalar()
-        )
+
+        row = self.db.query(func.max(Episode.season_number)).filter(Episode.content_id == content_id).scalar()
         return row or 0
 
     def upsert_episode(
-        self, content_id: int, ne: NormalizedEpisode,
+        self,
+        content_id: int,
+        ne: NormalizedEpisode,
     ) -> Episode:
         existing = (
             self.db.query(Episode)
@@ -71,7 +66,7 @@ class EpisodeRepository:
                 existing.tvdb_id = ne.tvdb_id
             if ne.imdb_id and not existing.imdb_id:
                 existing.imdb_id = ne.imdb_id
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
             return existing
 
         ep = Episode(
@@ -92,7 +87,9 @@ class EpisodeRepository:
         return ep
 
     def bulk_upsert(
-        self, content_id: int, episodes: List[NormalizedEpisode],
+        self,
+        content_id: int,
+        episodes: list[NormalizedEpisode],
     ) -> int:
         count = 0
         for ne in episodes:
@@ -102,6 +99,8 @@ class EpisodeRepository:
             except Exception as e:
                 logger.warning(
                     "Failed to upsert episode S%02dE%02d: %s",
-                    ne.season_number, ne.episode_number, e,
+                    ne.season_number,
+                    ne.episode_number,
+                    e,
                 )
         return count

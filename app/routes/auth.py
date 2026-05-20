@@ -6,23 +6,21 @@ Security features:
 - Rate limiting on auth endpoints
 - Proper session handling
 """
-import logging
-from datetime import datetime, timezone
-from typing import Annotated, Optional
 
-from fastapi import APIRouter, HTTPException, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
-from sqlalchemy.orm import Session
+import logging
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import (
     DbDep,
     OptionalUserDep,
-    RequireAuthDep,
-    get_current_user,
-    require_auth,
 )
 from app.models.user import User
 from app.templates import templates
@@ -78,7 +76,7 @@ def login(
         request.session["username"] = user.username
 
         # Update last login
-        user.last_login = datetime.now(timezone.utc)
+        user.last_login = datetime.now(UTC)
         db.commit()
 
         logger.info(f"User logged in: {user.username}")
@@ -100,7 +98,7 @@ def login(
 def _register_template_context(
     request: Request,
     *,
-    error: Optional[str] = None,
+    error: str | None = None,
     prefill_email: str = "",
 ) -> dict:
     """Shared template context for GET/POST register responses."""
@@ -322,11 +320,7 @@ def _handle_user_created(db: Session, data: dict):
     if not primary_email and email_addresses:
         primary_email = email_addresses[0].get("email_address", "")
 
-    username = data.get("username") or (
-        primary_email.split("@")[0]
-        if primary_email
-        else f"user_{clerk_id[:8]}"
-    )
+    username = data.get("username") or (primary_email.split("@")[0] if primary_email else f"user_{clerk_id[:8]}")
 
     # Ensure unique username
     base_username = username

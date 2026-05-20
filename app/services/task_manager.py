@@ -3,20 +3,22 @@ Background Task Manager Service
 
 Manages background tasks with status tracking and SSE (Server-Sent Events) for real-time updates.
 """
+
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
-from dataclasses import dataclass, field, asdict
-import json
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class TaskStatus(str, Enum):
     """Task status enum"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -26,18 +28,20 @@ class TaskStatus(str, Enum):
 
 class TaskType(str, Enum):
     """Types of background tasks"""
+
     GOSSIP_SCRAPE = "gossip_scrape"
     CONTENT_RERANKING = "content_reranking"
 
 
 def _utc_now():
     """Get current UTC time (timezone-aware)"""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
 class Task:
     """Represents a background task"""
+
     id: str
     type: TaskType
     name: str
@@ -45,13 +49,13 @@ class Task:
     status: TaskStatus = TaskStatus.PENDING
     progress: int = 0
     message: str = "Waiting to start..."
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
     created_at: datetime = field(default_factory=_utc_now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert task to dictionary for JSON serialization"""
         return {
             "id": self.id,
@@ -72,116 +76,107 @@ class Task:
 class TaskManager:
     """
     Manages background tasks with real-time status updates via SSE.
-    
+
     This is a singleton that stores task state in-memory. In a production
     environment, you might want to use Redis or a database for persistence.
     """
-    
+
     _instance: Optional["TaskManager"] = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
-        
-        self._tasks: Dict[str, Task] = {}
-        self._subscribers: Dict[int, List[asyncio.Queue]] = {}  # user_id -> list of queues
-        self._global_subscribers: List[asyncio.Queue] = []
+
+        self._tasks: dict[str, Task] = {}
+        self._subscribers: dict[int, list[asyncio.Queue]] = {}  # user_id -> list of queues
+        self._global_subscribers: list[asyncio.Queue] = []
         self._lock = asyncio.Lock()
         self._initialized = True
-        
+
         logger.info("TaskManager initialized")
-    
-    async def create_task(
-        self,
-        task_type: TaskType,
-        user_id: int,
-        name: Optional[str] = None
-    ) -> Task:
+
+    async def create_task(self, task_type: TaskType, user_id: int, name: str | None = None) -> Task:
         """Create a new task"""
         task_id = str(uuid.uuid4())[:8]
-        
+
         # Default names for task types
         default_names = {
             TaskType.GOSSIP_SCRAPE: "Scanning for Gossip",
             TaskType.CONTENT_RERANKING: "Re-ranking Content",
         }
-        
+
         task = Task(
             id=task_id,
             type=task_type,
             name=name or default_names.get(task_type, "Background Task"),
             user_id=user_id,
         )
-        
+
         async with self._lock:
             self._tasks[task_id] = task
-        
+
         # Notify subscribers
         await self._notify_subscribers(user_id, task)
-        
+
         logger.info(f"Created task {task_id}: {task.name} for user {user_id}")
         return task
-    
+
     async def update_task(
         self,
         task_id: str,
-        status: Optional[TaskStatus] = None,
-        progress: Optional[int] = None,
-        message: Optional[str] = None,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None
-    ) -> Optional[Task]:
+        status: TaskStatus | None = None,
+        progress: int | None = None,
+        message: str | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> Task | None:
         """Update task status and notify subscribers"""
         async with self._lock:
             task = self._tasks.get(task_id)
             if not task:
                 return None
-            
+
             if status:
                 task.status = status
                 if status == TaskStatus.RUNNING and not task.started_at:
-                    task.started_at = datetime.now(timezone.utc)
+                    task.started_at = datetime.now(UTC)
                 elif status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
-                    task.completed_at = datetime.now(timezone.utc)
-            
+                    task.completed_at = datetime.now(UTC)
+
             if progress is not None:
                 task.progress = min(100, max(0, progress))
-            
+
             if message:
                 task.message = message
-            
+
             if result:
                 task.result = result
-            
+
             if error:
                 task.error = error
-        
+
         # Notify subscribers
         await self._notify_subscribers(task.user_id, task)
-        
+
         logger.debug(f"Updated task {task_id}: status={task.status}, progress={task.progress}%")
         return task
-    
-    async def get_task(self, task_id: str) -> Optional[Task]:
+
+    async def get_task(self, task_id: str) -> Task | None:
         """Get a task by ID"""
         return self._tasks.get(task_id)
-    
+
     async def get_user_tasks(
-        self, 
-        user_id: int, 
-        active_only: bool = True,
-        include_recent_completed: bool = True,
-        recent_seconds: int = 30
-    ) -> List[Task]:
+        self, user_id: int, active_only: bool = True, include_recent_completed: bool = True, recent_seconds: int = 30
+    ) -> list[Task]:
         """
         Get all tasks for a user.
-        
+
         Args:
             user_id: The user's ID
             active_only: If True, only return active (pending/running) tasks
@@ -189,54 +184,50 @@ class TaskManager:
             recent_seconds: How many seconds to consider "recent" for completed tasks
         """
         tasks = [t for t in self._tasks.values() if t.user_id == user_id]
-        
+
         if active_only:
             active_tasks = [t for t in tasks if t.status in (TaskStatus.PENDING, TaskStatus.RUNNING)]
-            
+
             # Also include recently completed tasks so frontend can see them
             if include_recent_completed:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 recent_completed = []
                 for t in tasks:
                     if t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED) and t.completed_at:
                         completed = t.completed_at
                         # Handle offset-naive datetimes
                         if completed.tzinfo is None:
-                            completed = completed.replace(tzinfo=timezone.utc)
+                            completed = completed.replace(tzinfo=UTC)
                         if (now - completed).total_seconds() < recent_seconds:
                             recent_completed.append(t)
                 tasks = active_tasks + recent_completed
             else:
                 tasks = active_tasks
-        
+
         return sorted(tasks, key=lambda t: t.created_at, reverse=True)
-    
+
     async def cancel_task(self, task_id: str) -> bool:
         """Cancel a task"""
-        task = await self.update_task(
-            task_id,
-            status=TaskStatus.CANCELLED,
-            message="Task cancelled"
-        )
+        task = await self.update_task(task_id, status=TaskStatus.CANCELLED, message="Task cancelled")
         return task is not None
-    
+
     async def subscribe(self, user_id: int) -> asyncio.Queue:
         """Subscribe to task updates for a user"""
         queue: asyncio.Queue = asyncio.Queue()
-        
+
         async with self._lock:
             if user_id not in self._subscribers:
                 self._subscribers[user_id] = []
             self._subscribers[user_id].append(queue)
-        
+
         # Send current active tasks
         tasks = await self.get_user_tasks(user_id, active_only=True)
         for task in tasks:
             await queue.put(task.to_dict())
-        
+
         logger.debug(f"User {user_id} subscribed to task updates")
         return queue
-    
+
     async def unsubscribe(self, user_id: int, queue: asyncio.Queue):
         """Unsubscribe from task updates"""
         async with self._lock:
@@ -245,13 +236,13 @@ class TaskManager:
                     self._subscribers[user_id].remove(queue)
                 except ValueError:
                     pass
-        
+
         logger.debug(f"User {user_id} unsubscribed from task updates")
-    
+
     async def _notify_subscribers(self, user_id: int, task: Task):
         """Notify all subscribers of a task update"""
         task_data = task.to_dict()
-        
+
         # Notify user-specific subscribers
         if user_id in self._subscribers:
             for queue in self._subscribers[user_id]:
@@ -259,22 +250,18 @@ class TaskManager:
                     await queue.put(task_data)
                 except Exception as e:
                     logger.error(f"Error notifying subscriber: {e}")
-        
+
         # Notify global subscribers
         for queue in self._global_subscribers:
             try:
                 await queue.put(task_data)
             except Exception as e:
                 logger.error(f"Error notifying global subscriber: {e}")
-    
-    async def run_task(
-        self,
-        task_id: str,
-        task_func: Callable[["Task", "TaskManager"], Awaitable[Dict[str, Any]]]
-    ):
+
+    async def run_task(self, task_id: str, task_func: Callable[["Task", "TaskManager"], Awaitable[dict[str, Any]]]):
         """
         Run a task function and handle status updates.
-        
+
         The task_func should accept (task, task_manager) and can call
         task_manager.update_task() to report progress.
         """
@@ -282,48 +269,35 @@ class TaskManager:
         if not task:
             logger.error(f"Task {task_id} not found")
             return
-        
+
         try:
             # Mark as running
-            await self.update_task(
-                task_id,
-                status=TaskStatus.RUNNING,
-                message="Starting..."
-            )
-            
+            await self.update_task(task_id, status=TaskStatus.RUNNING, message="Starting...")
+
             # Run the task function
             result = await task_func(task, self)
-            
+
             # Mark as completed
             await self.update_task(
-                task_id,
-                status=TaskStatus.COMPLETED,
-                progress=100,
-                message="Completed successfully",
-                result=result
+                task_id, status=TaskStatus.COMPLETED, progress=100, message="Completed successfully", result=result
             )
-            
+
         except asyncio.CancelledError:
-            await self.update_task(
-                task_id,
-                status=TaskStatus.CANCELLED,
-                message="Task cancelled"
-            )
+            await self.update_task(task_id, status=TaskStatus.CANCELLED, message="Task cancelled")
             raise
-            
+
         except Exception as e:
             logger.error(f"Task {task_id} failed: {e}")
             await self.update_task(
                 task_id,
                 status=TaskStatus.FAILED,
                 message="Task failed. Check server logs for details.",
-                error="Internal error"
+                error="Internal error",
             )
-    
 
 
 # Global singleton instance
-_task_manager: Optional[TaskManager] = None
+_task_manager: TaskManager | None = None
 
 
 def get_task_manager() -> TaskManager:

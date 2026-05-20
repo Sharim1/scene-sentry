@@ -1,9 +1,11 @@
 """
 Background task scheduler using APScheduler
 """
+
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -25,7 +27,7 @@ def start_scheduler():
         id="content_discovery",
         name="Content Discovery Task",
         replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
+        next_run_time=datetime.now(UTC),
     )
 
     scheduler.add_job(
@@ -50,7 +52,7 @@ def start_scheduler():
         id="content_enrichment",
         name="Content Enrichment Task",
         replace_existing=True,
-        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
+        next_run_time=datetime.now(UTC) + timedelta(minutes=2),
     )
 
     scheduler.add_job(
@@ -59,7 +61,7 @@ def start_scheduler():
         id="send_reminders",
         name="Send Reminders Task",
         replace_existing=True,
-        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
+        next_run_time=datetime.now(UTC) + timedelta(seconds=30),
     )
 
     scheduler.add_job(
@@ -111,7 +113,8 @@ def _content_discovery_sync():
             result = svc.run_scheduled_sync()
             logger.info(
                 "Content discovery completed: %d movies, %d TV shows",
-                result["movies"], result["tv_shows"],
+                result["movies"],
+                result["tv_shows"],
             )
 
         enriched = svc.enrich_sparse_content(batch_size=30)
@@ -198,31 +201,44 @@ async def cleanup_task():
     logger.info("Running cleanup task...")
     try:
         from app.database import db_session
-        from app.models import Reminder, Gossip, Notification
-        from app.models.ranking import UserContentRank
+        from app.models import Gossip, Notification, Reminder
 
-        cutoff_30_days = datetime.now(timezone.utc) - timedelta(days=30)
-        cutoff_7_days = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff_30_days = datetime.now(UTC) - timedelta(days=30)
+        cutoff_7_days = datetime.now(UTC) - timedelta(days=7)
 
         with db_session() as db:
-            old_reminders = db.query(Reminder).filter(
-                Reminder.sent == True,
-                Reminder.created_at < cutoff_7_days,
-            ).delete()
+            old_reminders = (
+                db.query(Reminder)
+                .filter(
+                    Reminder.sent == True,
+                    Reminder.created_at < cutoff_7_days,
+                )
+                .delete()
+            )
 
-            old_notifications = db.query(Notification).filter(
-                Notification.is_read == True,
-                Notification.created_at < cutoff_30_days,
-            ).delete()
+            old_notifications = (
+                db.query(Notification)
+                .filter(
+                    Notification.is_read == True,
+                    Notification.created_at < cutoff_30_days,
+                )
+                .delete()
+            )
 
-            old_gossip = db.query(Gossip).filter(
-                Gossip.is_featured == False,
-                Gossip.scraped_at < cutoff_30_days,
-            ).delete()
+            old_gossip = (
+                db.query(Gossip)
+                .filter(
+                    Gossip.is_featured == False,
+                    Gossip.scraped_at < cutoff_30_days,
+                )
+                .delete()
+            )
 
             logger.info(
                 "Cleanup: %d reminders, %d notifications, %d gossip items deleted",
-                old_reminders, old_notifications, old_gossip,
+                old_reminders,
+                old_notifications,
+                old_gossip,
             )
     except Exception as e:
         logger.error(f"Error in cleanup task: {e}")

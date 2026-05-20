@@ -1,13 +1,14 @@
 """
 Abstract base for content providers and the normalised data container.
 """
+
 from __future__ import annotations
 
 import re
 import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -15,35 +16,35 @@ class NormalizedContent:
     """Platform-agnostic representation of a movie or TV show."""
 
     title: str
-    content_type: str                        # "movie" or "tv_show"
-    source: str                              # "tmdb", "tvdb", "omdb", "tvmaze"
+    content_type: str  # "movie" or "tv_show"
+    source: str  # "tmdb", "tvdb", "omdb", "tvmaze"
 
-    description: Optional[str] = None
-    release_date: Optional[str] = None       # YYYY-MM-DD (or YYYY)
-    year: Optional[int] = None
-    rating: Optional[float] = None
-    poster_url: Optional[str] = None
-    backdrop_url: Optional[str] = None
-    genres: List[str] = field(default_factory=list)
+    description: str | None = None
+    release_date: str | None = None  # YYYY-MM-DD (or YYYY)
+    year: int | None = None
+    rating: float | None = None
+    poster_url: str | None = None
+    backdrop_url: str | None = None
+    genres: list[str] = field(default_factory=list)
 
-    imdb_id: Optional[str] = None            # tt1234567
-    tmdb_id: Optional[int] = None
-    tvdb_id: Optional[int] = None
-    tvmaze_id: Optional[int] = None
+    imdb_id: str | None = None  # tt1234567
+    tmdb_id: int | None = None
+    tvdb_id: int | None = None
+    tvmaze_id: int | None = None
 
-    runtime: Optional[int] = None            # minutes
-    status: Optional[str] = None             # "Running", "Ended", …
-    network: Optional[str] = None
-    director: Optional[str] = None
-    seasons: Optional[int] = None
-    episodes: Optional[int] = None
-    premiered: Optional[str] = None          # YYYY-MM-DD
+    runtime: int | None = None  # minutes
+    status: str | None = None  # "Running", "Ended", …
+    network: str | None = None
+    director: str | None = None
+    seasons: int | None = None
+    episodes: int | None = None
+    premiered: str | None = None  # YYYY-MM-DD
 
-    language: Optional[str] = None
-    country: Optional[str] = None
-    next_episode_date: Optional[str] = None  # YYYY-MM-DD
+    language: str | None = None
+    country: str | None = None
+    next_episode_date: str | None = None  # YYYY-MM-DD
 
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     # ----- helpers used by dedup -----
 
@@ -57,11 +58,26 @@ class NormalizedContent:
     def merge(self, other: NormalizedContent) -> None:
         """Fill in blanks from *other* without overwriting existing data."""
         for attr in (
-            "description", "release_date", "year", "rating",
-            "poster_url", "backdrop_url", "runtime", "status",
-            "network", "director", "seasons", "episodes", "premiered",
-            "imdb_id", "tmdb_id", "tvdb_id", "tvmaze_id",
-            "language", "country", "next_episode_date",
+            "description",
+            "release_date",
+            "year",
+            "rating",
+            "poster_url",
+            "backdrop_url",
+            "runtime",
+            "status",
+            "network",
+            "director",
+            "seasons",
+            "episodes",
+            "premiered",
+            "imdb_id",
+            "tmdb_id",
+            "tvdb_id",
+            "tvmaze_id",
+            "language",
+            "country",
+            "next_episode_date",
         ):
             if getattr(self, attr) is None and getattr(other, attr) is not None:
                 setattr(self, attr, getattr(other, attr))
@@ -78,17 +94,18 @@ class NormalizedEpisode:
     episode_number: int
     content_type: str = "tv_show"
 
-    description: Optional[str] = None
-    air_date: Optional[str] = None           # YYYY-MM-DD
-    runtime: Optional[int] = None            # minutes
-    rating: Optional[float] = None
+    description: str | None = None
+    air_date: str | None = None  # YYYY-MM-DD
+    runtime: int | None = None  # minutes
+    rating: float | None = None
 
-    tvmaze_id: Optional[int] = None
-    tvdb_id: Optional[int] = None
-    imdb_id: Optional[str] = None
+    tvmaze_id: int | None = None
+    tvdb_id: int | None = None
+    imdb_id: str | None = None
 
 
 # ---- utility functions --------------------------------------------------- #
+
 
 def _normalise_title(t: str) -> str:
     t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
@@ -97,7 +114,7 @@ def _normalise_title(t: str) -> str:
     return t
 
 
-def _year_from_date(d: Optional[str]) -> Optional[int]:
+def _year_from_date(d: str | None) -> int | None:
     if not d:
         return None
     m = re.match(r"(\d{4})", d)
@@ -110,35 +127,35 @@ class ContentProvider(ABC):
     name: str = "base"
 
     @abstractmethod
-    def discover_movies(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_movies(self, page: int = 1) -> list[NormalizedContent]:
         """Return a page of movies (browse/trending).  Empty list if unsupported."""
         ...
 
     @abstractmethod
-    def discover_tv_shows(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
         """Return a page of TV shows (browse/trending).  Empty list if unsupported."""
         ...
 
     @abstractmethod
-    def search(self, query: str, content_type: Optional[str] = None) -> List[NormalizedContent]:
+    def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         """Search for content by title."""
         ...
 
     @abstractmethod
-    def get_upcoming(self, content_type: str = "tv_show") -> List[NormalizedContent]:
+    def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         """Upcoming movies or episodes.  Empty list if unsupported."""
         ...
 
-    def get_trending(self) -> List[NormalizedContent]:
+    def get_trending(self) -> list[NormalizedContent]:
         """Trending content.  Default implementation returns empty list."""
         return []
 
-    def get_details(self, external_id: str) -> Optional[NormalizedContent]:
+    def get_details(self, external_id: str) -> NormalizedContent | None:
         """Fetch full details for a single item by its provider-specific ID.
         Default returns None (not all providers support detail lookups)."""
         return None
 
-    def get_episodes(self, external_id: str) -> List[NormalizedEpisode]:
+    def get_episodes(self, external_id: str) -> list[NormalizedEpisode]:
         """Fetch all episodes for a TV show by its provider-specific ID.
         Default returns empty list."""
         return []

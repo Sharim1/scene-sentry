@@ -1,8 +1,9 @@
 """
 TVDB service for TV show episode-level data
 """
+
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,14 @@ class TVDBService:
 
     def _init_client(self):
         from app.config import settings
+
         api_key = getattr(settings, "tvdb_api_key", None)
         if not api_key:
             logger.warning("TVDB_API_KEY not configured, TVDB features disabled")
             return
         try:
             import tvdb_v4_official
+
             self.client = tvdb_v4_official.TVDB(api_key)
             logger.info("TVDBService initialised")
         except ImportError:
@@ -29,7 +32,7 @@ class TVDBService:
         except Exception as e:
             logger.error(f"Failed to initialise TVDB client: {e}")
 
-    def search_series(self, name: str) -> List[Dict[str, Any]]:
+    def search_series(self, name: str) -> list[dict[str, Any]]:
         if not self.client:
             return []
         try:
@@ -39,7 +42,7 @@ class TVDBService:
             logger.error(f"TVDB search error: {e}")
             return []
 
-    def get_series_details(self, series_id: int) -> Optional[Dict[str, Any]]:
+    def get_series_details(self, series_id: int) -> dict[str, Any] | None:
         if not self.client:
             return None
         try:
@@ -48,7 +51,7 @@ class TVDBService:
             logger.error(f"TVDB series detail error: {e}")
             return None
 
-    def get_series_episodes(self, series_id: int, season: int = 0) -> List[Dict[str, Any]]:
+    def get_series_episodes(self, series_id: int, season: int = 0) -> list[dict[str, Any]]:
         if not self.client:
             return []
         try:
@@ -58,11 +61,11 @@ class TVDBService:
             logger.error(f"TVDB episodes error: {e}")
             return []
 
-    def get_upcoming_episodes(self, series_ids: List[int]) -> List[Dict[str, Any]]:
+    def get_upcoming_episodes(self, series_ids: list[int]) -> list[dict[str, Any]]:
         """Return episodes with future air dates for the given series."""
         from datetime import date
 
-        upcoming: List[Dict[str, Any]] = []
+        upcoming: list[dict[str, Any]] = []
         today = date.today().isoformat()
         for sid in series_ids:
             episodes = self.get_series_episodes(sid)

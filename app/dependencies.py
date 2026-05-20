@@ -1,6 +1,6 @@
 """Shared FastAPI dependency type aliases and auth helpers."""
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from app.models.user import User
 DbDep = Annotated[Session, Depends(get_db)]
 
 
-def get_current_user(request: Request, db: DbDep) -> Optional[User]:
+def get_current_user(request: Request, db: DbDep) -> User | None:
     """
     Get current user from Clerk middleware or session fallback.
 
@@ -54,5 +54,5 @@ def require_auth(request: Request, db: DbDep) -> User:
     return user
 
 
-OptionalUserDep = Annotated[Optional[User], Depends(get_current_user)]
+OptionalUserDep = Annotated[User | None, Depends(get_current_user)]
 RequireAuthDep = Annotated[User, Depends(require_auth)]

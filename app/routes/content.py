@@ -1,6 +1,7 @@
 """
 Content routes for Movies and TV Shows
 """
+
 import json as _json
 import logging
 from typing import Annotated
@@ -43,16 +44,12 @@ def movies_page(
         total = len(movies)
     else:
         ranking_svc = RankingService(db)
-        ranked = ranking_svc.get_personalized_content(
-            user.id, content_type="movie", limit=PER_PAGE
-        )
+        ranked = ranking_svc.get_personalized_content(user.id, content_type="movie", limit=PER_PAGE)
         if ranked and ranked[0][1] is not None:
             movies = [r[0] for r in ranked]
         else:
             offset = (page - 1) * PER_PAGE
-            movies = repo.get_movies(
-                filter_by=filter, search=q, limit=PER_PAGE, offset=offset
-            )
+            movies = repo.get_movies(filter_by=filter, search=q, limit=PER_PAGE, offset=offset)
 
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
 
@@ -98,16 +95,12 @@ def tv_shows_page(
         total = len(tv_shows)
     else:
         ranking_svc = RankingService(db)
-        ranked = ranking_svc.get_personalized_content(
-            user.id, content_type="tv_show", limit=PER_PAGE
-        )
+        ranked = ranking_svc.get_personalized_content(user.id, content_type="tv_show", limit=PER_PAGE)
         if ranked and ranked[0][1] is not None:
             tv_shows = [r[0] for r in ranked]
         else:
             offset = (page - 1) * PER_PAGE
-            tv_shows = repo.get_tv_shows(
-                filter_by=filter, search=q, limit=PER_PAGE, offset=offset
-            )
+            tv_shows = repo.get_tv_shows(filter_by=filter, search=q, limit=PER_PAGE, offset=offset)
 
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
 
@@ -153,6 +146,7 @@ def add_to_library(
     referer = request.headers.get("referer", "/movies")
     if not referer.startswith("/"):
         from urllib.parse import urlparse
+
         parsed = urlparse(referer)
         referer = parsed.path or "/movies"
     return RedirectResponse(url=referer, status_code=303)

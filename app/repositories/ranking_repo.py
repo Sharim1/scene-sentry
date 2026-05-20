@@ -1,14 +1,14 @@
 """
 Ranking repository - database access for UserContentRank model
 """
-import logging
-from typing import List, Optional, Tuple
-from datetime import datetime, timezone, timedelta
-from sqlalchemy.orm import Session
-from sqlalchemy import func
 
-from app.models.ranking import UserContentRank
+import logging
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy.orm import Session
+
 from app.models.content import Content
+from app.models.ranking import UserContentRank
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +22,21 @@ class RankingRepository:
         user_id: int,
         content_id: int,
         score: float,
-        reasoning: Optional[str] = None,
+        reasoning: str | None = None,
     ) -> UserContentRank:
-        existing = self.db.query(UserContentRank).filter(
-            UserContentRank.user_id == user_id,
-            UserContentRank.content_id == content_id,
-        ).first()
+        existing = (
+            self.db.query(UserContentRank)
+            .filter(
+                UserContentRank.user_id == user_id,
+                UserContentRank.content_id == content_id,
+            )
+            .first()
+        )
 
         if existing:
             existing.rank_score = score
             existing.reasoning = reasoning
-            existing.ranked_at = datetime.now(timezone.utc)
+            existing.ranked_at = datetime.now(UTC)
             self.db.flush()
             return existing
 
@@ -49,16 +53,13 @@ class RankingRepository:
     def get_ranked_content(
         self,
         user_id: int,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
         limit: int = 20,
-    ) -> List[Tuple[Content, float, Optional[str]]]:
+    ) -> list[tuple[Content, float, str | None]]:
         """Return content ordered by rank_score DESC, with score and reasoning."""
-        query = (
-            self.db.query(Content, UserContentRank.rank_score, UserContentRank.reasoning)
-            .outerjoin(
-                UserContentRank,
-                (UserContentRank.content_id == Content.id) & (UserContentRank.user_id == user_id),
-            )
+        query = self.db.query(Content, UserContentRank.rank_score, UserContentRank.reasoning).outerjoin(
+            UserContentRank,
+            (UserContentRank.content_id == Content.id) & (UserContentRank.user_id == user_id),
         )
         if content_type:
             query = query.filter(Content.content_type == content_type)
@@ -69,26 +70,32 @@ class RankingRepository:
         )
         return query.limit(limit).all()
 
-    def get_stale_ranks(self, user_id: int, max_age_hours: int = 24) -> List[UserContentRank]:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-        return self.db.query(UserContentRank).filter(
-            UserContentRank.user_id == user_id,
-            UserContentRank.ranked_at < cutoff,
-        ).all()
+    def get_stale_ranks(self, user_id: int, max_age_hours: int = 24) -> list[UserContentRank]:
+        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
+        return (
+            self.db.query(UserContentRank)
+            .filter(
+                UserContentRank.user_id == user_id,
+                UserContentRank.ranked_at < cutoff,
+            )
+            .all()
+        )
 
     def get_unranked_content(
         self,
         user_id: int,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
         limit: int = 50,
-    ) -> List[Content]:
-        ranked_ids = self.db.query(UserContentRank.content_id).filter(
-            UserContentRank.user_id == user_id,
-        ).subquery()
-
-        query = self.db.query(Content).filter(
-            ~Content.id.in_(ranked_ids)
+    ) -> list[Content]:
+        ranked_ids = (
+            self.db.query(UserContentRank.content_id)
+            .filter(
+                UserContentRank.user_id == user_id,
+            )
+            .subquery()
         )
+
+        query = self.db.query(Content).filter(~Content.id.in_(ranked_ids))
         if content_type:
             query = query.filter(Content.content_type == content_type)
         return query.order_by(Content.rating.desc().nullslast()).limit(limit).all()
@@ -98,12 +105,12 @@ class RankingRepository:
         self.db.query(UserContentRank).filter(
             UserContentRank.user_id == user_id,
         ).update(
-            {"ranked_at": datetime(2000, 1, 1, tzinfo=timezone.utc)},
+            {"ranked_at": datetime(2000, 1, 1, tzinfo=UTC)},
             synchronize_session="fetch",
         )
         self.db.flush()
 
-    def get_top_ranked(self, user_id: int, limit: int = 10) -> List[Tuple[Content, float, Optional[str]]]:
+    def get_top_ranked(self, user_id: int, limit: int = 10) -> list[tuple[Content, float, str | None]]:
         return (
             self.db.query(Content, UserContentRank.rank_score, UserContentRank.reasoning)
             .join(UserContentRank, UserContentRank.content_id == Content.id)

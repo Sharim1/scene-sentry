@@ -1,12 +1,13 @@
 """
 Ranking service - orchestrates the re-ranking agent and personalized queries
 """
+
 import logging
-from typing import List, Optional, Tuple
+
 from sqlalchemy.orm import Session
 
-from app.repositories.ranking_repo import RankingRepository
 from app.models.content import Content
+from app.repositories.ranking_repo import RankingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class RankingService:
         """
         try:
             from app.agents.graph import ranking_graph
+
             result = await ranking_graph.run_ranking(user_id)
             return len(result)
         except Exception as e:
@@ -31,9 +33,9 @@ class RankingService:
     def get_personalized_content(
         self,
         user_id: int,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
         limit: int = 20,
-    ) -> List[Tuple[Content, float, Optional[str]]]:
+    ) -> list[tuple[Content, float, str | None]]:
         return self.repo.get_ranked_content(user_id, content_type=content_type, limit=limit)
 
     def get_top_ranked(self, user_id: int, limit: int = 10):

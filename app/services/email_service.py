@@ -5,8 +5,8 @@ Tries Mailgun first (primary); falls back to Resend if Mailgun is
 unconfigured or fails.  If neither provider is available the call
 is a silent no-op.
 """
+
 import logging
-from typing import Optional
 
 from app.services import mailgun_service, resend_service
 
@@ -20,7 +20,7 @@ def send_reminder_email(
     reminder_message: str,
     reminder_type: str,
     scheduled_time_display: str,
-    app_link: Optional[str] = None,
+    app_link: str | None = None,
 ) -> bool:
     """Attempt to send a reminder email using the first available provider.
 

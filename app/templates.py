@@ -3,13 +3,14 @@ Jinja2 Templates Configuration
 
 This module provides the Jinja2 templates instance to avoid circular imports.
 """
+
 import json
-from pathlib import Path
-from markupsafe import Markup
-from typing import List, Tuple
-from datetime import datetime, timezone
 from contextvars import ContextVar
+from datetime import UTC, datetime
+from pathlib import Path
+
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from app.config import settings
 
@@ -21,7 +22,7 @@ static_path = Path(__file__).parent.parent / "static"
 templates = Jinja2Templates(directory=templates_path)
 
 # Flash message storage (request-scoped via context var)
-_flash_messages: ContextVar[List[Tuple[str, str]]] = ContextVar('flash_messages', default=[])
+_flash_messages: ContextVar[list[tuple[str, str]]] = ContextVar("flash_messages", default=[])
 
 
 def from_json_filter(value):
@@ -36,15 +37,15 @@ def time_ago_filter(dt):
     """Convert datetime to human-readable 'time ago' string"""
     if not dt:
         return ""
-    
+
     # Ensure timezone awareness
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    
+        dt = dt.replace(tzinfo=UTC)
+
     diff = now - dt
     seconds = int(diff.total_seconds())
-    
+
     if seconds < 60:
         return "just now"
     elif seconds < 3600:
@@ -88,28 +89,28 @@ def get_ai_status():
     """Get the current AI agent status based on configuration"""
     tavily_key = settings.tavily_api_key
     gemini_key = settings.gemini_api_key
-    
+
     if not tavily_key:
         return {
             "status": "inactive",
             "message": "Tavily API key not configured",
             "details": "Add TAVILY_API_KEY to .env to enable gossip scraping",
-            "color": "yellow"
+            "color": "yellow",
         }
-    
+
     if not gemini_key:
         return {
             "status": "limited",
             "message": "Gossip scraping enabled",
             "details": "Add GEMINI_API_KEY for AI-powered analysis",
-            "color": "blue"
+            "color": "blue",
         }
-    
+
     return {
         "status": "active",
         "message": "AI agents fully operational",
         "details": "Scraping variety.com, deadline.com...",
-        "color": "green"
+        "color": "green",
     }
 
 
@@ -121,6 +122,7 @@ def tojson_filter(value):
 def to_user_tz_filter(utc_dt, tz_name="UTC"):
     """Jinja2 filter: convert a UTC datetime to the given timezone."""
     from app.utils.timezone import utc_to_local
+
     return utc_to_local(utc_dt, tz_name)
 
 

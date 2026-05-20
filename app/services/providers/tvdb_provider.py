@@ -4,11 +4,12 @@ TVDB v4 API content provider (movies and TV shows).
 Uses the tvdb_v4_official SDK.  List endpoints for discovery, extended
 endpoints for detail enrichment + episodes.
 """
+
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.config import settings
 from app.services.providers.base import (
@@ -25,22 +26,21 @@ _ARTWORKS_BASE = "https://artworks.thetvdb.com"
 
 # ---- helper functions ---- #
 
-def _parse_year(item: Dict[str, Any]) -> Optional[int]:
+
+def _parse_year(item: dict[str, Any]) -> int | None:
     y = item.get("year")
     if y is not None and str(y).strip():
         m = re.match(r"(\d{4})", str(y).strip())
         if m:
             return int(m.group(1))
-    return _year_from_date(item.get("first_air_time")) or _year_from_date(
-        item.get("firstAired")
-    )
+    return _year_from_date(item.get("first_air_time")) or _year_from_date(item.get("firstAired"))
 
 
-def _release_date(item: Dict[str, Any]) -> Optional[str]:
+def _release_date(item: dict[str, Any]) -> str | None:
     return item.get("first_air_time") or item.get("firstAired")
 
 
-def _poster_url(item: Dict[str, Any]) -> Optional[str]:
+def _poster_url(item: dict[str, Any]) -> str | None:
     iu = item.get("image_url")
     if iu and str(iu).startswith(("http://", "https://")):
         return str(iu)
@@ -55,7 +55,7 @@ def _poster_url(item: Dict[str, Any]) -> Optional[str]:
     return f"{_ARTWORKS_BASE}/banners/{s.lstrip('/')}"
 
 
-def _status_value(item: Dict[str, Any]) -> Optional[str]:
+def _status_value(item: dict[str, Any]) -> str | None:
     st = item.get("status")
     if st is None:
         return None
@@ -65,7 +65,7 @@ def _status_value(item: Dict[str, Any]) -> Optional[str]:
     return str(st) if st else None
 
 
-def _imdb_from_remote_ids(item: Dict[str, Any]) -> Optional[str]:
+def _imdb_from_remote_ids(item: dict[str, Any]) -> str | None:
     for rid in item.get("remote_ids") or item.get("remoteIds") or []:
         if not isinstance(rid, dict):
             continue
@@ -81,7 +81,7 @@ def _imdb_from_remote_ids(item: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _tvdb_id_value(item: Dict[str, Any]) -> Optional[int]:
+def _tvdb_id_value(item: dict[str, Any]) -> int | None:
     raw = item.get("tvdb_id")
     if raw is None:
         raw = item.get("id")
@@ -97,11 +97,11 @@ def _tvdb_id_value(item: Dict[str, Any]) -> Optional[int]:
         return None
 
 
-def _genres_list(item: Dict[str, Any]) -> List[str]:
+def _genres_list(item: dict[str, Any]) -> list[str]:
     g = item.get("genres")
     if not g:
         return []
-    out: List[str] = []
+    out: list[str] = []
     for x in g:
         if isinstance(x, str):
             if x.strip():
@@ -113,7 +113,7 @@ def _genres_list(item: Dict[str, Any]) -> List[str]:
     return out
 
 
-def _safe_int(val: Any) -> Optional[int]:
+def _safe_int(val: Any) -> int | None:
     if val is None:
         return None
     try:
@@ -122,7 +122,7 @@ def _safe_int(val: Any) -> Optional[int]:
         return None
 
 
-def _normalize_search_result(item: Dict[str, Any], content_type: str) -> NormalizedContent:
+def _normalize_search_result(item: dict[str, Any], content_type: str) -> NormalizedContent:
     title = (item.get("name") or "").strip() or "Unknown"
     rd = _release_date(item)
 
@@ -152,7 +152,7 @@ def _normalize_search_result(item: Dict[str, Any], content_type: str) -> Normali
     )
 
 
-def _as_item_list(data: Any) -> List[Dict[str, Any]]:
+def _as_item_list(data: Any) -> list[dict[str, Any]]:
     if not data:
         return []
     if isinstance(data, list):
@@ -164,7 +164,7 @@ def _as_item_list(data: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _normalize_tvdb_episode(ep: Dict[str, Any]) -> Optional[NormalizedEpisode]:
+def _normalize_tvdb_episode(ep: dict[str, Any]) -> NormalizedEpisode | None:
     season = _safe_int(ep.get("seasonNumber"))
     number = _safe_int(ep.get("number"))
     if season is None or number is None:
@@ -202,39 +202,33 @@ class TVDBProvider(ContentProvider):
             logger.warning("TVDBProvider could not initialise client: %s", e)
             self.client = None
 
-    def discover_movies(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_movies(self, page: int = 1) -> list[NormalizedContent]:
         if not self.client:
             return []
         try:
             raw = self.client.get_all_movies(page=max(0, page - 1))
-            return [
-                _normalize_search_result(it, "movie") for it in _as_item_list(raw)
-            ]
+            return [_normalize_search_result(it, "movie") for it in _as_item_list(raw)]
         except Exception as e:
             logger.warning("TVDB discover_movies failed: %s", e)
             return []
 
-    def discover_tv_shows(self, page: int = 1) -> List[NormalizedContent]:
+    def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
         if not self.client:
             return []
         try:
             raw = self.client.get_all_series(page=max(0, page - 1))
-            return [
-                _normalize_search_result(it, "tv_show") for it in _as_item_list(raw)
-            ]
+            return [_normalize_search_result(it, "tv_show") for it in _as_item_list(raw)]
         except Exception as e:
             logger.warning("TVDB discover_tv_shows failed: %s", e)
             return []
 
-    def search(
-        self, query: str, content_type: Optional[str] = None
-    ) -> List[NormalizedContent]:
+    def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if not self.client:
             return []
         q = (query or "").strip()
         if not q:
             return []
-        out: List[NormalizedContent] = []
+        out: list[NormalizedContent] = []
         try:
             if content_type == "movie":
                 raw = self.client.search(q, type="movie")
@@ -257,12 +251,12 @@ class TVDBProvider(ContentProvider):
             return []
         return out
 
-    def get_upcoming(self, content_type: str = "tv_show") -> List[NormalizedContent]:
+    def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         return []
 
     # ---- detail + episode enrichment ---- #
 
-    def get_details(self, external_id: str) -> Optional[NormalizedContent]:
+    def get_details(self, external_id: str) -> NormalizedContent | None:
         """Fetch extended series/movie detail by TVDB ID."""
         if not self.client:
             return None
@@ -281,7 +275,7 @@ class TVDBProvider(ContentProvider):
             logger.warning("TVDB get_details(%s) failed: %s", external_id, e)
             return None
 
-    def get_episodes(self, external_id: str) -> List[NormalizedEpisode]:
+    def get_episodes(self, external_id: str) -> list[NormalizedEpisode]:
         """Fetch all episodes for a series by TVDB ID."""
         if not self.client:
             return []
@@ -290,7 +284,7 @@ class TVDBProvider(ContentProvider):
         except (TypeError, ValueError):
             return []
 
-        all_eps: List[NormalizedEpisode] = []
+        all_eps: list[NormalizedEpisode] = []
         page = 0
         while True:
             try:

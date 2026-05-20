@@ -1,6 +1,7 @@
 """
 FastAPI Routers
 """
+
 from app.routes import (
     api,
     auth,

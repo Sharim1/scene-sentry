@@ -3,11 +3,11 @@ Deliver contact form submissions via Mailgun or Resend.
 
 If no provider is configured, the message is logged at INFO (operators still see it).
 """
+
 from __future__ import annotations
 
 import html
 import logging
-from typing import Optional, Tuple
 
 import httpx
 import resend
@@ -106,7 +106,7 @@ def _send_via_resend(
     subject: str,
     text_body: str,
     html_body: str,
-    reply_to: Optional[str],
+    reply_to: str | None,
 ) -> bool:
     if not resend_service._is_configured():
         return False
@@ -139,9 +139,9 @@ def _send_via_resend(
 def deliver_contact_message(
     name: str,
     email: str,
-    subject: Optional[str],
+    subject: str | None,
     message: str,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Send contact form to settings.contact_to_email.
 
@@ -152,11 +152,7 @@ def deliver_contact_message(
     subject_line = (subject or "").strip() or "No subject"
     email_subject = f"[Scene Sentry Contact] {subject_line}"
 
-    plain = (
-        f"From: {name} <{email}>\n"
-        f"Subject: {subject_line}\n\n"
-        f"{message}"
-    )
+    plain = f"From: {name} <{email}>\nSubject: {subject_line}\n\n{message}"
     html_body = _build_contact_html(name, email, subject_line, message)
     from_addr = settings.effective_contact_from_address
     reply_to = str(email).strip()

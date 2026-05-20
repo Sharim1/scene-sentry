@@ -1,15 +1,16 @@
 """
 Dashboard routes
 """
-import logging
 
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import UTC, datetime, timedelta
+
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func
 
 from app.dependencies import DbDep, OptionalUserDep
-from app.models import User, LibraryItem, Content
+from app.models import Content, LibraryItem
 from app.models.library import WatchStatus
 from app.services.gossip_service import GossipService
 from app.services.reminder_service import ReminderService
@@ -55,24 +56,16 @@ def dashboard(request: Request, user: OptionalUserDep, db: DbDep):
 
     library_stats = {
         "watching": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.WATCHING
-        )
+        .filter(LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.WATCHING)
         .count(),
         "planned": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.PLANNED
-        )
+        .filter(LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.PLANNED)
         .count(),
         "completed": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.COMPLETED
-        )
+        .filter(LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.COMPLETED)
         .count(),
         "maybe": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.MAYBE
-        )
+        .filter(LibraryItem.user_id == user.id, LibraryItem.status == WatchStatus.MAYBE)
         .count(),
     }
 
@@ -83,7 +76,7 @@ def dashboard(request: Request, user: OptionalUserDep, db: DbDep):
     trending = (
         db.query(Content)
         .join(LibraryItem)
-        .filter(LibraryItem.added_at >= datetime.now(timezone.utc) - timedelta(days=7))
+        .filter(LibraryItem.added_at >= datetime.now(UTC) - timedelta(days=7))
         .group_by(Content.id)
         .order_by(func.count(LibraryItem.id).desc())
         .limit(5)

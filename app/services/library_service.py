@@ -5,8 +5,7 @@ Read queries remain on LibraryRepository directly.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -27,7 +26,7 @@ _STATUS_MAP = {
 }
 
 
-def _resolve_status(raw: str) -> Optional[WatchStatus]:
+def _resolve_status(raw: str) -> WatchStatus | None:
     return _STATUS_MAP.get(raw.lower())
 
 
@@ -48,7 +47,7 @@ class LibraryService:
         user_id: int,
         content_id: int,
         status: str = "planned",
-    ) -> Optional[LibraryItem]:
+    ) -> LibraryItem | None:
         """Add Content to the user's Library.
 
         Idempotent — returns the existing item if already tracked.
@@ -78,7 +77,7 @@ class LibraryService:
         status: str,
         *,
         weekly_release: bool = False,
-    ) -> Optional[LibraryItem]:
+    ) -> LibraryItem | None:
         """Transition Watch Status with timestamp bookkeeping and optional Reminder.
 
         Returns None if the item is not found (stale-page edge case).
@@ -93,16 +92,16 @@ class LibraryService:
 
         old_status = item.status
         item.status = new_status
-        item.updated_at = datetime.now(timezone.utc)
+        item.updated_at = datetime.now(UTC)
 
         if new_status == WatchStatus.WATCHING and old_status != WatchStatus.WATCHING:
-            item.started_at = datetime.now(timezone.utc)
+            item.started_at = datetime.now(UTC)
         elif new_status == WatchStatus.COMPLETED:
-            item.finished_at = datetime.now(timezone.utc)
+            item.finished_at = datetime.now(UTC)
 
         if new_status == WatchStatus.WATCHING and weekly_release:
             item.weekly_release = True
-            next_date = datetime.now(timezone.utc) + timedelta(days=7)
+            next_date = datetime.now(UTC) + timedelta(days=7)
             item.next_episode_date = next_date
             reminder = Reminder(
                 user_id=user_id,
@@ -123,9 +122,9 @@ class LibraryService:
         item_id: int,
         progress: int,
         *,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
-    ) -> Optional[LibraryItem]:
+        season: int | None = None,
+        episode: int | None = None,
+    ) -> LibraryItem | None:
         """Update episode/page progress. Returns None if not found."""
         item = self._repo.get_by_id(item_id, user_id)
         if not item:
@@ -136,7 +135,7 @@ class LibraryService:
             item.current_season = season
         if episode is not None:
             item.current_episode = episode
-        item.updated_at = datetime.now(timezone.utc)
+        item.updated_at = datetime.now(UTC)
 
         self._db.commit()
         return item
@@ -146,8 +145,8 @@ class LibraryService:
         user_id: int,
         item_id: int,
         rating: int,
-        notes: Optional[str] = None,
-    ) -> Optional[LibraryItem]:
+        notes: str | None = None,
+    ) -> LibraryItem | None:
         """Set rating (clamped 1–5) and optional notes. Invalidates rankings."""
         item = self._repo.get_by_id(item_id, user_id)
         if not item:
@@ -156,7 +155,7 @@ class LibraryService:
         item.rating = max(1, min(5, rating))
         if notes is not None:
             item.notes = notes
-        item.updated_at = datetime.now(timezone.utc)
+        item.updated_at = datetime.now(UTC)
 
         self._invalidate_rankings(user_id)
         self._db.commit()

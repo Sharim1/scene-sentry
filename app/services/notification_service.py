@@ -1,14 +1,16 @@
 """
 Notification service - business logic for in-app notifications and email delivery
 """
+
 import logging
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Any
+
 from sqlalchemy.orm import Session
 
-from app.repositories.notification_repo import NotificationRepository
 from app.models.notification import Notification
 from app.models.reminder import Reminder
+from app.repositories.notification_repo import NotificationRepository
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +22,7 @@ class NotificationService:
 
     def create_from_reminder(self, reminder: Reminder) -> Notification:
         """Build an in-app notification from a due reminder."""
-        content_title = (
-            reminder.content.title if reminder.content else "Untitled"
-        )
+        content_title = reminder.content.title if reminder.content else "Untitled"
         rtype = reminder.reminder_type.value.replace("_", " ").title()
 
         title = f"{rtype} Reminder"
@@ -38,15 +38,13 @@ class NotificationService:
         )
         return notification
 
-    def get_for_user(
-        self, user_id: int, unread_only: bool = False, limit: int = 30
-    ) -> List[Notification]:
+    def get_for_user(self, user_id: int, unread_only: bool = False, limit: int = 30) -> list[Notification]:
         return self.repo.get_by_user(user_id, unread_only=unread_only, limit=limit)
 
     def count_unread(self, user_id: int) -> int:
         return self.repo.count_unread(user_id)
 
-    def mark_read(self, notification_id: int, user_id: int) -> Optional[Notification]:
+    def mark_read(self, notification_id: int, user_id: int) -> Notification | None:
         n = self.repo.mark_read(notification_id, user_id)
         if n:
             self.db.commit()
@@ -60,7 +58,7 @@ class NotificationService:
     def has_unread_since(self, user_id: int, since: datetime) -> bool:
         return self.repo.has_unread_since(user_id, since)
 
-    def to_dict(self, n: Notification) -> Dict[str, Any]:
+    def to_dict(self, n: Notification) -> dict[str, Any]:
         return {
             "id": n.id,
             "title": n.title,

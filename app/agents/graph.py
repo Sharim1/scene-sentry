@@ -14,16 +14,16 @@ Nodes
 import json
 import logging
 from collections import Counter
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Literal, TypedDict
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, TypedDict
 
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
 
 from app.database import db_session
-from app.models import User, Content, LibraryItem
+from app.models import Content, LibraryItem
 from app.models.ranking import UserContentRank
 from app.repositories.ranking_repo import RankingRepository
 
@@ -40,11 +40,12 @@ STALE_HOURS = 24
 # State
 # ---------------------------------------------------------------------------
 
+
 class RankingState(TypedDict):
     user_id: int
-    taste_profile: Dict[str, Any]
-    candidates: List[Dict[str, Any]]
-    scored_items: List[Dict[str, Any]]
+    taste_profile: dict[str, Any]
+    candidates: list[dict[str, Any]]
+    scored_items: list[dict[str, Any]]
     iteration: int
     max_iterations: int
     total_ranked: int
@@ -53,6 +54,7 @@ class RankingState(TypedDict):
 # ---------------------------------------------------------------------------
 # Graph
 # ---------------------------------------------------------------------------
+
 
 class ContentRankingGraph:
     """Five-node LangGraph state machine for content re-ranking."""
@@ -125,7 +127,7 @@ class ContentRankingGraph:
         user_id = state["user_id"]
         logger.info("[build_taste_profile] user=%s", user_id)
 
-        profile: Dict[str, Any] = {
+        profile: dict[str, Any] = {
             "genre_freq": {},
             "avg_rating_by_genre": {},
             "content_type_ratio": {},
@@ -146,8 +148,8 @@ class ContentRankingGraph:
                     return {"taste_profile": profile}
 
                 genre_counter: Counter = Counter()
-                genre_rating_sums: Dict[str, float] = {}
-                genre_rating_counts: Dict[str, int] = {}
+                genre_rating_sums: dict[str, float] = {}
+                genre_rating_counts: dict[str, int] = {}
                 type_counter: Counter = Counter()
 
                 for lib_item, content in items:
@@ -163,12 +165,12 @@ class ContentRankingGraph:
                 total_items = len(items)
                 profile["genre_freq"] = {g: round(c / total_items, 3) for g, c in genre_counter.most_common()}
                 profile["avg_rating_by_genre"] = {
-                    g: round(genre_rating_sums[g] / genre_rating_counts[g], 2)
-                    for g in genre_rating_sums
+                    g: round(genre_rating_sums[g] / genre_rating_counts[g], 2) for g in genre_rating_sums
                 }
                 profile["content_type_ratio"] = {t: round(c / total_items, 3) for t, c in type_counter.items()}
                 profile["top_genres"] = [
-                    g for g, _ in sorted(
+                    g
+                    for g, _ in sorted(
                         profile["avg_rating_by_genre"].items(),
                         key=lambda kv: kv[1],
                         reverse=True,
@@ -189,17 +191,13 @@ class ContentRankingGraph:
         top_genres = state["taste_profile"].get("top_genres", [])
         logger.info("[select_candidates] user=%s top_genres=%s", user_id, top_genres[:5])
 
-        candidates: List[Dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
 
         try:
             with db_session() as db:
-                library_ids = (
-                    db.query(LibraryItem.content_id)
-                    .filter(LibraryItem.user_id == user_id)
-                    .subquery()
-                )
+                library_ids = db.query(LibraryItem.content_id).filter(LibraryItem.user_id == user_id).subquery()
 
-                freshness_cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_HOURS)
+                freshness_cutoff = datetime.now(UTC) - timedelta(hours=STALE_HOURS)
                 fresh_ranked_ids = (
                     db.query(UserContentRank.content_id)
                     .filter(
@@ -209,35 +207,30 @@ class ContentRankingGraph:
                     .subquery()
                 )
 
-                query = (
-                    db.query(Content)
-                    .filter(
-                        ~Content.id.in_(library_ids),
-                        ~Content.id.in_(fresh_ranked_ids),
-                    )
+                query = db.query(Content).filter(
+                    ~Content.id.in_(library_ids),
+                    ~Content.id.in_(fresh_ranked_ids),
                 )
 
                 if top_genres:
                     genre_filters = [Content.genres.ilike(f"%{g}%") for g in top_genres[:5]]
                     from sqlalchemy import or_
+
                     query = query.filter(or_(*genre_filters))
 
-                rows = (
-                    query
-                    .order_by(Content.rating.desc().nullslast())
-                    .limit(CANDIDATE_POOL)
-                    .all()
-                )
+                rows = query.order_by(Content.rating.desc().nullslast()).limit(CANDIDATE_POOL).all()
 
                 for c in rows:
-                    candidates.append({
-                        "content_id": c.id,
-                        "title": c.title,
-                        "content_type": c.content_type,
-                        "genres": _parse_genres(c.genres),
-                        "rating": c.rating,
-                        "description": (c.description or "")[:300],
-                    })
+                    candidates.append(
+                        {
+                            "content_id": c.id,
+                            "title": c.title,
+                            "content_type": c.content_type,
+                            "genres": _parse_genres(c.genres),
+                            "rating": c.rating,
+                            "description": (c.description or "")[:300],
+                        }
+                    )
 
         except Exception:
             logger.exception("[select_candidates] failed for user %s", user_id)
@@ -257,9 +250,9 @@ class ContentRankingGraph:
         if not candidates:
             return {"scored_items": []}
 
-        all_scored: List[Dict[str, Any]] = []
+        all_scored: list[dict[str, Any]] = []
 
-        batches = [candidates[i:i + BATCH_SIZE] for i in range(0, len(candidates), BATCH_SIZE)]
+        batches = [candidates[i : i + BATCH_SIZE] for i in range(0, len(candidates), BATCH_SIZE)]
 
         for batch_idx, batch in enumerate(batches):
             try:
@@ -274,10 +267,10 @@ class ContentRankingGraph:
 
     async def _score_batch(
         self,
-        taste: Dict[str, Any],
-        batch: List[Dict[str, Any]],
+        taste: dict[str, Any],
+        batch: list[dict[str, Any]],
         batch_idx: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if self.llm is None:
             return self._heuristic_score(taste, batch)
 
@@ -308,7 +301,7 @@ class ContentRankingGraph:
         return _parse_score_response(response.content, batch)
 
     @staticmethod
-    def _heuristic_score(taste: Dict[str, Any], batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _heuristic_score(taste: dict[str, Any], batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Deterministic fallback when the LLM is unavailable."""
         avg_by_genre = taste.get("avg_rating_by_genre", {})
         genre_freq = taste.get("genre_freq", {})
@@ -325,11 +318,13 @@ class ContentRankingGraph:
             base = min((c.get("rating") or 5.0) * 10, 100)
             score = round(0.5 * base + 0.5 * genre_score * 20, 1)
             score = max(0, min(100, score))
-            results.append({
-                "content_id": c["content_id"],
-                "score": score,
-                "reasoning": "Heuristic: genre affinity + public rating",
-            })
+            results.append(
+                {
+                    "content_id": c["content_id"],
+                    "score": score,
+                    "reasoning": "Heuristic: genre affinity + public rating",
+                }
+            )
         return results
 
     # -----------------------------------------------------------------------
@@ -410,7 +405,7 @@ class ContentRankingGraph:
     # Public entry point
     # -----------------------------------------------------------------------
 
-    async def run_ranking(self, user_id: int) -> List[Dict[str, Any]]:
+    async def run_ranking(self, user_id: int) -> list[dict[str, Any]]:
         """Execute the full ranking pipeline for *user_id* and return scored items."""
         initial_state: RankingState = {
             "user_id": user_id,
@@ -422,7 +417,7 @@ class ContentRankingGraph:
             "total_ranked": 0,
         }
 
-        thread_id = f"rank_{user_id}_{datetime.now(timezone.utc).isoformat()}"
+        thread_id = f"rank_{user_id}_{datetime.now(UTC).isoformat()}"
         config = {"configurable": {"thread_id": thread_id}}
 
         try:
@@ -443,7 +438,8 @@ class ContentRankingGraph:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _parse_genres(raw: str | None) -> List[str]:
+
+def _parse_genres(raw: str | None) -> list[str]:
     """Safely extract a list of genre strings from the Content.genres column."""
     if not raw:
         return []
@@ -458,8 +454,8 @@ def _parse_genres(raw: str | None) -> List[str]:
 
 def _parse_score_response(
     text: str,
-    batch: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    batch: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Best-effort extraction of the JSON array from the LLM response."""
     cleaned = text.strip()
     if "```" in cleaned:
@@ -467,7 +463,7 @@ def _parse_score_response(
         lang_end = cleaned.find("\n", start)
         end = cleaned.find("```", lang_end + 1)
         if end != -1:
-            cleaned = cleaned[lang_end + 1:end].strip()
+            cleaned = cleaned[lang_end + 1 : end].strip()
 
     try:
         parsed = json.loads(cleaned)
@@ -486,11 +482,13 @@ def _parse_score_response(
             continue
         score = entry.get("score", 50)
         score = max(0, min(100, float(score)))
-        results.append({
-            "content_id": cid,
-            "score": score,
-            "reasoning": str(entry.get("reasoning", ""))[:500],
-        })
+        results.append(
+            {
+                "content_id": cid,
+                "score": score,
+                "reasoning": str(entry.get("reasoning", ""))[:500],
+            }
+        )
     return results
 
 

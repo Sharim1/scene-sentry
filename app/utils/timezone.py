@@ -5,8 +5,9 @@ Uses the stdlib ``zoneinfo`` module (Python 3.9+). All datetimes stored in the
 database are UTC; these functions convert at the boundary between user input /
 display and the database layer.
 """
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo, available_timezones
+
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 
 def local_to_utc(naive_dt: datetime, tz_name: str) -> datetime:
@@ -17,7 +18,7 @@ def local_to_utc(naive_dt: datetime, tz_name: str) -> datetime:
     except (KeyError, Exception):
         tz = ZoneInfo("UTC")
     local = naive_dt.replace(tzinfo=tz)
-    return local.astimezone(timezone.utc)
+    return local.astimezone(UTC)
 
 
 def utc_to_local(utc_dt: datetime, tz_name: str) -> datetime:
@@ -28,7 +29,7 @@ def utc_to_local(utc_dt: datetime, tz_name: str) -> datetime:
     if utc_dt is None:
         return utc_dt
     if utc_dt.tzinfo is None:
-        utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+        utc_dt = utc_dt.replace(tzinfo=UTC)
     try:
         tz = ZoneInfo(tz_name)
     except (KeyError, Exception):

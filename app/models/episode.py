@@ -1,9 +1,18 @@
 """
 Episode model for individual TV show episodes.
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
+
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, Float, ForeignKey, UniqueConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -11,7 +20,7 @@ from app.database import Base
 
 
 def utc_now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Episode(Base):
@@ -25,8 +34,8 @@ class Episode(Base):
     title = Column(String(300), nullable=True)
     description = Column(Text, nullable=True)
 
-    air_date = Column(String(20), nullable=True)     # YYYY-MM-DD
-    runtime = Column(Integer, nullable=True)          # minutes
+    air_date = Column(String(20), nullable=True)  # YYYY-MM-DD
+    runtime = Column(Integer, nullable=True)  # minutes
     rating = Column(Float, nullable=True)
 
     # External IDs for cross-platform matching
@@ -41,7 +50,9 @@ class Episode(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "content_id", "season_number", "episode_number",
+            "content_id",
+            "season_number",
+            "episode_number",
             name="uq_content_season_episode",
         ),
     )

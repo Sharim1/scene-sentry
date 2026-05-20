@@ -1,11 +1,12 @@
 """
 Gossip routes for entertainment news
 """
+
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Query, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.dependencies import DbDep, OptionalUserDep
 from app.models.gossip import GossipTag
@@ -65,6 +66,7 @@ def gossip_detail(
     db.commit()
 
     from urllib.parse import urlparse
+
     parsed = urlparse(gossip.source_url)
     if parsed.scheme not in ("http", "https"):
         return RedirectResponse(url="/gossip", status_code=303)
@@ -78,7 +80,7 @@ async def refresh_gossip(
     background_tasks: BackgroundTasks,
     db: DbDep,
 ):
-    from app.services.task_manager import get_task_manager, TaskType
+    from app.services.task_manager import TaskType, get_task_manager
 
     if not user:
         return RedirectResponse(url="/login", status_code=303)
