@@ -4,7 +4,6 @@ JSON API routes for AJAX interactions
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
 from typing import Annotated, Any, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
@@ -15,8 +14,6 @@ from pydantic import BaseModel, ConfigDict
 from app.config import settings
 from app.database import get_db
 from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
-from app.models import LibraryItem
-from app.models.library import WatchStatus
 from app.routes.auth import limiter
 from app.services.task_manager import get_task_manager, TaskType
 
@@ -164,17 +161,17 @@ def get_library(
     db: DbDep,
     status: Annotated[str | None, Query()] = None,
 ):
-
     from app.repositories.library_repo import LibraryRepository
+    from app.models.library import WatchStatus as WS
 
     ws = None
     if status:
         status_map = {
-            "watching": WatchStatus.WATCHING,
-            "planned": WatchStatus.PLANNED,
-            "completed": WatchStatus.COMPLETED,
-            "dropped": WatchStatus.DROPPED,
-            "maybe": WatchStatus.MAYBE,
+            "watching": WS.WATCHING,
+            "planned": WS.PLANNED,
+            "completed": WS.COMPLETED,
+            "dropped": WS.DROPPED,
+            "maybe": WS.MAYBE,
         }
         ws = status_map.get(status)
 
@@ -210,30 +207,14 @@ def update_item_status(
     user: RequireAuthDep,
     db: DbDep,
 ):
+    from app.services.library_service import LibraryService
 
-    from app.repositories.library_repo import LibraryRepository
-
-    status_map = {
-        "watching": WatchStatus.WATCHING,
-        "planned": WatchStatus.PLANNED,
-        "completed": WatchStatus.COMPLETED,
-        "dropped": WatchStatus.DROPPED,
-        "maybe": WatchStatus.MAYBE,
-    }
-    if update.status not in status_map:
-        raise HTTPException(status_code=400, detail="Invalid status")
-
-    repo = LibraryRepository(db)
-    item = repo.update_status(item_id, user.id, status_map[update.status])
+    svc = LibraryService(db)
+    item = svc.update_status(user.id, item_id, update.status)
     if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    db.commit()
+        raise HTTPException(status_code=400, detail="Invalid status or item not found")
 
-    from app.services.ranking_service import RankingService
-
-    RankingService(db).invalidate_ranks(user.id)
-
-    return LibraryMutationResponse(success=True, status=update.status)
+    return LibraryMutationResponse(success=True, status=item.status.value)
 
 
 @router.put(
@@ -246,22 +227,14 @@ def update_item_progress(
     user: RequireAuthDep,
     db: DbDep,
 ):
+    from app.services.library_service import LibraryService
 
-    item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id,
-    ).first()
+    svc = LibraryService(db)
+    item = svc.update_progress(user.id, item_id, update.progress, season=update.season, episode=update.episode)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    item.progress = update.progress
-    if update.season is not None:
-        item.current_season = update.season
-    if update.episode is not None:
-        item.current_episode = update.episode
-    item.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    return LibraryMutationResponse(success=True, progress=update.progress)
+    return LibraryMutationResponse(success=True, progress=item.progress)
 
 
 @router.put(
@@ -274,18 +247,12 @@ def update_item_rating(
     user: RequireAuthDep,
     db: DbDep,
 ):
+    from app.services.library_service import LibraryService
 
-    from app.repositories.library_repo import LibraryRepository
-
-    repo = LibraryRepository(db)
-    item = repo.update_rating(item_id, user.id, update.rating, update.notes)
+    svc = LibraryService(db)
+    item = svc.rate(user.id, item_id, update.rating, notes=update.notes)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    db.commit()
-
-    from app.services.ranking_service import RankingService
-
-    RankingService(db).invalidate_ranks(user.id)
 
     return LibraryMutationResponse(success=True, rating=item.rating)
 

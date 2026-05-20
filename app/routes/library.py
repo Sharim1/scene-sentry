@@ -1,16 +1,18 @@
 """
 Library routes for tracking content
 """
+
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+
 from app.dependencies import DbDep, OptionalUserDep
-from app.models import LibraryItem, Content, Reminder
+from app.models import LibraryItem, Content
 from app.models.library import WatchStatus
-from app.models.reminder import ReminderType
+from app.repositories.library_repo import LibraryRepository
+from app.services.library_service import LibraryService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/library", tags=["library"])
@@ -32,7 +34,6 @@ def library(
         return RedirectResponse(url="/login", status_code=303)
 
     query = db.query(LibraryItem).filter(LibraryItem.user_id == user.id)
-
     query = query.join(Content)
 
     search_query = q
@@ -57,33 +58,9 @@ def library(
 
     library_items = query.order_by(LibraryItem.updated_at.desc()).all()
 
-    counts = {
-        "all": db.query(LibraryItem).filter(LibraryItem.user_id == user.id).count(),
-        "watching": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id,
-            LibraryItem.status == WatchStatus.WATCHING,
-        )
-        .count(),
-        "planned": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id,
-            LibraryItem.status == WatchStatus.PLANNED,
-        )
-        .count(),
-        "completed": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id,
-            LibraryItem.status == WatchStatus.COMPLETED,
-        )
-        .count(),
-        "dropped": db.query(LibraryItem)
-        .filter(
-            LibraryItem.user_id == user.id,
-            LibraryItem.status == WatchStatus.DROPPED,
-        )
-        .count(),
-    }
+    repo = LibraryRepository(db)
+    counts = repo.count_by_status(user.id)
+    counts["all"] = db.query(LibraryItem).filter(LibraryItem.user_id == user.id).count()
 
     return templates.TemplateResponse(
         "library.html",
@@ -112,50 +89,8 @@ def update_library_item(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    library_item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id,
-    ).first()
-
-    if library_item:
-        status_map = {
-            "watching": WatchStatus.WATCHING,
-            "planned": WatchStatus.PLANNED,
-            "completed": WatchStatus.COMPLETED,
-            "dropped": WatchStatus.DROPPED,
-            "maybe": WatchStatus.MAYBE,
-        }
-
-        new_status = status_map.get(status)
-        if new_status:
-            old_status = library_item.status
-            library_item.status = new_status
-            library_item.updated_at = datetime.now(timezone.utc)
-
-            if new_status == WatchStatus.WATCHING and old_status != WatchStatus.WATCHING:
-                library_item.started_at = datetime.now(timezone.utc)
-            elif new_status == WatchStatus.COMPLETED:
-                library_item.finished_at = datetime.now(timezone.utc)
-
-            if new_status == WatchStatus.WATCHING and weekly_release:
-                library_item.weekly_release = True
-                next_date = datetime.now(timezone.utc) + timedelta(days=7)
-                library_item.next_episode_date = next_date
-
-                reminder = Reminder(
-                    user_id=user.id,
-                    library_item_id=library_item.id,
-                    reminder_type=ReminderType.NEXT_EPISODE,
-                    scheduled_time=next_date,
-                    message=f"New episode of {library_item.content.title} should be available!",
-                )
-                db.add(reminder)
-
-            db.commit()
-
-            from app.services.ranking_service import RankingService
-
-            RankingService(db).invalidate_ranks(user.id)
+    svc = LibraryService(db)
+    svc.update_status(user.id, item_id, status, weekly_release=weekly_release)
 
     return RedirectResponse(url="/library", status_code=303)
 
@@ -174,19 +109,8 @@ def update_progress(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    library_item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id,
-    ).first()
-
-    if library_item:
-        library_item.progress = progress
-        if season is not None:
-            library_item.current_season = season
-        if episode is not None:
-            library_item.current_episode = episode
-        library_item.updated_at = datetime.now(timezone.utc)
-        db.commit()
+    svc = LibraryService(db)
+    svc.update_progress(user.id, item_id, progress, season=season, episode=episode)
 
     return RedirectResponse(url="/library", status_code=303)
 
@@ -204,21 +128,8 @@ def rate_item(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    library_item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id,
-    ).first()
-
-    if library_item:
-        library_item.rating = min(5, max(1, rating))
-        if notes:
-            library_item.notes = notes
-        library_item.updated_at = datetime.now(timezone.utc)
-        db.commit()
-
-        from app.services.ranking_service import RankingService
-
-        RankingService(db).invalidate_ranks(user.id)
+    svc = LibraryService(db)
+    svc.rate(user.id, item_id, rating, notes=notes)
 
     return RedirectResponse(url="/library", status_code=303)
 
@@ -234,14 +145,8 @@ def delete_library_item(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    library_item = db.query(LibraryItem).filter(
-        LibraryItem.id == item_id,
-        LibraryItem.user_id == user.id,
-    ).first()
-
-    if library_item:
-        db.delete(library_item)
-        db.commit()
+    svc = LibraryService(db)
+    svc.delete(user.id, item_id)
 
     return RedirectResponse(url="/library", status_code=303)
 
@@ -258,33 +163,7 @@ def add_to_library(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    existing = db.query(LibraryItem).filter(
-        LibraryItem.user_id == user.id,
-        LibraryItem.content_id == content_id,
-    ).first()
-
-    if existing:
-        return RedirectResponse(url="/library", status_code=303)
-
-    content = db.query(Content).filter(Content.id == content_id).first()
-    if not content:
-        return RedirectResponse(url="/library", status_code=303)
-
-    status_map = {
-        "watching": WatchStatus.WATCHING,
-        "planned": WatchStatus.PLANNED,
-        "completed": WatchStatus.COMPLETED,
-        "dropped": WatchStatus.DROPPED,
-        "maybe": WatchStatus.MAYBE,
-    }
-
-    library_item = LibraryItem(
-        user_id=user.id,
-        content_id=content_id,
-        status=status_map.get(status, WatchStatus.PLANNED),
-    )
-
-    db.add(library_item)
-    db.commit()
+    svc = LibraryService(db)
+    svc.add(user.id, content_id, status)
 
     return RedirectResponse(url="/library", status_code=303)
