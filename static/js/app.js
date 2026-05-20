@@ -897,9 +897,10 @@ async function updateStatus(itemId, newStatus) {
             },
             body: JSON.stringify({ status: newStatus })
         });
-        
+
         if (response.ok) {
             showToast('Status updated!', 'success');
+            setTimeout(() => window.location.reload(), 800);
             return true;
         } else {
             throw new Error('Failed to update');
@@ -1061,11 +1062,47 @@ async function addToLibrary(contentId, status, buttonElement = null) {
     }
 }
 
+/**
+ * Remove item from library with confirmation
+ */
+async function removeFromLibrary(itemId, title = 'this item') {
+    if (!confirm(`Remove "${title}" from your library? This will affect your personalized rankings.`)) {
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        const response = await fetch(`/library/item/${itemId}/delete`, {
+            method: 'POST',
+            body: formData,
+            redirect: 'manual'
+        });
+
+        if (response.ok || response.type === 'opaqueredirect' || response.status === 303) {
+            const redirectUrl = response.headers.get('Location') || '';
+            if (redirectUrl.includes('/login')) {
+                showToast('Session expired. Please refresh the page to continue.', 'warning');
+            } else {
+                showToast('Removed from library', 'success');
+                setTimeout(() => window.location.reload(), 800);
+            }
+        } else if (response.status === 401) {
+            showToast('Session expired. Please refresh the page to continue.', 'warning');
+        } else {
+            showToast('Failed to remove from library. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Remove from library error:', error);
+        showToast('Failed to remove from library. Please try again.', 'error');
+    }
+}
+
 // Make functions available globally
 window.startBackgroundTask = startBackgroundTask;
 window.startDiscoveryTask = startDiscoveryTask;
 window.updateStatus = updateStatus;
 window.updateProgress = updateProgress;
 window.addToLibrary = addToLibrary;
+window.removeFromLibrary = removeFromLibrary;
 window.copyToClipboard = copyToClipboard;
 window.confirmAction = confirmAction;
