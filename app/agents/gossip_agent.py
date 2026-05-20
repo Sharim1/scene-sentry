@@ -62,8 +62,36 @@ class GossipScraperAgent:
             logger.error(f"Failed to initialise Tavily: {e}")
             return None
 
+    @staticmethod
+    def _is_safe_url(url: str) -> bool:
+        """Reject private/internal URLs to prevent SSRF."""
+        import ipaddress
+        import socket
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                return False
+        except ValueError:
+            try:
+                resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                for _, _, _, _, sockaddr in resolved:
+                    addr = ipaddress.ip_address(sockaddr[0])
+                    if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                        return False
+            except socket.gaierror:
+                return False
+        return True
+
     async def _fetch_og_image(self, url: str) -> Optional[str]:
         try:
+            if not self._is_safe_url(url):
+                return None
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, follow_redirects=True)
                 if resp.status_code != 200:
@@ -86,6 +114,8 @@ class GossipScraperAgent:
         if not url:
             return False
         parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
         path = parsed.path.strip("/")
         if not path:
             return False

@@ -172,6 +172,10 @@ def add_to_library(
     RankingService(db).invalidate_ranks(user.id)
 
     referer = request.headers.get("referer", "/movies")
+    if not referer.startswith("/"):
+        from urllib.parse import urlparse
+        parsed = urlparse(referer)
+        referer = parsed.path or "/movies"
     return RedirectResponse(url=referer, status_code=303)
 
 

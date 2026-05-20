@@ -68,6 +68,8 @@ def login(
     Process login (fallback when Clerk not configured).
     Rate limited to prevent brute force attacks.
     """
+    if settings.is_clerk_configured:
+        raise HTTPException(status_code=403, detail="Local login is disabled when Clerk is configured")
     user = db.query(User).filter(User.username == username).first()
 
     if user and user.check_password(password):
@@ -140,10 +142,9 @@ def register(
     db: DbDep,
     search_api: Annotated[str, Form()] = "tavily",
 ):
-    """
-    Process registration (fallback when Clerk not configured).
-    Rate limited to prevent abuse.
-    """
+    """Process registration (fallback when Clerk not configured)."""
+    if settings.is_clerk_configured:
+        raise HTTPException(status_code=403, detail="Local registration is disabled when Clerk is configured")
     # Validate input length
     if len(username) < 3 or len(username) > 80:
         return templates.TemplateResponse(
@@ -173,7 +174,7 @@ def register(
             "auth/register.html",
             _register_template_context(
                 request,
-                error="Username already exists",
+                error="An account with these details already exists",
                 prefill_email=email,
             ),
             status_code=400,
@@ -184,7 +185,7 @@ def register(
             "auth/register.html",
             _register_template_context(
                 request,
-                error="Email already exists",
+                error="An account with these details already exists",
                 prefill_email=email,
             ),
             status_code=400,
@@ -210,7 +211,7 @@ def register(
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
-@router.get("/logout", name="logout")
+@router.post("/logout", name="logout")
 def logout(request: Request):
     """
     Logout user - clears session and Clerk cookies.
@@ -295,7 +296,7 @@ async def clerk_webhook(request: Request, db: DbDep):
 
     except Exception as e:
         logger.error(f"Error processing webhook {event_type}: {e}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Internal error processing webhook"}
 
 
 def _handle_user_created(db: Session, data: dict):

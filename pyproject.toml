@@ -47,6 +47,7 @@ dependencies = [
     "resend>=2.26.0",
     # Utilities
     "email-validator>=2.3.0",
+    "starlette-csrf>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -67,3 +68,9 @@ version_files = ["pyproject.toml:^version"]
 tag_format = "v$version"
 update_changelog_on_bump = true
 changelog_start_rev = "v2.0.0"
+
+[dependency-groups]
+dev = [
+    "pip-audit>=2.10.0",
+    "pre-commit>=4.6.0",
+]

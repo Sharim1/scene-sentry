@@ -186,10 +186,12 @@
                                     <span class="text-sm">Settings</span>
                                 </a>
                                 <div class="border-t border-white/5 my-1"></div>
-                                <a href="/logout" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors">
-                                    <i data-lucide="log-out" class="w-4 h-4"></i>
-                                    <span class="text-sm">Sign out</span>
-                                </a>
+                                <form method="POST" action="/logout" class="m-0">
+                                    <button type="submit" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors w-full text-left">
+                                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                                        <span class="text-sm">Sign out</span>
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -280,10 +282,12 @@
                         <i data-lucide="settings" class="w-5 h-5"></i>
                         <span>Settings</span>
                     </a>
-                    <a href="/logout" class="sidebar-nav-item py-3 text-destructive hover:bg-destructive/10">
-                        <i data-lucide="log-out" class="w-5 h-5"></i>
-                        <span>Sign out</span>
-                    </a>
+                    <form method="POST" action="/logout" class="m-0">
+                        <button type="submit" class="sidebar-nav-item py-3 text-destructive hover:bg-destructive/10 w-full text-left flex items-center gap-3">
+                            <i data-lucide="log-out" class="w-5 h-5"></i>
+                            <span>Sign out</span>
+                        </button>
+                    </form>
                 </div>
                 {% endif %}
             </nav>

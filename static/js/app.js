@@ -3,6 +3,58 @@
  * Handles interactivity, form submissions, and UI enhancements
  */
 
+function getCsrfToken() {
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+(function() {
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+        init = init || {};
+        const method = (init.method || 'GET').toUpperCase();
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+            init.headers = init.headers || {};
+            if (init.headers instanceof Headers) {
+                if (!init.headers.has('x-csrftoken')) {
+                    init.headers.set('x-csrftoken', getCsrfToken());
+                }
+            } else {
+                init.headers['x-csrftoken'] = init.headers['x-csrftoken'] || getCsrfToken();
+            }
+        }
+        return originalFetch.call(this, input, init);
+    };
+
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        if (form.tagName !== 'FORM' || form.method.toUpperCase() !== 'POST') return;
+        e.preventDefault();
+        const formData = new FormData(form);
+        const action = form.action || window.location.href;
+        fetch(action, {
+            method: 'POST',
+            headers: { 'x-csrftoken': getCsrfToken() },
+            body: formData,
+            redirect: 'follow',
+        }).then(function(resp) {
+            if (resp.redirected) {
+                window.location.href = resp.url;
+            } else if (resp.ok) {
+                window.location.reload();
+            } else {
+                resp.text().then(function(html) {
+                    document.open();
+                    document.write(html);
+                    document.close();
+                });
+            }
+        }).catch(function() {
+            form.submit();
+        });
+    });
+})();
+
 /**
  * Attempt to refresh the Clerk session token.
  * Returns true if a fresh token was obtained, false otherwise.
@@ -524,15 +576,29 @@ function showToast(message, type = 'info') {
         info: 'info'
     };
     
-    toast.innerHTML = `
-        <div class="flex items-center gap-3">
-            <i data-lucide="${iconMap[type]}" class="w-5 h-5"></i>
-            <span class="text-sm">${message}</span>
-            <button onclick="this.parentElement.parentElement.remove()" class="ml-4 p-1 hover:bg-white/10 rounded transition-colors">
-                <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
-        </div>
-    `;
+    const container = document.createElement('div');
+    container.className = 'flex items-center gap-3';
+
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', iconMap[type] || 'info');
+    icon.className = 'w-5 h-5';
+    container.appendChild(icon);
+
+    const span = document.createElement('span');
+    span.className = 'text-sm';
+    span.textContent = message;
+    container.appendChild(span);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'ml-4 p-1 hover:bg-white/10 rounded transition-colors';
+    closeBtn.addEventListener('click', () => toast.remove());
+    const closeIcon = document.createElement('i');
+    closeIcon.setAttribute('data-lucide', 'x');
+    closeIcon.className = 'w-4 h-4';
+    closeBtn.appendChild(closeIcon);
+    container.appendChild(closeBtn);
+
+    toast.appendChild(container);
     
     document.body.appendChild(toast);
     

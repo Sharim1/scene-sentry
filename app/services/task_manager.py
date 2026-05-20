@@ -316,8 +316,8 @@ class TaskManager:
             await self.update_task(
                 task_id,
                 status=TaskStatus.FAILED,
-                message=f"Failed: {str(e)}",
-                error=str(e)
+                message="Task failed. Check server logs for details.",
+                error="Internal error"
             )
     
 

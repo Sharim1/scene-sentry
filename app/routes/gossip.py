@@ -64,6 +64,10 @@ def gossip_detail(
     gossip.view_count += 1
     db.commit()
 
+    from urllib.parse import urlparse
+    parsed = urlparse(gossip.source_url)
+    if parsed.scheme not in ("http", "https"):
+        return RedirectResponse(url="/gossip", status_code=303)
     return RedirectResponse(url=gossip.source_url, status_code=302)
 
 
