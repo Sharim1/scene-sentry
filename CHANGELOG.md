@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.1.1 (2026-05-20)
+
+### Fix
+
+- **auth**: replace Clerk UserButton with custom profile dropdown
+
 ## v2.1.0 (2026-05-20)
 
 ### Feat
