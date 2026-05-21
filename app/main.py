@@ -195,7 +195,6 @@ from app.routes import (
     library,
     notifications,
     reminders,
-    search_page,
 )
 
 app.include_router(contact.router)
@@ -206,7 +205,6 @@ app.include_router(gossip.router)
 app.include_router(api.router)
 app.include_router(notifications.router)
 app.include_router(reminders.router)
-app.include_router(search_page.router)
 app.include_router(content.router)
 
 
