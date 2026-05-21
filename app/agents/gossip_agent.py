@@ -7,10 +7,12 @@ image, and a short preview snippet. "Read More" links redirect to the
 original article.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
@@ -26,9 +28,11 @@ except ImportError:
     TavilyClient = None
     TAVILY_AVAILABLE = False
 
-from app.database import db_session
 from app.models import Content, Gossip
 from app.models.gossip import GossipTag
+
+if TYPE_CHECKING:
+    from app.agents import SessionFactory
 
 
 class GossipScraperAgent:
@@ -46,7 +50,10 @@ class GossipScraperAgent:
         "denofgeek.com",
     ]
 
-    def __init__(self):
+    def __init__(self, session_factory: SessionFactory | None = None):
+        from app.database import db_session
+
+        self._session_factory = session_factory or db_session
         self.tavily = self._initialize_tavily()
 
     def _initialize_tavily(self):
@@ -195,7 +202,7 @@ class GossipScraperAgent:
             if not self._validate_article_url(url):
                 return None
 
-            with db_session() as db:
+            with self._session_factory() as db:
                 if db.query(Gossip).filter(Gossip.source_url == url).first():
                     return None
 
@@ -212,7 +219,7 @@ class GossipScraperAgent:
             preview = (content[:200].rsplit(" ", 1)[0] + "...") if len(content) > 200 else content
             tag = self._classify_tag(title, content)
 
-            with db_session() as db:
+            with self._session_factory() as db:
                 gossip = Gossip(
                     title=title[:200],
                     content=preview,
@@ -282,8 +289,10 @@ class GossipScraperAgent:
 _gossip_agent = None
 
 
-def get_gossip_agent():
+def get_gossip_agent(session_factory: SessionFactory | None = None) -> GossipScraperAgent:
     global _gossip_agent
+    if session_factory is not None:
+        return GossipScraperAgent(session_factory=session_factory)
     if _gossip_agent is None:
         try:
             _gossip_agent = GossipScraperAgent()
@@ -292,4 +301,5 @@ def get_gossip_agent():
             logger.error(f"Failed to create GossipScraperAgent: {e}")
             _gossip_agent = GossipScraperAgent.__new__(GossipScraperAgent)
             _gossip_agent.tavily = None
+            _gossip_agent._session_factory = None
     return _gossip_agent
