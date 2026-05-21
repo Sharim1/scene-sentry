@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.1.2 (2026-05-21)
+
+### Fix
+
+- **ui**: eliminate full-page reloads on library mutations and tab switching
+
 ## v2.1.1 (2026-05-20)
 
 ### Fix
