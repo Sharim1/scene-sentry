@@ -90,21 +90,23 @@ async def notification_stream(request: Request, user: OptionalUserDep):
     notifications created after the connection was established.
     """
     if not user:
-
-        async def empty():
-            yield 'data: {"type":"auth_required"}\n\n'
-
-        return StreamingResponse(empty(), media_type="text/event-stream")
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     user_id = user.id
 
     async def event_generator():
         last_check = datetime.now(UTC)
+        yield "retry: 30000\n\n"
         yield f"data: {json.dumps({'type': 'connected'})}\n\n"
 
         while True:
+            if await request.is_disconnected():
+                break
             try:
-                await asyncio.sleep(5)
+                await asyncio.sleep(15)
+
+                if await request.is_disconnected():
+                    break
 
                 from app.database import SessionLocal
 
@@ -130,8 +132,7 @@ async def notification_stream(request: Request, user: OptionalUserDep):
                 break
             except Exception as exc:
                 logger.debug("SSE poll error: %s", exc)
-                yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-                await asyncio.sleep(10)
+                await asyncio.sleep(30)
 
     return StreamingResponse(
         event_generator(),
