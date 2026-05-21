@@ -204,10 +204,10 @@ def cmd_fix_emails(args: argparse.Namespace) -> None:
     _init_app()
 
     from app.database import db_session
-    from app.middleware.clerk import (
-        _is_placeholder_email,
-        _is_placeholder_username,
+    from app.services.identity_sync import (
         fetch_clerk_user_email,
+        is_placeholder_email as _is_placeholder_email,
+        is_placeholder_username as _is_placeholder_username,
     )
     from app.models.user import User
 
