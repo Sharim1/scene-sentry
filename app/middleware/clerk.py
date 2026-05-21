@@ -129,7 +129,6 @@ async def verify_clerk_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-
 # Backward-compat aliases (prefer importing from app.services.identity_sync).
 _is_placeholder_email = is_placeholder_email
 _is_placeholder_username = is_placeholder_username
