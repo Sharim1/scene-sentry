@@ -23,8 +23,6 @@ from starlette.responses import RedirectResponse, Response
 from app.config import settings
 from app.database import get_db
 from app.services.identity_sync import (
-    fetch_clerk_user_email,
-    generate_unique_username,
     get_or_create_user,
     is_placeholder_email,
     is_placeholder_username,

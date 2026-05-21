@@ -204,12 +204,12 @@ def cmd_fix_emails(args: argparse.Namespace) -> None:
     _init_app()
 
     from app.database import db_session
+    from app.models.user import User
+    from app.services.identity_sync import fetch_clerk_user_email
+    from app.services.identity_sync import is_placeholder_email as _is_placeholder_email
     from app.services.identity_sync import (
-        fetch_clerk_user_email,
-        is_placeholder_email as _is_placeholder_email,
         is_placeholder_username as _is_placeholder_username,
     )
-    from app.models.user import User
 
     with db_session() as db:
         users = db.query(User).filter(User.clerk_id.isnot(None)).all()
