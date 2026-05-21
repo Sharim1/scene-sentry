@@ -48,6 +48,11 @@
   color-scheme: dark;
 }
 
+/* Hide Alpine x-cloak elements until Alpine.js initializes */
+[x-cloak] {
+  display: none !important;
+}
+
 /* Base styles */
 * {
   border-color: hsl(var(--border));

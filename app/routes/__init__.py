@@ -12,7 +12,6 @@ from app.routes import (
     library,
     notifications,
     reminders,
-    search_page,
 )
 
 __all__ = [
@@ -24,6 +23,5 @@ __all__ = [
     "content",
     "reminders",
     "notifications",
-    "search_page",
     "contact",
 ]
