@@ -48,33 +48,39 @@
 </div>
 {% endif %}
 
-<!-- Tabs -->
-<div class="mb-8">
-    <div class="tabs inline-flex">
-        <a href="/library?status=all&type={{ current_type }}" class="tab {% if current_status == 'all' %}active{% endif %}">
+<!-- Tabs (Alpine-reactive counts + client-side tab switching) -->
+<div class="mb-8"
+     x-data='libraryCounts({{ counts | tojson }})'
+     @library:status-changed.window="onStatusChanged($event.detail)"
+     @library:item-added.window="onItemAdded($event.detail)"
+     @library:item-removed.window="onItemRemoved($event.detail)"
+     @library-tab="switchLibraryTab($event.detail.url, $event.detail.tab)">
+    <div class="tabs inline-flex" id="library-tabs">
+        <a href="/library?status=all&type={{ current_type }}" class="tab {% if current_status == 'all' %}active{% endif %}" data-tab-status="all" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
             All Content
-            <span class="ml-1 text-xs opacity-60">({{ counts.all }})</span>
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.all + ')'">({{ counts.all }})</span>
         </a>
-        <a href="/library?status=watching&type={{ current_type }}" class="tab {% if current_status == 'watching' %}active{% endif %}">
+        <a href="/library?status=watching&type={{ current_type }}" class="tab {% if current_status == 'watching' %}active{% endif %}" data-tab-status="watching" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
             Watching
-            <span class="ml-1 text-xs opacity-60">({{ counts.watching }})</span>
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.watching + ')'">({{ counts.watching }})</span>
         </a>
-        <a href="/library?status=planned&type={{ current_type }}" class="tab {% if current_status == 'planned' %}active{% endif %}">
+        <a href="/library?status=planned&type={{ current_type }}" class="tab {% if current_status == 'planned' %}active{% endif %}" data-tab-status="planned" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
             Planned
-            <span class="ml-1 text-xs opacity-60">({{ counts.planned }})</span>
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.planned + ')'">({{ counts.planned }})</span>
         </a>
-        <a href="/library?status=completed&type={{ current_type }}" class="tab {% if current_status == 'completed' %}active{% endif %}">
+        <a href="/library?status=completed&type={{ current_type }}" class="tab {% if current_status == 'completed' %}active{% endif %}" data-tab-status="completed" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
             Completed
-            <span class="ml-1 text-xs opacity-60">({{ counts.completed }})</span>
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.completed + ')'">({{ counts.completed }})</span>
         </a>
-        <a href="/library?status=dropped&type={{ current_type }}" class="tab {% if current_status == 'dropped' %}active{% endif %}">
+        <a href="/library?status=dropped&type={{ current_type }}" class="tab {% if current_status == 'dropped' %}active{% endif %}" data-tab-status="dropped" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
             Dropped
-            <span class="ml-1 text-xs opacity-60">({{ counts.dropped }})</span>
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.dropped + ')'">({{ counts.dropped }})</span>
         </a>
     </div>
 </div>
 
-<!-- Content Grid -->
+<!-- Content Grid (swapped client-side on tab switch) -->
+<div id="library-content">
 {% if library_items %}
 <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 animate-in">
     {% for item in library_items %}
@@ -106,6 +112,7 @@
     </div>
 </div>
 {% endif %}
+</div>
 
 <!-- Filter Modal -->
 <div id="filterModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">

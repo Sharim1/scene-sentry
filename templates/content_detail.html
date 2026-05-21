@@ -119,19 +119,25 @@
             </div>
             {% endif %}
 
-            <!-- Library Status / Actions -->
-            <div class="mb-6" x-data="{ showMenu: false }">
-                {% if library_item %}
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-2 px-4 py-2 rounded-lg 
-                        {% if library_item.status.value == 'watching' %}bg-green-500/20 border border-green-500/30 text-green-400
-                        {% elif library_item.status.value == 'planned' %}bg-blue-500/20 border border-blue-500/30 text-blue-400
-                        {% elif library_item.status.value == 'completed' %}bg-emerald-500/20 border border-emerald-500/30 text-emerald-400
-                        {% elif library_item.status.value == 'dropped' %}bg-red-500/20 border border-red-500/30 text-red-400
-                        {% elif library_item.status.value == 'maybe' %}bg-yellow-500/20 border border-yellow-500/30 text-yellow-400
-                        {% endif %}">
+            <!-- Library Status / Actions (Alpine-reactive) -->
+            <div class="mb-6"
+                 x-data="{ showMenu: false, status: '{{ library_item.status.value if library_item else '' }}', itemId: {{ library_item.id if library_item else 'null' }}, contentId: {{ content.id }} }"
+                 @library:item-added.window="if ($event.detail.contentId === contentId) { status = $event.detail.status; itemId = $event.detail.itemId; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }); }"
+                 @library:status-changed.window="if ($event.detail.itemId === itemId) { status = $event.detail.status; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }); }"
+                 @library:item-removed.window="if ($event.detail.itemId === itemId) { status = ''; itemId = null; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }); }">
+
+                <!-- In-library state -->
+                <div x-show="status" class="flex items-center gap-3" x-cloak>
+                    <div class="flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors"
+                         :class="{
+                             'bg-green-500/20 border-green-500/30 text-green-400': status === 'watching',
+                             'bg-blue-500/20 border-blue-500/30 text-blue-400': status === 'planned',
+                             'bg-emerald-500/20 border-emerald-500/30 text-emerald-400': status === 'completed',
+                             'bg-red-500/20 border-red-500/30 text-red-400': status === 'dropped',
+                             'bg-yellow-500/20 border-yellow-500/30 text-yellow-400': status === 'maybe'
+                         }">
                         <i data-lucide="check-circle" class="w-4 h-4"></i>
-                        <span class="font-medium capitalize">{{ library_item.status.value }}</span>
+                        <span class="font-medium capitalize" x-text="status"></span>
                     </div>
                     <div class="relative inline-block">
                         <button @click="showMenu = !showMenu" class="btn btn-outline">
@@ -141,23 +147,23 @@
                         <div x-show="showMenu" @click.away="showMenu = false" x-transition
                              class="absolute top-full left-0 mt-2 w-48 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30">
                             <div>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors"><i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Planned</button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i> Completed</button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors"><i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i> Dropped</button>
-                                <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors"><i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i> Maybe</button>
+                                <button type="button" @click="addToLibrary(contentId, 'watching'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors" :class="status === 'watching' ? 'text-green-400 font-medium' : ''"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
+                                <button type="button" @click="addToLibrary(contentId, 'planned'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors" :class="status === 'planned' ? 'text-blue-400 font-medium' : ''"><i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Planned</button>
+                                <button type="button" @click="addToLibrary(contentId, 'completed'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors" :class="status === 'completed' ? 'text-emerald-400 font-medium' : ''"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i> Completed</button>
+                                <button type="button" @click="addToLibrary(contentId, 'dropped'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors" :class="status === 'dropped' ? 'text-red-400 font-medium' : ''"><i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i> Dropped</button>
+                                <button type="button" @click="addToLibrary(contentId, 'maybe'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors" :class="status === 'maybe' ? 'text-yellow-400 font-medium' : ''"><i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i> Maybe</button>
                             </div>
                         </div>
                     </div>
-                    <button data-item-id="{{ library_item.id }}" data-title="{{ content.title }}"
-                        @click="removeFromLibrary(Number($el.dataset.itemId), $el.dataset.title)"
+                    <button @click="removeFromLibrary(itemId, '{{ content.title|e }}', status)"
                         class="btn btn-outline text-red-400 border-red-500/30 hover:bg-red-500/20">
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                         Remove
                     </button>
                 </div>
-                {% else %}
-                <div class="relative inline-block">
+
+                <!-- Not-in-library state -->
+                <div x-show="!status" x-cloak class="relative inline-block">
                     <button @click="showMenu = !showMenu" class="btn btn-primary">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         Add to Library
@@ -165,15 +171,14 @@
                     <div x-show="showMenu" @click.away="showMenu = false" x-transition
                          class="absolute top-full left-0 mt-2 w-48 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30">
                         <div>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'watching', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'planned', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors"><i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Planned</button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'completed', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i> Completed</button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'dropped', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors"><i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i> Dropped</button>
-                            <button type="button" @click="addToLibrary({{ content.id }}, 'maybe', $event.target); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors"><i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i> Maybe</button>
+                            <button type="button" @click="addToLibrary(contentId, 'watching'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
+                            <button type="button" @click="addToLibrary(contentId, 'planned'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors"><i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Planned</button>
+                            <button type="button" @click="addToLibrary(contentId, 'completed'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i> Completed</button>
+                            <button type="button" @click="addToLibrary(contentId, 'dropped'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors"><i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i> Dropped</button>
+                            <button type="button" @click="addToLibrary(contentId, 'maybe'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors"><i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i> Maybe</button>
                         </div>
                     </div>
                 </div>
-                {% endif %}
             </div>
 
             <!-- Description -->

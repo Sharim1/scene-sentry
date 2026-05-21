@@ -83,8 +83,14 @@ class TaskStartRequest(BaseModel):
     query: str | None = None
 
 
+class AddToLibraryRequest(BaseModel):
+    content_id: int
+    status: str = "planned"
+
+
 class LibraryMutationResponse(BaseModel):
     success: bool
+    item_id: int | None = None
     status: str | None = None
     progress: int | None = None
     rating: int | None = None
@@ -198,6 +204,50 @@ def get_library(
     ]
 
 
+@router.post("/library", response_model=LibraryMutationResponse)
+def add_to_library_api(
+    body: AddToLibraryRequest,
+    user: RequireAuthDep,
+    db: DbDep,
+):
+    from app.repositories.library_repo import LibraryRepository
+    from app.services.library_service import LibraryService
+
+    repo = LibraryRepository(db)
+    existing = repo.get_by_user_and_content(user.id, body.content_id)
+
+    svc = LibraryService(db)
+    if existing:
+        item = svc.update_status(user.id, existing.id, body.status)
+    else:
+        item = svc.add(user.id, body.content_id, body.status)
+
+    if not item:
+        raise HTTPException(status_code=400, detail="Content not found or invalid status")
+
+    return LibraryMutationResponse(
+        success=True,
+        item_id=item.id,
+        status=item.status.value,
+    )
+
+
+@router.delete("/library/{item_id}", response_model=LibraryMutationResponse)
+def remove_from_library_api(
+    item_id: int,
+    user: RequireAuthDep,
+    db: DbDep,
+):
+    from app.services.library_service import LibraryService
+
+    svc = LibraryService(db)
+    deleted = svc.delete(user.id, item_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    return LibraryMutationResponse(success=True)
+
+
 @router.put(
     "/library/{item_id}/status",
     response_model=LibraryMutationResponse,
@@ -215,7 +265,7 @@ def update_item_status(
     if not item:
         raise HTTPException(status_code=400, detail="Invalid status or item not found")
 
-    return LibraryMutationResponse(success=True, status=item.status.value)
+    return LibraryMutationResponse(success=True, item_id=item.id, status=item.status.value)
 
 
 @router.put(
