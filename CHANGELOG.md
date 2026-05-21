@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.1.8 (2026-05-21)
+
+### Fix
+
+- **ui**: add x-cloak CSS rule and remove redundant search page
+
 ## v2.1.7 (2026-05-21)
 
 ### Refactor
