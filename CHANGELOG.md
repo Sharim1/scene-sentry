@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.1.6 (2026-05-21)
+
+### Fix
+
+- **lint**: remove unused imports and fix import sorting
+
+### Refactor
+
+- **auth**: extract IdentitySync service from ClerkAuthMiddleware
+
 ## v2.1.5 (2026-05-21)
 
 ### Refactor
