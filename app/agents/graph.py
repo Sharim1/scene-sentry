@@ -11,21 +11,25 @@ Nodes
 5. validate_quality     (conditional → loops back or finishes)
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from app.database import db_session
 from app.models import Content, LibraryItem
 from app.models.ranking import UserContentRank
 from app.repositories.ranking_repo import RankingRepository
+
+if TYPE_CHECKING:
+    from app.agents import SessionFactory
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +63,10 @@ class RankingState(TypedDict):
 class ContentRankingGraph:
     """Five-node LangGraph state machine for content re-ranking."""
 
-    def __init__(self):
+    def __init__(self, session_factory: SessionFactory | None = None):
+        from app.database import db_session
+
+        self._session_factory = session_factory or db_session
         self._llm = None
         self._graph = None
         self._memory = MemorySaver()
@@ -135,7 +142,7 @@ class ContentRankingGraph:
         }
 
         try:
-            with db_session() as db:
+            with self._session_factory() as db:
                 items = (
                     db.query(LibraryItem, Content)
                     .join(Content, LibraryItem.content_id == Content.id)
@@ -194,7 +201,7 @@ class ContentRankingGraph:
         candidates: list[dict[str, Any]] = []
 
         try:
-            with db_session() as db:
+            with self._session_factory() as db:
                 library_ids = db.query(LibraryItem.content_id).filter(LibraryItem.user_id == user_id).subquery()
 
                 freshness_cutoff = datetime.now(UTC) - timedelta(hours=STALE_HOURS)
@@ -338,7 +345,7 @@ class ContentRankingGraph:
 
         written = 0
         try:
-            with db_session() as db:
+            with self._session_factory() as db:
                 repo = RankingRepository(db)
                 for item in scored:
                     try:
