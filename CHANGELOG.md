@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.1.4 (2026-05-21)
+
+### Refactor
+
+- **agents**: inject session factory to decouple from db_session
+
 ## v2.1.3 (2026-05-21)
 
 ### Fix
