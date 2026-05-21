@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.1.5 (2026-05-21)
+
+### Refactor
+
+- **services**: strip pass-through methods from Gossip and Ranking services
+
 ## v2.1.4 (2026-05-21)
 
 ### Refactor
