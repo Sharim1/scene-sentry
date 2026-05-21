@@ -10,8 +10,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.dependencies import DbDep, OptionalUserDep
 from app.models.gossip import GossipTag
+from app.repositories.gossip_repo import GossipRepository
 from app.repositories.library_repo import LibraryRepository
-from app.services.gossip_service import GossipService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gossip", tags=["gossip"])
@@ -29,9 +29,9 @@ def gossip_feed(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    svc = GossipService(db)
-    gossip_items = svc.get_feed(tag=tag, limit=50)
-    tag_counts = svc.get_tag_counts()
+    repo = GossipRepository(db)
+    gossip_items = repo.get_feed(tag=tag, limit=50)
+    tag_counts = repo.get_tag_counts()
 
     return templates.TemplateResponse(
         "gossip/feed.html",
@@ -57,8 +57,8 @@ def gossip_detail(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    svc = GossipService(db)
-    gossip = svc.get_by_id(gossip_id)
+    repo = GossipRepository(db)
+    gossip = repo.get_by_id(gossip_id)
     if not gossip or not gossip.source_url:
         return RedirectResponse(url="/gossip", status_code=303)
 
@@ -101,7 +101,7 @@ async def refresh_gossip(
     )
 
     async def run_gossip_scrape(task, tm):
-        from app.services.gossip_service import GossipService as GS
+        from app.services.gossip_service import GossipService
 
         await tm.update_task(
             task.id,
@@ -109,21 +109,14 @@ async def refresh_gossip(
             message=f"Scanning news for {len(tracked_titles)} tracked titles...",
         )
         try:
-            from app.database import get_db
-
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                svc = GS(db_session)
-                results = await svc.scrape_latest(tracked_titles)
-                await tm.update_task(
-                    task.id,
-                    progress=90,
-                    message=f"Found {len(results)} gossip items",
-                )
-                return {"scraped": len(results)}
-            finally:
-                db_session.close()
+            svc = GossipService()
+            results = await svc.scrape_latest(tracked_titles)
+            await tm.update_task(
+                task.id,
+                progress=90,
+                message=f"Found {len(results)} gossip items",
+            )
+            return {"scraped": len(results)}
         except Exception as e:
             logger.error(f"Gossip scrape error: {e}")
             raise

@@ -316,10 +316,10 @@ def get_latest_gossip(
     db: DbDep,
     limit: Annotated[int, Query(le=50)] = 10,
 ):
-    from app.services.gossip_service import GossipService
+    from app.repositories.gossip_repo import GossipRepository
 
-    svc = GossipService(db)
-    items = svc.get_latest(limit=limit)
+    repo = GossipRepository(db)
+    items = repo.get_latest(limit=limit)
 
     return [
         GossipResponse(
@@ -343,10 +343,10 @@ def get_rankings(
     limit: Annotated[int, Query(le=50)] = 10,
 ):
 
-    from app.services.ranking_service import RankingService
+    from app.repositories.ranking_repo import RankingRepository
 
-    svc = RankingService(db)
-    ranked = svc.get_personalized_content(user.id, content_type=content_type, limit=limit)
+    repo = RankingRepository(db)
+    ranked = repo.get_ranked_content(user.id, content_type=content_type, limit=limit)
 
     return [
         RankedItemResponse(
@@ -460,7 +460,7 @@ async def start_task(
 
     async def run_gossip_scrape(task, tm):
         from app.repositories.library_repo import LibraryRepository
-        from app.services.gossip_service import GossipService as GS
+        from app.services.gossip_service import GossipService
 
         await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
         try:
@@ -468,21 +468,21 @@ async def start_task(
             db_session = next(db_gen)
             try:
                 tracked = LibraryRepository(db_session).get_tracked_titles(user_id)
-                await tm.update_task(
-                    task.id,
-                    progress=30,
-                    message=f"Scanning news for {len(tracked)} titles...",
-                )
-                svc = GS(db_session)
-                results = await svc.scrape_latest(tracked)
-                await tm.update_task(
-                    task.id,
-                    progress=90,
-                    message=f"Found {len(results)} gossip items",
-                )
-                return {"scraped": len(results)}
             finally:
                 db_session.close()
+            await tm.update_task(
+                task.id,
+                progress=30,
+                message=f"Scanning news for {len(tracked)} titles...",
+            )
+            svc = GossipService()
+            results = await svc.scrape_latest(tracked)
+            await tm.update_task(
+                task.id,
+                progress=90,
+                message=f"Found {len(results)} gossip items",
+            )
+            return {"scraped": len(results)}
         except Exception as e:
             logger.error(f"Gossip scrape error: {e}")
             raise

@@ -156,9 +156,9 @@ async def gossip_scraping_task():
 
         with db_session() as db:
             tracked = LibraryRepository(db).get_all_tracked_titles()
-            svc = GossipService(db)
-            results = await svc.scrape_latest(tracked[:20])
-            logger.info(f"Gossip scraping completed: {len(results)} items")
+        svc = GossipService()
+        results = await svc.scrape_latest(tracked[:20])
+        logger.info(f"Gossip scraping completed: {len(results)} items")
     except Exception as e:
         logger.error(f"Error in gossip scraping task: {e}")
 
