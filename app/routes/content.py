@@ -13,8 +13,8 @@ from app.dependencies import DbDep, OptionalUserDep
 from app.repositories.content_repo import ContentRepository
 from app.repositories.episode_repo import EpisodeRepository
 from app.repositories.library_repo import LibraryRepository
+from app.repositories.ranking_repo import RankingRepository
 from app.services.library_service import LibraryService
-from app.services.ranking_service import RankingService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["content"])
@@ -43,8 +43,8 @@ def movies_page(
         movies = repo.search(q, content_type="movie", limit=PER_PAGE)
         total = len(movies)
     else:
-        ranking_svc = RankingService(db)
-        ranked = ranking_svc.get_personalized_content(user.id, content_type="movie", limit=PER_PAGE)
+        ranking_repo = RankingRepository(db)
+        ranked = ranking_repo.get_ranked_content(user.id, content_type="movie", limit=PER_PAGE)
         if ranked and ranked[0][1] is not None:
             movies = [r[0] for r in ranked]
         else:
@@ -94,8 +94,8 @@ def tv_shows_page(
         tv_shows = repo.search(q, content_type="tv_show", limit=PER_PAGE)
         total = len(tv_shows)
     else:
-        ranking_svc = RankingService(db)
-        ranked = ranking_svc.get_personalized_content(user.id, content_type="tv_show", limit=PER_PAGE)
+        ranking_repo = RankingRepository(db)
+        ranked = ranking_repo.get_ranked_content(user.id, content_type="tv_show", limit=PER_PAGE)
         if ranked and ranked[0][1] is not None:
             tv_shows = [r[0] for r in ranked]
         else:

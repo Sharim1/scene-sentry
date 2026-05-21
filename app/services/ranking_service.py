@@ -1,21 +1,26 @@
 """
-Ranking service - orchestrates the re-ranking agent and personalized queries
+Ranking service — orchestrates the LangGraph re-ranking agent.
+
+Read queries (get_ranked_content, get_top_ranked) belong on
+RankingRepository directly; this service exists only for operations
+that coordinate the agent or have transactional side effects.
 """
 
 import logging
 
 from sqlalchemy.orm import Session
 
-from app.models.content import Content
 from app.repositories.ranking_repo import RankingRepository
 
 logger = logging.getLogger(__name__)
 
 
 class RankingService:
+    """Orchestrates ranking mutations: running the agent and invalidating stale scores."""
+
     def __init__(self, db: Session):
-        self.repo = RankingRepository(db)
-        self.db = db
+        self._repo = RankingRepository(db)
+        self._db = db
 
     async def run_reranking(self, user_id: int) -> int:
         """Execute the LangGraph re-ranking pipeline for a user.
@@ -30,17 +35,6 @@ class RankingService:
             logger.error(f"Re-ranking failed for user {user_id}: {e}")
             return 0
 
-    def get_personalized_content(
-        self,
-        user_id: int,
-        content_type: str | None = None,
-        limit: int = 20,
-    ) -> list[tuple[Content, float, str | None]]:
-        return self.repo.get_ranked_content(user_id, content_type=content_type, limit=limit)
-
-    def get_top_ranked(self, user_id: int, limit: int = 10):
-        return self.repo.get_top_ranked(user_id, limit=limit)
-
     def invalidate_ranks(self, user_id: int):
-        self.repo.invalidate_user_ranks(user_id)
-        self.db.commit()
+        self._repo.invalidate_user_ranks(user_id)
+        self._db.commit()

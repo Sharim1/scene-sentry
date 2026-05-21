@@ -12,7 +12,7 @@ from sqlalchemy import func
 from app.dependencies import DbDep, OptionalUserDep
 from app.models import Content, LibraryItem
 from app.models.library import WatchStatus
-from app.services.gossip_service import GossipService
+from app.repositories.gossip_repo import GossipRepository
 from app.services.reminder_service import ReminderService
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def dashboard(request: Request, user: OptionalUserDep, db: DbDep):
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    gossip_svc = GossipService(db)
+    gossip_repo = GossipRepository(db)
     reminder_svc = ReminderService(db)
 
     library_stats = {
@@ -70,8 +70,8 @@ def dashboard(request: Request, user: OptionalUserDep, db: DbDep):
     }
 
     upcoming_reminders = reminder_svc.get_upcoming(user.id, limit=5)
-    latest_gossip = gossip_svc.get_latest(limit=6)
-    featured_gossip = gossip_svc.get_featured()
+    latest_gossip = gossip_repo.get_latest(limit=6)
+    featured_gossip = gossip_repo.get_featured()
 
     trending = (
         db.query(Content)
