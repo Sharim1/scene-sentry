@@ -1,5 +1,5 @@
 """
-TMDb content provider — wraps TMDbService behind ContentProvider.
+TMDb content provider — talks directly to the TMDb v3 API.
 
 Without ``TMDB_API_KEY``, all methods return empty lists (TMDb is optional /
 license-sensitive for commercial use).
@@ -7,23 +7,65 @@ license-sensitive for commercial use).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+import httpx
+
 from app.config import settings
-from app.services.content_service import TMDbService
 from app.services.providers.base import ContentProvider, NormalizedContent, _year_from_date
+
+logger = logging.getLogger(__name__)
+
+BASE_URL = "https://api.themoviedb.org/3"
+IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
+BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/original"
 
 
 class TMDbProvider(ContentProvider):
-    """Content provider delegating to TMDbService."""
+    """Content provider for the TMDb v3 API."""
 
     name = "tmdb"
 
     def __init__(self) -> None:
-        self.tmdb = TMDbService()
+        self._api_key = (settings.tmdb_api_key or "").strip()
+        if not self._api_key:
+            logger.warning("TMDB_API_KEY not set; TMDbProvider will return empty results")
 
     def _configured(self) -> bool:
-        return bool(settings.tmdb_api_key)
+        return bool(self._api_key)
+
+    # ---- HTTP helpers ---- #
+
+    def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        if not self._api_key:
+            return None
+        base_params: dict[str, Any] = {"api_key": self._api_key, "language": "en-US"}
+        if params:
+            base_params.update(params)
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(f"{BASE_URL}/{endpoint}", params=base_params)
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:
+            logger.error("TMDb API error (%s): %s", endpoint, e)
+            return None
+
+    def _format_poster(self, item: dict[str, Any]) -> dict[str, Any]:
+        if item.get("poster_path"):
+            item["poster_path"] = f"{IMAGE_BASE_URL}{item['poster_path']}"
+        if item.get("backdrop_path"):
+            item["backdrop_path"] = f"{BACKDROP_BASE_URL}{item['backdrop_path']}"
+        return item
+
+    def _fetch_results(self, endpoint: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        data = self._get(endpoint, params)
+        if not data:
+            return []
+        return [self._format_poster(r) for r in data.get("results", []) if isinstance(r, dict)]
+
+    # ---- normalisation ---- #
 
     def _normalize(self, item: dict[str, Any], content_type: str) -> NormalizedContent:
         release = item.get("release_date") or item.get("first_air_date")
@@ -56,16 +98,24 @@ class TMDbProvider(ContentProvider):
     def _normalize_list(self, items: list[dict[str, Any]], content_type: str) -> list[NormalizedContent]:
         return [self._normalize(i, content_type) for i in items if isinstance(i, dict)]
 
+    # ---- ContentProvider interface ---- #
+
     def discover_movies(self, page: int = 1) -> list[NormalizedContent]:
         if not self._configured():
             return []
-        raw = self.tmdb.discover_movies(page=page)
+        raw = self._fetch_results(
+            "discover/movie",
+            {"sort_by": "popularity.desc", "page": page, "include_adult": "false"},
+        )
         return self._normalize_list(raw, "movie")
 
     def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
         if not self._configured():
             return []
-        raw = self.tmdb.discover_tv_shows(page=page)
+        raw = self._fetch_results(
+            "discover/tv",
+            {"sort_by": "popularity.desc", "page": page},
+        )
         return self._normalize_list(raw, "tv_show")
 
     def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
@@ -73,40 +123,37 @@ class TMDbProvider(ContentProvider):
             return []
         out: list[NormalizedContent] = []
 
-        def run_movie() -> None:
-            hit = self.tmdb.search_content(query, "movie")
-            if hit and isinstance(hit, dict):
-                out.append(self._normalize(hit, "movie"))
-
-        def run_tv() -> None:
-            hit = self.tmdb.search_content(query, "tv_show")
-            if hit and isinstance(hit, dict):
-                out.append(self._normalize(hit, "tv_show"))
+        def _search_type(ct: str) -> None:
+            endpoint = "search/movie" if ct == "movie" else "search/tv"
+            data = self._get(endpoint, {"query": query})
+            if data and data.get("results"):
+                hit = self._format_poster(data["results"][0])
+                if isinstance(hit, dict):
+                    out.append(self._normalize(hit, ct))
 
         if content_type == "movie":
-            run_movie()
+            _search_type("movie")
         elif content_type in ("tv_show", "tv"):
-            run_tv()
+            _search_type("tv_show")
         elif content_type is None:
-            run_movie()
-            run_tv()
+            _search_type("movie")
+            _search_type("tv_show")
         return out
 
     def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         if not self._configured():
             return []
-        raw = self.tmdb.get_upcoming(content_type)
+        endpoint = "movie/upcoming" if content_type == "movie" else "tv/on_the_air"
         ct = "movie" if content_type == "movie" else "tv_show"
+        raw = self._fetch_results(endpoint)
         return self._normalize_list(raw, ct)
 
     def get_trending(self) -> list[NormalizedContent]:
         if not self._configured():
             return []
-        raw = self.tmdb.get_trending("all", "week")
+        raw = self._fetch_results("trending/all/week")
         out: list[NormalizedContent] = []
         for item in raw:
-            if not isinstance(item, dict):
-                continue
             mt = item.get("media_type")
             if mt == "movie":
                 out.append(self._normalize(item, "movie"))
