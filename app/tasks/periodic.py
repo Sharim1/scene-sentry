@@ -93,21 +93,13 @@ def cleanup_task(self):
         cutoff_30 = datetime.now(UTC) - timedelta(days=30)
         cutoff_7 = datetime.now(UTC) - timedelta(days=7)
         with db_session() as db:
-            old_reminders = (
-                db.query(Reminder)
-                .filter(Reminder.sent == True, Reminder.created_at < cutoff_7)
-                .delete()
-            )
+            old_reminders = db.query(Reminder).filter(Reminder.sent == True, Reminder.created_at < cutoff_7).delete()
             old_notifications = (
                 db.query(Notification)
                 .filter(Notification.is_read == True, Notification.created_at < cutoff_30)
                 .delete()
             )
-            old_gossip = (
-                db.query(Gossip)
-                .filter(Gossip.is_featured == False, Gossip.scraped_at < cutoff_30)
-                .delete()
-            )
+            old_gossip = db.query(Gossip).filter(Gossip.is_featured == False, Gossip.scraped_at < cutoff_30).delete()
             logger.info(
                 "Cleanup: %d reminders, %d notifications, %d gossip deleted",
                 old_reminders,

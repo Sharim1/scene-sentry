@@ -172,7 +172,11 @@ class TaskManager:
                 now = _utc_now()
                 for t in tasks:
                     if t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED) and t.completed_at:
-                        age = (now - t.completed_at.replace(tzinfo=UTC) if t.completed_at.tzinfo is None else now - t.completed_at)
+                        age = (
+                            now - t.completed_at.replace(tzinfo=UTC)
+                            if t.completed_at.tzinfo is None
+                            else now - t.completed_at
+                        )
                         if age.total_seconds() < recent_seconds:
                             active.append(t)
             tasks = active
@@ -222,8 +226,11 @@ class TaskManager:
             await self.update_task(task_id, status=TaskStatus.RUNNING, message="Starting...")
             result = await task_func(task, self)
             await self.update_task(
-                task_id, status=TaskStatus.COMPLETED, progress=100,
-                message="Completed successfully", result=result,
+                task_id,
+                status=TaskStatus.COMPLETED,
+                progress=100,
+                message="Completed successfully",
+                result=result,
             )
         except asyncio.CancelledError:
             await self.update_task(task_id, status=TaskStatus.CANCELLED, message="Task cancelled")
@@ -231,7 +238,8 @@ class TaskManager:
         except Exception as e:
             logger.error("Task %s failed: %s", task_id, e)
             await self.update_task(
-                task_id, status=TaskStatus.FAILED,
+                task_id,
+                status=TaskStatus.FAILED,
                 message="Task failed. Check server logs for details.",
                 error="Internal error",
             )
