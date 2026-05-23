@@ -1,202 +1,323 @@
-# Scene Sentry Architecture Documentation
+# Scene Sentry — Architecture
 
-## Overview
+## What it is
 
-**Scene Sentry** is an AI-powered cinema intelligence platform built with FastAPI. It aggregates movie and TV show data from TMDB/TVDB APIs, curates entertainment gossip via Tavily, and uses a LangGraph-based re-ranking agent to deliver personalised content recommendations.
-
-### Core Features
-
-- **TMDB/TVDB Integration**: Movies and TV shows sourced from official APIs
-- **AI Content Re-ranking**: LangGraph agent that periodically scores and ranks content based on user taste
-- **Entertainment Gossip**: Aggregated headlines with external read-through links
-- **Reminders**: Configure alerts for upcoming shows, premieres, and movies
-- **Library Management**: Track watching, planned, completed, and dropped content
+Scene Sentry is a server-side-rendered web app for tracking and discovering movies and TV shows. It pulls content from external APIs (TMDb, TVDB, TVMaze, OMDb), stores it in a local database, ranks it against each user's taste using Gemini, and scrapes entertainment news via Tavily. Auth is handled by Clerk.
 
 ---
 
-## System Architecture
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Web framework | FastAPI (async, ASGI) |
+| Server | Uvicorn |
+| Templates | Jinja2 (server-side HTML) |
+| Styling | Tailwind CSS |
+| Database ORM | SQLAlchemy 2.0 (sync sessions) |
+| Database | PostgreSQL (production), SQLite (dev/test) |
+| Auth | Clerk (JWT middleware + webhooks) |
+| AI / LLM | LangChain + LangGraph + Gemini |
+| Web search | Tavily |
+| Background jobs | APScheduler (async) |
+| Email | Resend (primary) + Mailgun (fallback) |
+| Rate limiting | slowapi |
+| Config | Pydantic Settings (`.env`) |
+
+---
+
+## High-level architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Client Browser                       │
-│      (Jinja2 Templates + Tailwind CSS + Alpine.js)      │
-└──────────────────────┬──────────────────────────────────┘
-                       │ HTTP/HTTPS
-┌──────────────────────▼──────────────────────────────────┐
-│                  FastAPI Application                      │
-│  Middleware: ClerkAuth → Session                         │
-│  Routes → Services → Repositories → Database            │
-└───┬──────────────┬──────────────┬───────────────────────┘
-    │              │              │
-┌───▼───┐   ┌─────▼─────┐   ┌───▼──────────┐
-│  DB   │   │ LangGraph │   │  Background  │
-│SQLite/│   │ Re-ranking│   │  Scheduler   │
-│Postgres│  │  Agent    │   │ (APScheduler)│
-└───────┘   └─────┬─────┘   └──────────────┘
-                  │
-    ┌─────────────┼─────────────┐
-    │             │             │
-┌───▼───┐  ┌─────▼─────┐  ┌───▼──────┐
-│ TMDB  │  │  Tavily   │  │  Gemini  │
-│ TVDB  │  │ (gossip)  │  │  (LLM)   │
-└───────┘  └───────────┘  └──────────┘
+Browser
+  │  HTTP
+  ▼
+FastAPI app  (app/main.py)
+  │
+  ├── Middleware chain (inner → outer)
+  │     ClerkAuthMiddleware → SessionMiddleware → CSRFMiddleware → SecurityHeadersMiddleware
+  │
+  ├── Routes  (app/routes/)          ← HTTP concerns only
+  │     │
+  │     ├── Services  (app/services/)    ← business logic, transactions
+  │     │     │
+  │     │     ├── Repositories  (app/repositories/)   ← SQL queries
+  │     │     │     └── Database  (SQLAlchemy session)
+  │     │     │
+  │     │     ├── Providers  (app/services/providers/) ← external content APIs
+  │     │     │
+  │     │     └── Agents  (app/agents/)   ← LangGraph AI pipelines
+  │     │
+  │     └── Jinja2 templates  (templates/)
+  │
+  └── Background scheduler  (app/tasks/scheduler.py)
+        └── same services as above, called on a timer
 ```
 
 ---
 
-## Application Structure
+## Directory map
 
 ```
 scene-sentry/
+├── run.py                      # Uvicorn entry point
+├── manage.py                   # CLI for admin tasks (discover, enrich, fix-emails)
+├── pyproject.toml
+│
 ├── app/
-│   ├── main.py                     # FastAPI entry point
-│   ├── config.py                   # Pydantic Settings
-│   ├── database.py                 # SQLAlchemy engine & sessions
+│   ├── main.py                 # FastAPI app, middleware, router includes, lifespan
+│   ├── config.py               # Pydantic Settings — all env vars & feature flags
+│   ├── database.py             # Engine, SessionLocal, get_db(), db_session context manager
+│   ├── dependencies.py         # FastAPI Depends: DbDep, OptionalUserDep, RequireAuthDep
+│   ├── templates.py            # Jinja2 env setup, custom filters
 │   │
-│   ├── routes/                     # Thin HTTP handlers
-│   │   ├── auth.py                 # Login / Register / Clerk
-│   │   ├── dashboard.py            # Dashboard
-│   │   ├── content.py              # Movies & TV Shows
-│   │   ├── gossip.py               # Gossip feed
-│   │   ├── library.py              # User library CRUD
-│   │   ├── reminders.py            # Reminders CRUD + calendar
-│   │   └── api.py                  # JSON API + task management
+│   ├── models/                 # SQLAlchemy ORM models
+│   │   ├── user.py             # User (local + Clerk)
+│   │   ├── content.py          # Content (movies, TV shows)
+│   │   ├── episode.py          # Episode (TV show episodes)
+│   │   ├── library.py          # LibraryItem (user tracking)
+│   │   ├── gossip.py           # Gossip (scraped news headlines)
+│   │   ├── notification.py     # Notification (in-app alerts)
+│   │   ├── reminder.py         # Reminder (scheduled alerts)
+│   │   ├── ranking.py          # UserContentRank (personalized scores)
+│   │   ├── recommendation.py   # Recommendation (legacy, unused — see SCE-6)
+│   │   └── discovery_state.py  # DiscoveryState (pagination cursor per provider)
 │   │
-│   ├── services/                   # Business logic layer
-│   │   ├── content_service.py      # TMDb API client
-│   │   ├── tvdb_service.py         # TVDB API client
-│   │   ├── content_discovery.py    # Discover & persist content
-│   │   ├── gossip_service.py       # Gossip business logic
-│   │   ├── reminder_service.py     # Reminder business logic
-│   │   ├── ranking_service.py      # Re-ranking orchestration
-│   │   └── task_manager.py         # Background task management + SSE
-│   │
-│   ├── repositories/               # Database access wrappers
+│   ├── repositories/           # One repo per model, pure SQL — no business logic
 │   │   ├── content_repo.py
-│   │   ├── gossip_repo.py
-│   │   ├── reminder_repo.py
+│   │   ├── episode_repo.py
 │   │   ├── library_repo.py
+│   │   ├── gossip_repo.py
+│   │   ├── notification_repo.py
+│   │   ├── reminder_repo.py
 │   │   └── ranking_repo.py
 │   │
-│   ├── models/                     # SQLAlchemy models
-│   │   ├── user.py
-│   │   ├── content.py
-│   │   ├── library.py
-│   │   ├── gossip.py
-│   │   ├── reminder.py
-│   │   └── ranking.py              # UserContentRank
+│   ├── routes/                 # Thin HTTP handlers — parse input, call service, render
+│   │   ├── auth.py             # /login, /register, /logout
+│   │   ├── dashboard.py        # /dashboard
+│   │   ├── content.py          # /movies, /tv-shows, /{content_id}
+│   │   ├── library.py          # /library/*
+│   │   ├── gossip.py           # /gossip
+│   │   ├── notifications.py    # /notifications/*
+│   │   ├── reminders.py        # /reminders/*
+│   │   ├── api.py              # /api/* (JSON, SSE task progress)
+│   │   └── contact.py          # /contact
 │   │
-│   ├── agents/                     # LangGraph agents
-│   │   ├── graph.py                # ContentRankingGraph
-│   │   └── gossip_agent.py         # Gossip headline scraper
+│   ├── services/
+│   │   ├── content_discovery.py    # Orchestrates provider fetching + dedup + upsert
+│   │   ├── library_service.py      # Add, update, rate — with ranking invalidation
+│   │   ├── gossip_service.py       # Triggers GossipScraperAgent
+│   │   ├── notification_service.py # Build and send notifications
+│   │   ├── ranking_service.py      # Runs ContentRankingGraph per user
+│   │   ├── reminder_service.py     # Schedule and dispatch reminders
+│   │   ├── email_service.py        # Abstract email dispatch (Resend/Mailgun)
+│   │   ├── resend_service.py
+│   │   ├── mailgun_service.py
+│   │   ├── contact_service.py
+│   │   ├── identity_sync.py        # Clerk → local User sync
+│   │   ├── task_manager.py         # On-demand task tracking + SSE progress
+│   │   ├── tvdb_service.py         # TVDB episode enrichment
+│   │   │
+│   │   └── providers/              # External content API abstraction
+│   │       ├── base.py             # ContentProvider ABC + NormalizedContent DTO
+│   │       ├── registry.py         # get_active_providers() factory
+│   │       ├── tvmaze_provider.py
+│   │       ├── tvdb_provider.py
+│   │       ├── omdb_provider.py
+│   │       └── tmdb_provider.py
+│   │
+│   ├── agents/
+│   │   ├── graph.py            # ContentRankingGraph (LangGraph, 5-node pipeline)
+│   │   └── gossip_agent.py     # GossipScraperAgent (Tavily search → Gossip rows)
 │   │
 │   ├── middleware/
-│   │   └── clerk.py                # Clerk JWT middleware
+│   │   └── clerk.py            # ClerkAuthMiddleware (JWT validation, user sync)
 │   │
-│   └── tasks/
-│       └── scheduler.py            # APScheduler jobs
+│   ├── tasks/
+│   │   └── scheduler.py        # APScheduler job definitions
+│   │
+│   └── utils/
+│       └── timezone.py
 │
-├── templates/                      # Jinja2 templates
-├── static/                         # CSS, JS, images
-├── pyproject.toml
-└── README.md
+├── templates/                  # Jinja2 HTML
+│   ├── base.html
+│   ├── index.html
+│   ├── dashboard.html
+│   ├── movies.html
+│   ├── tv_shows.html
+│   ├── content_detail.html
+│   ├── library.html
+│   ├── gossip/feed.html
+│   ├── reminders.html
+│   ├── settings.html
+│   ├── partials/               # Reusable template fragments
+│   └── errors/
+│
+├── static/                     # CSS, JS, images
+├── tests/
+│   ├── conftest.py             # in-memory SQLite fixtures
+│   ├── test_config.py
+│   └── test_health.py
+└── docs/                       # You are here
 ```
 
 ---
 
-## Layered Architecture
+## Layered architecture
+
+Every request follows this path. Layers only call inward — routes never touch the database directly, repositories never call services.
 
 ```
-Router  →  Service  →  Repository  →  Database
-  │            │            │
-  │            │            └─ Pure CRUD, no business logic
-  │            └─ Orchestrates repos, external APIs, agents
-  └─ HTTP concerns only: parse input, call service, return response
+Route → Service → Repository → DB
+           │
+           ├── Provider  (outbound HTTP to content APIs)
+           └── Agent     (LangGraph / LLM pipelines)
 ```
 
-### Router Layer (`routes/`)
-- Parse request parameters and forms
-- Call the appropriate service
-- Return HTML templates or JSON responses
-- No direct database queries
+**Routes** — parse HTTP inputs, call one service method, render a template or return JSON. No SQL, no external HTTP.
 
-### Service Layer (`services/`)
-- All business logic lives here
-- Orchestrates repositories, external API clients, and agents
-- Transaction boundaries managed at this level
+**Services** — all business logic. Own transaction boundaries (`db.commit()`). Orchestrate repos, providers, and agents. Side effects (ranking invalidation, notification creation) happen here.
 
-### Repository Layer (`repositories/`)
-- Thin wrappers around SQLAlchemy queries
-- One repository per model
-- No business logic — only CRUD and query composition
+**Repositories** — thin wrappers around SQLAlchemy queries. One file per model. No business logic; no cross-repo calls.
+
+**Providers** — implement `ContentProvider` ABC. Fetch and normalize content from a single external API. See [PROVIDERS.md](PROVIDERS.md).
+
+**Agents** — LangGraph stateful pipelines for AI-driven work (ranking, gossip scraping). Called from services, never from routes.
 
 ---
 
-## AI Re-ranking Agent
+## Middleware chain
 
-The LangGraph-based `ContentRankingGraph` in `agents/graph.py` runs a 5-node pipeline:
+Middleware executes outer-first (last registered = outermost):
 
 ```
-Entry → build_taste_profile → select_candidates → batch_score → write_rankings → validate_quality
-                                     ↑                                                    │
-                                     └────────────── (if insufficient diversity) ──────────┘
+Incoming request →
+  SecurityHeadersMiddleware (CSP, HSTS, X-Frame-Options)
+    CSRFMiddleware (token validation)
+      SessionMiddleware (cookie sessions via itsdangerous)
+        ClerkAuthMiddleware (JWT → user_id, user sync)
+          FastAPI route handler
 ```
 
-| Node | Uses LLM? | Purpose |
+`ClerkAuthMiddleware` (`app/middleware/clerk.py`) decodes the Clerk JWT, looks up or creates the local `User` row, and injects `request.state.user` and `request.state.clerk_user_id`. Routes read from `request.state` via the `OptionalUserDep` / `RequireAuthDep` dependencies.
+
+---
+
+## Dependency injection
+
+Three core FastAPI dependencies used across all routes:
+
+```python
+DbDep          = Annotated[Session, Depends(get_db)]         # SQLAlchemy session
+OptionalUserDep = Annotated[User | None, Depends(...)]       # current user, may be None
+RequireAuthDep  = Annotated[User, Depends(...)]              # 401 if not authenticated
+```
+
+---
+
+## Background tasks
+
+APScheduler runs in the same process as the web server. Jobs call the same services that routes use.
+
+| Task | Default interval | Service called |
 |---|---|---|
-| `build_taste_profile` | No | Computes genre frequencies, avg ratings, type ratios from user's library |
-| `select_candidates` | No | SQL query for unranked/stale content matching top genres |
-| `batch_score` | **Yes (Gemini)** | Sends taste profile + candidates in batches of 20 for 0-100 scoring |
-| `write_rankings` | No | Upserts scores into `UserContentRank` via repository |
-| `validate_quality` | No | Checks diversity and count; loops back if insufficient |
+| Content discovery | Every 6 hours | `ContentDiscoveryService.run_scheduled_sync()` |
+| Content enrichment | Every 15 minutes | `ContentDiscoveryService.enrich_sparse_content()` |
+| Gossip scraping | Every 30 minutes | `GossipService.scrape_latest()` |
+| Ranking | Every 2 hours | `RankingService` → `ContentRankingGraph` |
+| Reminder dispatch | Every 60 minutes | `ReminderService.process_due_reminders()` |
+| Cleanup | Every 24 hours | Purge old gossip, sent reminders |
 
-Triggered by: scheduler (every N hours) and library events (rating, status change).
+On-demand tasks (triggered from the dashboard by a user) run the same services but report progress via SSE through `TaskManager`.
 
 ---
 
-## Background Tasks
+## AI ranking pipeline
 
-| Task | Interval | Function |
+`ContentRankingGraph` in `agents/graph.py` is a 5-node LangGraph pipeline:
+
+```
+build_taste_profile → select_candidates → batch_score → write_rankings → validate_quality
+                                                                               │
+                                              ← (loop back if low diversity) ──┘
+```
+
+| Node | LLM? | What it does |
 |---|---|---|
-| Gossip Scraping | 30 min | Searches Tavily for entertainment news, stores headline + preview |
-| Content Re-ranking | 2 hours | Runs `ContentRankingGraph` for each user |
-| Reminders | 60 min | Marks due reminders as sent |
-| Cleanup | 24 hours | Removes old gossip and sent reminders |
+| `build_taste_profile` | No | Aggregates genre frequencies, avg ratings, type ratios from the user's Library |
+| `select_candidates` | No | SQL query for unranked or stale Content matching top genres |
+| `batch_score` | Yes (Gemini) | Sends taste profile + up to 20 candidates per batch; returns 0–100 scores + reasoning |
+| `write_rankings` | No | Upserts scores into `UserContentRank` |
+| `validate_quality` | No | Checks result diversity; loops back to `select_candidates` if insufficient |
 
----
-
-## Database Schema (Key Models)
-
-- **User**: Account info, preferred genres, Clerk integration
-- **Content**: Movies/TV shows from TMDB/TVDB (title, poster, rating, genres, tmdb_id)
-- **LibraryItem**: User's tracked content with status (watching/planned/completed/dropped/maybe)
-- **UserContentRank**: Per-user relevance scores (0-100) with reasoning text
-- **Gossip**: Entertainment news headlines with preview text and external source links
-- **Reminder**: User-configured alerts with type, platform, and scheduling
+Rankings are invalidated (stale-flagged) whenever a user changes a Library Item's status or rating.
 
 ---
 
 ## Configuration
 
-Key environment variables (`app/config.py`):
+All config lives in `app/config.py` as a Pydantic `Settings` class loaded from `.env`.
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `TMDB_API_KEY` | Yes | Movie/TV data from TMDb |
-| `TAVILY_API_KEY` | Yes | Gossip headline scraping |
-| `GEMINI_API_KEY` | Recommended | AI re-ranking via Gemini LLM |
+| `SECRET_KEY` | Yes | Session cookie encryption |
+| `DATABASE_URL` | Yes | SQLAlchemy connection string |
+| `TMDB_API_KEY` | Yes (if enabled) | TMDb content provider |
+| `TAVILY_API_KEY` | Yes | Gossip scraping |
+| `GEMINI_API_KEY` | Recommended | AI ranking via Gemini |
 | `TVDB_API_KEY` | Optional | Episode-level TV data |
-| `CLERK_SECRET_KEY` | Optional | Clerk authentication |
+| `OMDB_API_KEY` | Optional | IMDb ratings and metadata |
+| `CLERK_SECRET_KEY` | Optional | Clerk server-side JWT validation |
 | `CLERK_PUBLISHABLE_KEY` | Optional | Clerk frontend SDK |
-| `SECRET_KEY` | Yes | Session encryption |
+| `RESEND_API_KEY` | Optional | Email delivery (primary) |
+| `MAILGUN_API_KEY` | Optional | Email delivery (fallback) |
+
+Feature flags (`TVMAZE_ENABLED`, `TMDB_ENABLED`, etc.) gate providers at startup. A provider with no API key and no feature flag is excluded from `get_active_providers()`.
 
 ---
 
 ## Security
 
-- External gossip links use `target="_blank" rel="noopener noreferrer"`
-- API keys managed via Pydantic Settings (never hardcoded)
-- Input validation via Pydantic models and FastAPI query/form types
-- Session-based CSRF protection on all state-changing forms
-- Rate limiting via `slowapi` on auth and API endpoints
-- Jinja2 auto-escaping prevents XSS
+- **CSP / HSTS / X-Frame-Options** — set by `SecurityHeadersMiddleware` on every response.
+- **CSRF** — `starlette-csrf` validates tokens on all state-changing requests.
+- **Sessions** — encrypted cookies via `itsdangerous`.
+- **Auth** — Clerk JWT; local session fallback for non-Clerk setups.
+- **Rate limiting** — `slowapi` on auth and public API endpoints.
+- **XSS** — Jinja2 auto-escaping enabled globally.
+- **External links** — gossip source links rendered with `rel="noopener noreferrer"`.
+- **Secrets** — never hardcoded; all from `config.py` / environment.
+
+---
+
+## Entry points
+
+**`python run.py`** — starts Uvicorn on `0.0.0.0:8000`. FastAPI lifespan hook calls `init_db()` (create tables) and `start_scheduler()`.
+
+**`python manage.py <command>`** — admin CLI:
+- `discover` / `discover --full` / `discover --provider tvmaze --pages 20`
+- `enrich` / `enrich --all`
+- `fix-emails` — backfill real emails from Clerk
+
+---
+
+## Testing
+
+Tests live in `tests/`. The `conftest.py` creates an in-memory SQLite engine (session-scoped) and a per-test transaction that rolls back after each test. Async tests use `asyncio_mode = "auto"`.
+
+```bash
+pytest                   # run all tests
+pytest -m "not slow"     # skip integration-tagged tests
+pytest --cov=app         # with coverage
+```
+
+Coverage excludes `app/tasks/` and `app/agents/` (background/LLM work not suitable for unit tests).
+
+---
+
+## Related docs
+
+- [PROVIDERS.md](PROVIDERS.md) — how content providers work, how to add a new one
+- [DATA_FLOWS.md](DATA_FLOWS.md) — step-by-step traces for key user actions
+- [MODELS.md](MODELS.md) — database schema reference
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to add features, style guide, PR checklist
+- [../CONTEXT.md](../CONTEXT.md) — domain language glossary (canonical terminology)
