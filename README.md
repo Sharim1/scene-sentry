@@ -14,6 +14,7 @@ AI-powered cinema intelligence platform. Get personalized content rankings, trac
 
 - **Backend**: FastAPI + Python 3.11+
 - **Database**: SQLAlchemy ORM (SQLite for dev, PostgreSQL for production)
+- **Background Tasks**: Celery + Redis (periodic jobs via Celery Beat)
 - **AI**: LangChain + LangGraph + Google Gemini (content re-ranking agent)
 - **Content APIs**: Multi-provider (TVMaze, TVDB, OMDb, TMDb) with deduplication
 - **Search**: Tavily API for gossip aggregation
@@ -31,7 +32,7 @@ app/
   models/           # SQLAlchemy models
   agents/           # LangGraph re-ranking agent
   middleware/       # Auth middleware
-  tasks/            # Background scheduler
+  tasks/            # Celery periodic tasks
 ```
 
 ## Getting Started
@@ -39,6 +40,7 @@ app/
 ### Prerequisites
 
 - Python 3.11 or higher
+- Redis (for background tasks and on-demand task state)
 
 ### Installation
 
@@ -67,12 +69,28 @@ cp .env.example .env
 # Edit .env with your API keys
 ```
 
-5. Run the application:
+5. Start Redis:
 ```bash
-fastapi dev
+# Homebrew
+brew install redis && redis-server
+
+# Or Docker
+docker run -d -p 6379:6379 redis:7-alpine
 ```
 
-6. Open http://localhost:8000 in your browser
+6. Run the application (three terminals):
+```bash
+# Terminal 1 — Web server
+fastapi dev
+
+# Terminal 2 — Celery worker
+uv run celery -A app.celery_app worker --pool=solo --loglevel=info
+
+# Terminal 3 — Celery beat (periodic tasks)
+uv run celery -A app.celery_app beat --loglevel=info
+```
+
+7. Open http://localhost:8000 in your browser
 
 ### Content Provider API Keys
 

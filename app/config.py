@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     resend_from_email: str | None = None  # e.g. "Scene Sentry <noreply@alerts.scenesentry.com>"
 
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
     # Background Tasks
     gossip_scrape_interval_minutes: int = 30
     reranking_interval_minutes: int = 120

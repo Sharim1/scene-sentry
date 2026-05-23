@@ -68,16 +68,8 @@ async def lifespan(app: FastAPI):
     init_db(drop_all=False)
     logger.info("Database initialized")
 
-    from app.tasks.scheduler import start_scheduler
-
-    start_scheduler()
-    logger.info("Background scheduler started")
-
     yield
 
-    from app.tasks.scheduler import shutdown_scheduler
-
-    shutdown_scheduler()
     logger.info("Application shutdown complete")
 
 

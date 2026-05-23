@@ -29,17 +29,25 @@
 └───┬──────────────┬──────────────┬───────────────────────┘
     │              │              │
 ┌───▼───┐   ┌─────▼─────┐   ┌───▼──────────┐
-│  DB   │   │ LangGraph │   │  Background  │
-│SQLite/│   │ Re-ranking│   │  Scheduler   │
-│Postgres│  │  Agent    │   │ (APScheduler)│
-└───────┘   └─────┬─────┘   └──────────────┘
-                  │
-    ┌─────────────┼─────────────┐
-    │             │             │
-┌───▼───┐  ┌─────▼─────┐  ┌───▼──────┐
-│ TMDB  │  │  Tavily   │  │  Gemini  │
-│ TVDB  │  │ (gossip)  │  │  (LLM)   │
-└───────┘  └───────────┘  └──────────┘
+│  DB   │   │ LangGraph │   │   Redis      │
+│SQLite/│   │ Re-ranking│   │ (broker +    │
+│Postgres│  │  Agent    │   │  task state) │
+└───────┘   └─────┬─────┘   └──┬───────┬──┘
+                  │             │       │
+    ┌─────────────┼─────────────┘       │
+    │             │                     │
+┌───▼───┐  ┌─────▼─────┐  ┌───▼──────┐ │
+│ TMDB  │  │  Tavily   │  │  Gemini  │ │
+│ TVDB  │  │ (gossip)  │  │  (LLM)   │ │
+└───────┘  └───────────┘  └──────────┘ │
+                                       │
+              ┌────────────────────────┘
+              │
+    ┌─────────▼──────────┐
+    │   Celery Worker    │
+    │   + Celery Beat    │
+    │  (periodic tasks)  │
+    └────────────────────┘
 ```
 
 ---
@@ -93,8 +101,10 @@ scene-sentry/
 │   ├── middleware/
 │   │   └── clerk.py                # Clerk JWT middleware
 │   │
+│   ├── celery_app.py                   # Celery instance + Beat schedule
+│   │
 │   └── tasks/
-│       └── scheduler.py            # APScheduler jobs
+│       └── periodic.py             # Celery periodic tasks
 │
 ├── templates/                      # Jinja2 templates
 ├── static/                         # CSS, JS, images
@@ -156,12 +166,18 @@ Triggered by: scheduler (every N hours) and library events (rating, status chang
 
 ## Background Tasks
 
-| Task | Interval | Function |
+Periodic jobs run via **Celery Beat + Celery Worker**, backed by **Redis** as both broker and result backend. This replaces the previous in-process APScheduler — jobs now execute in a separate worker process, avoiding duplicate execution when running multiple web workers.
+
+On-demand tasks (manual gossip scrape, manual re-ranking) use a **Redis-backed TaskManager** for state persistence and Redis Pub/Sub for real-time SSE progress updates across workers.
+
+| Task | Interval | What it does |
 |---|---|---|
+| Content Discovery | 6 hours | Pulls movies/TV from providers; seeds on first run, syncs after |
+| Content Enrichment | 15 min | Backfills episodes, runtime, and details on sparse records |
 | Gossip Scraping | 30 min | Searches Tavily for entertainment news, stores headline + preview |
 | Content Re-ranking | 2 hours | Runs `ContentRankingGraph` for each user |
-| Reminders | 60 min | Marks due reminders as sent |
-| Cleanup | 24 hours | Removes old gossip and sent reminders |
+| Reminders | 1 min | Processes due reminders, creates notifications, sends emails |
+| Cleanup | 24 hours | Removes old gossip, sent reminders, and read notifications |
 
 ---
 
@@ -182,6 +198,7 @@ Key environment variables (`app/config.py`):
 
 | Variable | Required | Purpose |
 |---|---|---|
+| `REDIS_URL` | Yes | Redis connection for Celery broker + task state (default: `redis://localhost:6379/0`) |
 | `TMDB_API_KEY` | Yes | Movie/TV data from TMDb |
 | `TAVILY_API_KEY` | Yes | Gossip headline scraping |
 | `GEMINI_API_KEY` | Recommended | AI re-ranking via Gemini LLM |
