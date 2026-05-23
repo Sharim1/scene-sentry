@@ -1,3 +1,10 @@
+---
+name: Osmani vs Pocock Skills
+overview: A detailed comparison of addyosmani/agent-skills (23 skills) and mattpocock/skills (16 skills) -- their philosophies, overlaps, unique strengths, and a recommendation on how to use both together.
+todos: []
+isProject: false
+---
+
 # Osmani vs Pocock: Agent Skills Comparison
 
 ## Philosophy
