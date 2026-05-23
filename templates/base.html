@@ -99,10 +99,6 @@
                         <span>My Library</span>
                     </a>
                     
-                    <a href="/search" class="sidebar-nav-item {% if request.url.path == '/search' %}active{% endif %}">
-                        <i data-lucide="search" class="w-5 h-5"></i>
-                        <span>Search</span>
-                    </a>
                     
                     <a href="/reminders" class="sidebar-nav-item {% if '/reminders' in request.url.path %}active{% endif %}">
                         <i data-lucide="bell" class="w-5 h-5"></i>
@@ -251,10 +247,6 @@
                     <i data-lucide="library" class="w-5 h-5"></i>
                     <span>My Library</span>
                 </a>
-                <a href="/search" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="search" class="w-5 h-5"></i>
-                    <span>Search</span>
-                </a>
                 <a href="/reminders" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
                     <i data-lucide="bell" class="w-5 h-5"></i>
                     <span>Reminders</span>
@@ -342,9 +334,8 @@
                             </template>
                         </div>
                         <!-- Footer -->
-                        <div class="border-t border-white/5 px-4 py-2 flex flex-wrap gap-x-3 gap-y-1">
+                        <div class="border-t border-white/5 px-4 py-2">
                             <a href="/reminders" class="text-xs text-primary hover:underline">Reminders</a>
-                            <a href="/search" class="text-xs text-muted-foreground hover:text-primary hover:underline">Full catalog search</a>
                         </div>
                     </div>
                 </div>
@@ -375,9 +366,8 @@
                     <div id="global-search-results" data-global-search-results class="max-h-[min(60vh,24rem)] overflow-y-auto p-2 text-sm text-muted-foreground">
                         <p class="px-3 py-6 text-center" id="global-search-hint">Type at least one character to search.</p>
                     </div>
-                    <div class="px-4 py-2 border-t border-white/5 text-xs text-muted-foreground flex justify-between">
+                    <div class="px-4 py-2 border-t border-white/5 text-xs text-muted-foreground">
                         <span id="global-search-dialog-title">Catalog search</span>
-                        <a href="/search" class="text-primary hover:underline" @click="globalSearchOpen = false">Open search page</a>
                     </div>
                 </div>
             </div>
