@@ -26,3 +26,12 @@ build/
 coverage.xml
 htmlcov/
 .coverage
+
+# Redis
+dump.rdb
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat-schedule.dir
+celerybeat-schedule.bak

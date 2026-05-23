@@ -29,29 +29,37 @@ Scene Sentry is a server-side-rendered web app for tracking and discovering movi
 ## High-level architecture
 
 ```
-Browser
-  │  HTTP
-  ▼
-FastAPI app  (app/main.py)
-  │
-  ├── Middleware chain (inner → outer)
-  │     ClerkAuthMiddleware → SessionMiddleware → CSRFMiddleware → SecurityHeadersMiddleware
-  │
-  ├── Routes  (app/routes/)          ← HTTP concerns only
-  │     │
-  │     ├── Services  (app/services/)    ← business logic, transactions
-  │     │     │
-  │     │     ├── Repositories  (app/repositories/)   ← SQL queries
-  │     │     │     └── Database  (SQLAlchemy session)
-  │     │     │
-  │     │     ├── Providers  (app/services/providers/) ← external content APIs
-  │     │     │
-  │     │     └── Agents  (app/agents/)   ← LangGraph AI pipelines
-  │     │
-  │     └── Jinja2 templates  (templates/)
-  │
-  └── Background scheduler  (app/tasks/scheduler.py)
-        └── same services as above, called on a timer
+┌─────────────────────────────────────────────────────────┐
+│                     Client Browser                       │
+│      (Jinja2 Templates + Tailwind CSS + Alpine.js)      │
+└──────────────────────┬──────────────────────────────────┘
+                       │ HTTP/HTTPS
+┌──────────────────────▼──────────────────────────────────┐
+│                  FastAPI Application                      │
+│  Middleware: ClerkAuth → Session                         │
+│  Routes → Services → Repositories → Database            │
+└───┬──────────────┬──────────────┬───────────────────────┘
+    │              │              │
+┌───▼───┐   ┌─────▼─────┐   ┌───▼──────────┐
+│  DB   │   │ LangGraph │   │   Redis      │
+│SQLite/│   │ Re-ranking│   │ (broker +    │
+│Postgres│  │  Agent    │   │  task state) │
+└───────┘   └─────┬─────┘   └──┬───────┬──┘
+                  │             │       │
+    ┌─────────────┼─────────────┘       │
+    │             │                     │
+┌───▼───┐  ┌─────▼─────┐  ┌───▼──────┐ │
+│ TMDB  │  │  Tavily   │  │  Gemini  │ │
+│ TVDB  │  │ (gossip)  │  │  (LLM)   │ │
+└───────┘  └───────────┘  └──────────┘ │
+                                       │
+              ┌────────────────────────┘
+              │
+    ┌─────────▼──────────┐
+    │   Celery Worker    │
+    │   + Celery Beat    │
+    │  (periodic tasks)  │
+    └────────────────────┘
 ```
 
 ---
@@ -136,8 +144,10 @@ scene-sentry/
 │   ├── tasks/
 │   │   └── scheduler.py        # APScheduler job definitions
 │   │
-│   └── utils/
-│       └── timezone.py
+│   ├── celery_app.py                   # Celery instance + Beat schedule
+│   │
+│   └── tasks/
+│       └── periodic.py             # Celery periodic tasks
 │
 ├── templates/                  # Jinja2 HTML
 │   ├── base.html
@@ -219,16 +229,18 @@ RequireAuthDep  = Annotated[User, Depends(...)]              # 401 if not authen
 
 APScheduler runs in the same process as the web server. Jobs call the same services that routes use.
 
-| Task | Default interval | Service called |
-|---|---|---|
-| Content discovery | Every 6 hours | `ContentDiscoveryService.run_scheduled_sync()` |
-| Content enrichment | Every 15 minutes | `ContentDiscoveryService.enrich_sparse_content()` |
-| Gossip scraping | Every 30 minutes | `GossipService.scrape_latest()` |
-| Ranking | Every 2 hours | `RankingService` → `ContentRankingGraph` |
-| Reminder dispatch | Every 60 minutes | `ReminderService.process_due_reminders()` |
-| Cleanup | Every 24 hours | Purge old gossip, sent reminders |
+Periodic jobs run via **Celery Beat + Celery Worker**, backed by **Redis** as both broker and result backend. This replaces the previous in-process APScheduler — jobs now execute in a separate worker process, avoiding duplicate execution when running multiple web workers.
 
-On-demand tasks (triggered from the dashboard by a user) run the same services but report progress via SSE through `TaskManager`.
+On-demand tasks (manual gossip scrape, manual re-ranking) use a **Redis-backed TaskManager** for state persistence and Redis Pub/Sub for real-time SSE progress updates across workers.
+
+| Task | Interval | What it does |
+|---|---|---|
+| Content Discovery | 6 hours | Pulls movies/TV from providers; seeds on first run, syncs after |
+| Content Enrichment | 15 min | Backfills episodes, runtime, and details on sparse records |
+| Gossip Scraping | 30 min | Searches Tavily for entertainment news, stores headline + preview |
+| Content Re-ranking | 2 hours | Runs `ContentRankingGraph` for each user |
+| Reminders | 1 min | Processes due reminders, creates notifications, sends emails |
+| Cleanup | 24 hours | Removes old gossip, sent reminders, and read notifications |
 
 ---
 
@@ -260,11 +272,10 @@ All config lives in `app/config.py` as a Pydantic `Settings` class loaded from `
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `SECRET_KEY` | Yes | Session cookie encryption |
-| `DATABASE_URL` | Yes | SQLAlchemy connection string |
-| `TMDB_API_KEY` | Yes (if enabled) | TMDb content provider |
-| `TAVILY_API_KEY` | Yes | Gossip scraping |
-| `GEMINI_API_KEY` | Recommended | AI ranking via Gemini |
+| `REDIS_URL` | Yes | Redis connection for Celery broker + task state (default: `redis://localhost:6379/0`) |
+| `TMDB_API_KEY` | Yes | Movie/TV data from TMDb |
+| `TAVILY_API_KEY` | Yes | Gossip headline scraping |
+| `GEMINI_API_KEY` | Recommended | AI re-ranking via Gemini LLM |
 | `TVDB_API_KEY` | Optional | Episode-level TV data |
 | `OMDB_API_KEY` | Optional | IMDb ratings and metadata |
 | `CLERK_SECRET_KEY` | Optional | Clerk server-side JWT validation |
