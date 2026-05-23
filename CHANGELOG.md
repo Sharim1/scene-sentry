@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.2.0 (2026-05-23)
+
+### Feat
+
+- **tasks**: replace APScheduler with Celery + Redis
+
 ## v2.1.8 (2026-05-21)
 
 ### Fix
