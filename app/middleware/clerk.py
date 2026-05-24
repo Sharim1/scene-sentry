@@ -182,22 +182,24 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                 try:
                     user = await get_or_create_user_from_clerk(db, payload)
                     if user:
-                        # Store the user_id and clerk_id for later use
-                        # Don't store the ORM object directly as it will be detached
                         request.state.clerk_user_id = user.id
                         request.state.clerk_payload = payload
                 except Exception as e:
                     logger.error(f"Error processing Clerk user: {e}")
                 finally:
                     try:
-                        next(db_gen, None)  # Cleanup generator
+                        next(db_gen, None)
                     except StopIteration:
                         pass
                     db.close()
+            elif self._should_initiate_handshake(request):
+                return self._initiate_handshake(request)
+
+        elif clerk_configured and not token and self._should_initiate_handshake(request):
+            return self._initiate_handshake(request)
 
         # Also check session-based auth (fallback when Clerk not configured)
         if request.state.clerk_user_id is None and not clerk_configured:
-            # Check if there's a user_id in session (legacy auth)
             if "session" in request.scope and request.scope["session"].get("user_id"):
                 request.state.session_user_id = request.scope["session"].get("user_id")
 
@@ -273,7 +275,7 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                     domain=cookie_data.get("domain"),
                     max_age=max_age,
                     secure=cookie_data.get("secure", False) or is_production,
-                    httponly=cookie_data.get("httponly", True),
+                    httponly=cookie_data.get("httponly", False),
                     samesite=cookie_data.get("samesite", "lax").lower() if cookie_data.get("samesite") else "lax",
                 )
                 logger.debug(f"Handshake: setting cookie {name}")
@@ -300,6 +302,34 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
     def _redirect_without_handshake(self, request: Request) -> Response:
         """Redirect to the same URL without the handshake parameter"""
         redirect_url = self._get_url_without_handshake(request)
+        return RedirectResponse(url=redirect_url, status_code=307)
+
+    def _should_initiate_handshake(self, request: Request) -> bool:
+        """Check whether we should redirect to Clerk's FAPI for a token refresh.
+
+        Only for GET page navigations — never for POST/API/static requests.
+        """
+        if request.method != "GET":
+            return False
+
+        client_uat = request.cookies.get("__client_uat")
+        if not client_uat or client_uat == "0":
+            return False
+
+        if not settings.clerk_issuer:
+            return False
+
+        path = request.url.path
+        if path.startswith("/api/") or path.startswith("/webhooks/"):
+            return False
+        return path not in ("/login", "/register", "/logout", "/health", "/favicon.ico")
+
+    def _initiate_handshake(self, request: Request) -> Response:
+        """Redirect to Clerk's Frontend API to refresh the session token."""
+        fapi_url = settings.clerk_issuer.rstrip("/")
+        current_url = str(request.url)
+        redirect_url = f"{fapi_url}/v1/client/handshake?redirect_url={current_url}"
+        logger.debug("Initiating Clerk handshake for %s", request.url.path)
         return RedirectResponse(url=redirect_url, status_code=307)
 
     def _extract_token(self, request: Request) -> str | None:

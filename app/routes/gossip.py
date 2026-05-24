@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.dependencies import DbDep, OptionalUserDep
+from app.dependencies import DbDep, OptionalUserDep, login_redirect
 from app.models.gossip import GossipTag
 from app.repositories.gossip_repo import GossipRepository
 from app.repositories.library_repo import LibraryRepository
@@ -27,7 +27,7 @@ def gossip_feed(
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     repo = GossipRepository(db)
     gossip_items = repo.get_feed(tag=tag, limit=50)
@@ -55,7 +55,7 @@ def gossip_detail(
 ):
     """Redirect to the original article source."""
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     repo = GossipRepository(db)
     gossip = repo.get_by_id(gossip_id)

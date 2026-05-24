@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.dependencies import DbDep, OptionalUserDep
+from app.dependencies import DbDep, OptionalUserDep, login_redirect
 from app.repositories.content_repo import ContentRepository
 from app.repositories.episode_repo import EpisodeRepository
 from app.repositories.library_repo import LibraryRepository
@@ -34,7 +34,7 @@ def movies_page(
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     repo = ContentRepository(db)
     total = repo.count("movie")
@@ -85,7 +85,7 @@ def tv_shows_page(
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     repo = ContentRepository(db)
     total = repo.count("tv_show")
@@ -133,7 +133,7 @@ def add_to_library(
     status: Annotated[str, Form()] = "planned",
 ):
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = LibraryService(db)
     existing = LibraryRepository(db).get_by_user_and_content(user.id, content_id)
@@ -162,7 +162,7 @@ def content_detail(
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     content = ContentRepository(db).get_by_id(content_id)
     if not content:

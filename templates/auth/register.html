@@ -73,23 +73,18 @@
                 window.addEventListener('load', async function () {
                     try {
                         await Clerk.load();
-                        
-                        // Server detected invalid Clerk session - clear it completely
-                        {% if clear_clerk_session %}
-                        console.log('Server detected invalid Clerk session - clearing...');
-                        try {
-                            await Clerk.signOut();
-                        } catch (e) {
-                            // Ignore signOut errors - session might already be cleared
+
+                        if (Clerk.user) {
+                            window.location.replace('{{ next_url | default("/dashboard") }}');
+                            return;
                         }
-                        {% endif %}
-                        
+
                         // Hide loading indicator
                         const loadingDiv = document.getElementById('clerk-loading');
                         if (loadingDiv) loadingDiv.style.display = 'none';
-                        
+
                         const signUpDiv = document.getElementById('clerk-sign-up');
-                        
+
                         // Mount the SignUp component - Clerk handles everything
                         Clerk.mountSignUp(signUpDiv, {
                             appearance: {

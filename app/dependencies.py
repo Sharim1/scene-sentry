@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -10,6 +11,12 @@ from app.database import get_db
 from app.models.user import User
 
 DbDep = Annotated[Session, Depends(get_db)]
+
+
+def login_redirect(request: Request) -> RedirectResponse:
+    """Redirect to login, preserving the intended destination."""
+    next_path = request.url.path
+    return RedirectResponse(url=f"/login?next={next_path}", status_code=303)
 
 
 def get_current_user(request: Request, db: DbDep) -> User | None:

@@ -6,10 +6,10 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 
-from app.dependencies import DbDep, OptionalUserDep
+from app.dependencies import DbDep, OptionalUserDep, login_redirect
 from app.models import Content, LibraryItem
 from app.models.library import WatchStatus
 from app.repositories.gossip_repo import GossipRepository
@@ -49,7 +49,7 @@ def dashboard(request: Request, user: OptionalUserDep, db: DbDep):
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     gossip_repo = GossipRepository(db)
     reminder_svc = ReminderService(db)
