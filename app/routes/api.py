@@ -92,7 +92,6 @@ class RankedItemResponse(BaseModel):
     reasoning: str | None
 
 
-
 @router.get("/search", response_model=SearchResponse)
 @limiter.limit(settings.rate_limit_api)
 def search_content(
@@ -337,5 +336,3 @@ def get_rankings(
         )
         for content, score, reasoning in ranked
     ]
-
-
