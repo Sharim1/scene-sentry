@@ -2,26 +2,19 @@
 JSON API routes for AJAX interactions
 """
 
-import asyncio
-import json
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 import pydantic
-from fastapi import APIRouter, Body, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from app.config import settings
-from app.database import get_db
-from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
+from app.dependencies import DbDep, RequireAuthDep
 from app.routes.auth import limiter
-from app.services.task_manager import TaskType, get_task_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["api"])
-
-_running_tasks: set = set()
 
 
 class ContentResponse(BaseModel):
@@ -42,9 +35,11 @@ class GossipResponse(BaseModel):
     title: str
     preview_text: str | None
     source_name: str
+    source_url: str | None
     image_url: str | None
     tag: str
     time_ago: str
+    scraped_at: str | None
 
 
 class LibraryItemResponse(BaseModel):
@@ -78,11 +73,6 @@ class RatingUpdate(BaseModel):
     notes: str | None = None
 
 
-class TaskStartRequest(BaseModel):
-    preferences: str | None = None
-    query: str | None = None
-
-
 class AddToLibraryRequest(BaseModel):
     content_id: int
     status: str = "planned"
@@ -100,35 +90,6 @@ class RankedItemResponse(BaseModel):
     content: ContentResponse
     rank_score: float | None
     reasoning: str | None
-
-
-class TaskPayload(BaseModel):
-    id: str
-    type: str
-    name: str
-    user_id: int
-    status: str
-    progress: int
-    message: str
-    result: dict[str, Any] | None = None
-    error: str | None = None
-    created_at: str | None = None
-    started_at: str | None = None
-    completed_at: str | None = None
-
-
-class TaskListResponse(BaseModel):
-    tasks: list[TaskPayload]
-
-
-class TaskActionResponse(BaseModel):
-    success: bool
-    message: str | None = None
-    task: TaskPayload | None = None
-
-
-class TaskCancelResponse(BaseModel):
-    success: bool
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -312,14 +273,24 @@ def update_item_rating(
 @limiter.limit(settings.rate_limit_api)
 def get_latest_gossip(
     request: Request,
-    user: RequireAuthDep,
     db: DbDep,
     limit: Annotated[int, Query(le=50)] = 10,
+    since: Annotated[str | None, Query()] = None,
 ):
+    from datetime import datetime
+
     from app.repositories.gossip_repo import GossipRepository
 
     repo = GossipRepository(db)
-    items = repo.get_latest(limit=limit)
+
+    since_dt = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except ValueError:
+            pass
+
+    items = repo.get_latest(limit=limit, since=since_dt)
 
     return [
         GossipResponse(
@@ -327,9 +298,11 @@ def get_latest_gossip(
             title=g.title,
             preview_text=g.preview_text,
             source_name=g.source_name,
+            source_url=g.source_url,
             image_url=g.image_url,
             tag=g.tag.value if g.tag else "rumor",
             time_ago=g.time_ago,
+            scraped_at=g.scraped_at.isoformat() if g.scraped_at else None,
         )
         for g in items
     ]
@@ -363,188 +336,3 @@ def get_rankings(
         )
         for content, score, reasoning in ranked
     ]
-
-
-# ==================== TASK MANAGEMENT ENDPOINTS ====================
-
-
-@router.get("/tasks", response_model=TaskListResponse)
-async def get_user_tasks(
-    user: RequireAuthDep,
-    active_only: Annotated[bool, Query()] = True,
-):
-
-    task_manager = get_task_manager()
-    tasks = await task_manager.get_user_tasks(user.id, active_only=active_only)
-    return TaskListResponse(tasks=[TaskPayload.model_validate(t.to_dict()) for t in tasks])
-
-
-@router.get("/tasks/stream")
-async def task_stream(request: Request, user: OptionalUserDep):
-    if not user:
-
-        async def empty_stream():
-            yield "data: {}\n\n"
-
-        return StreamingResponse(empty_stream(), media_type="text/event-stream")
-
-    task_manager = get_task_manager()
-    queue = await task_manager.subscribe(user.id)
-
-    async def event_generator():
-        try:
-            yield 'data: {"type": "connected"}\n\n'
-            while True:
-                try:
-                    task_data = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {json.dumps(task_data)}\n\n"
-                except TimeoutError:
-                    yield 'data: {"type": "keepalive"}\n\n'
-                except asyncio.CancelledError:
-                    break
-        finally:
-            await task_manager.unsubscribe(user.id, queue)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post(
-    "/tasks/{task_type}/start",
-    response_model=TaskActionResponse,
-)
-@limiter.limit("5/minute")
-async def start_task(
-    request: Request,
-    task_type: str,
-    user: RequireAuthDep,
-    db: DbDep,
-    body: Annotated[TaskStartRequest | None, Body()] = None,
-):
-    _ = body
-
-    task_type_map = {
-        "gossip_scrape": TaskType.GOSSIP_SCRAPE,
-        "content_reranking": TaskType.CONTENT_RERANKING,
-    }
-
-    if task_type not in task_type_map:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid task type: {task_type}",
-        )
-
-    task_manager = get_task_manager()
-    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
-    for existing in existing_tasks:
-        if existing.type == task_type_map[task_type]:
-            return TaskActionResponse(
-                success=False,
-                message="A task of this type is already running",
-                task=TaskPayload.model_validate(existing.to_dict()),
-            )
-
-    task = await task_manager.create_task(
-        task_type=task_type_map[task_type],
-        user_id=user.id,
-    )
-
-    user_id = user.id
-
-    async def run_gossip_scrape(task, tm):
-        from app.repositories.library_repo import LibraryRepository
-        from app.services.gossip_service import GossipService
-
-        await tm.update_task(task.id, progress=10, message="Gathering tracked content...")
-        try:
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                tracked = LibraryRepository(db_session).get_tracked_titles(user_id)
-            finally:
-                db_session.close()
-            await tm.update_task(
-                task.id,
-                progress=30,
-                message=f"Scanning news for {len(tracked)} titles...",
-            )
-            svc = GossipService()
-            results = await svc.scrape_latest(tracked)
-            await tm.update_task(
-                task.id,
-                progress=90,
-                message=f"Found {len(results)} gossip items",
-            )
-            return {"scraped": len(results)}
-        except Exception as e:
-            logger.error(f"Gossip scrape error: {e}")
-            raise
-
-    async def run_content_reranking(task, tm):
-        from app.services.ranking_service import RankingService
-
-        await tm.update_task(task.id, progress=10, message="Starting content re-ranking...")
-        try:
-            db_gen = get_db()
-            db_session = next(db_gen)
-            try:
-                svc = RankingService(db_session)
-                count = await svc.run_reranking(user_id)
-                await tm.update_task(
-                    task.id,
-                    progress=90,
-                    message=f"Ranked {count} items",
-                )
-                return {"ranked": count}
-            finally:
-                db_session.close()
-        except Exception as e:
-            logger.error(f"Re-ranking error: {e}")
-            raise
-
-    task_functions = {
-        TaskType.GOSSIP_SCRAPE: run_gossip_scrape,
-        TaskType.CONTENT_RERANKING: run_content_reranking,
-    }
-
-    task_func = task_functions.get(task_type_map[task_type])
-
-    async def run_and_cleanup():
-        try:
-            await asyncio.sleep(0.5)
-            await task_manager.run_task(task.id, task_func)
-        finally:
-            _running_tasks.discard(asyncio.current_task())
-
-    bg_task = asyncio.create_task(run_and_cleanup())
-    _running_tasks.add(bg_task)
-
-    return TaskActionResponse(
-        success=True,
-        message=f"Task started: {task.name}",
-        task=TaskPayload.model_validate(task.to_dict()),
-    )
-
-
-@router.post("/tasks/{task_id}/cancel", response_model=TaskCancelResponse)
-async def cancel_task(
-    task_id: str,
-    user: RequireAuthDep,
-):
-
-    task_manager = get_task_manager()
-    task = await task_manager.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    success = await task_manager.cancel_task(task_id)
-    return TaskCancelResponse(success=success)

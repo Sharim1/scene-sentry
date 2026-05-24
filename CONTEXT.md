@@ -53,7 +53,7 @@ _Avoid_: Match key, content key
 ### Intelligence
 
 **Gossip**:
-A scraped news headline from an entertainment trade publication (Variety, Deadline, etc.), fetched via Tavily. Stores a preview and links out to the original article — Scene Sentry does not host full articles. Optionally linked to a specific **Content**; unlinked gossip covers general industry news. Queries are tailored to the user's **Library** (tracked titles). Intentionally playful branding.
+A scraped news headline from an entertainment trade publication (Variety, Deadline, etc.), fetched via Tavily. Stores a preview and links out to the original article — Scene Sentry does not host full articles. Optionally linked to a specific **Content**; unlinked gossip covers general industry news. A global resource — fetched by a scheduled job using titles tracked across all users, not per-user. Intentionally playful branding.
 _Avoid_: News, article, post
 
 **Ranking**:
@@ -74,9 +74,9 @@ _Avoid_: Alert, timer, scheduled notification
 A system-wide message delivered to a user in-app (with optional email). Can originate from a due **Reminder**, but also from other sources — subscription offers, platform announcements, feature updates. Has read/unread state. Not scoped to reminders alone.
 _Avoid_: Alert, message (when referring to the in-app notification system)
 
-**Task**:
-A user-triggered background job visible in the UI with real-time progress via SSE. Currently two types: gossip scraping and content reranking. These run the same underlying services as the automatic scheduled jobs, but are initiated on-demand by a specific user and report progress back to them. In-memory only — lost on restart.
-_Avoid_: Job, scheduled job (the automatic timer-based runs are scheduled jobs, not Tasks)
+**Scheduled Job**:
+An automated background process run by Celery Beat on a timer. Covers gossip scraping (global, across all tracked titles), content re-ranking (per-user, iterates all users), discovery, enrichment, reminders, and cleanup. Users have no manual trigger — the system handles all refresh cadences.
+_Avoid_: Task (removed concept — there are no user-triggered background jobs)
 
 ## Example dialogue
 
@@ -86,7 +86,7 @@ _Avoid_: Job, scheduled job (the automatic timer-based runs are scheduled jobs, 
 >
 > **Dev**: I think so. The scheduled job ran but nothing changed.
 >
-> **Domain expert**: The scheduled job and a **Task** do the same thing — both call RankingService. But the scheduled job reranks *all* users. If the user wanted immediate results, they'd trigger a **Task** from the dashboard. Either way, the pipeline builds a **Taste Profile** from their **Library**, selects candidates from the **Catalog**, and batch-scores them. If the rating change didn't alter the **Taste Profile** enough, the scores might genuinely stay the same.
+> **Domain expert**: The **Scheduled Job** for re-ranking runs on a timer and reranks *all* users. The pipeline builds a **Taste Profile** from their **Library**, selects candidates from the **Catalog**, and batch-scores them. If the rating change didn't alter the **Taste Profile** enough, the scores might genuinely stay the same — even after the next run.
 >
 > **Dev**: Got it. Also, some of the Content they rated doesn't have a poster. Should I backfill that?
 >

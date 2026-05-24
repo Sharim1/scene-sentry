@@ -50,16 +50,11 @@ class GossipRepository:
             .first()
         )
 
-    def get_latest(self, limit: int = 6) -> list[Gossip]:
-        return (
-            self.db.query(Gossip)
-            .filter(
-                Gossip.is_active == True,
-            )
-            .order_by(Gossip.scraped_at.desc())
-            .limit(limit)
-            .all()
-        )
+    def get_latest(self, limit: int = 6, since=None) -> list[Gossip]:
+        query = self.db.query(Gossip).filter(Gossip.is_active == True)
+        if since is not None:
+            query = query.filter(Gossip.scraped_at > since)
+        return query.order_by(Gossip.scraped_at.desc()).limit(limit).all()
 
     def get_tag_counts(self) -> dict:
         counts = {}

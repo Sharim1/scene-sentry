@@ -5,13 +5,12 @@ Gossip routes for entertainment news
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.dependencies import DbDep, OptionalUserDep, login_redirect
 from app.models.gossip import GossipTag
 from app.repositories.gossip_repo import GossipRepository
-from app.repositories.library_repo import LibraryRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gossip", tags=["gossip"])
@@ -71,55 +70,3 @@ def gossip_detail(
     if parsed.scheme not in ("http", "https"):
         return RedirectResponse(url="/gossip", status_code=303)
     return RedirectResponse(url=gossip.source_url, status_code=302)
-
-
-@router.post("/refresh")
-async def refresh_gossip(
-    request: Request,
-    user: OptionalUserDep,
-    background_tasks: BackgroundTasks,
-    db: DbDep,
-):
-    from app.services.task_manager import TaskType, get_task_manager
-
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-
-    task_manager = get_task_manager()
-    existing_tasks = await task_manager.get_user_tasks(user.id, active_only=True)
-    for existing in existing_tasks:
-        if existing.type == TaskType.GOSSIP_SCRAPE:
-            return RedirectResponse(url="/gossip", status_code=303)
-
-    lib_repo = LibraryRepository(db)
-    tracked_titles = lib_repo.get_tracked_titles(user.id)
-
-    task = await task_manager.create_task(
-        task_type=TaskType.GOSSIP_SCRAPE,
-        user_id=user.id,
-        name="Scanning for Gossip",
-    )
-
-    async def run_gossip_scrape(task, tm):
-        from app.services.gossip_service import GossipService
-
-        await tm.update_task(
-            task.id,
-            progress=10,
-            message=f"Scanning news for {len(tracked_titles)} tracked titles...",
-        )
-        try:
-            svc = GossipService()
-            results = await svc.scrape_latest(tracked_titles)
-            await tm.update_task(
-                task.id,
-                progress=90,
-                message=f"Found {len(results)} gossip items",
-            )
-            return {"scraped": len(results)}
-        except Exception as e:
-            logger.error(f"Gossip scrape error: {e}")
-            raise
-
-    background_tasks.add_task(task_manager.run_task, task.id, run_gossip_scrape)
-    return RedirectResponse(url="/gossip", status_code=303)

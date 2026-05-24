@@ -77,16 +77,11 @@
                     <i data-lucide="flame" class="w-6 h-6 text-accent"></i>
                     Fresh Gossip
                 </h2>
-                <div class="flex items-center gap-3">
-                    {% if latest_gossip and latest_gossip|length > 0 %}
-                    <span class="text-xs text-muted-foreground">
-                        Last updated: {{ (latest_gossip[0].scraped_at | to_user_tz(user.timezone or 'UTC')).strftime('%I:%M %p') if latest_gossip[0].scraped_at else 'Never' }}
-                    </span>
-                    {% endif %}
-                    <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-sm btn-ghost" title="Refresh gossip">
-                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                    </button>
-                </div>
+                {% if latest_gossip and latest_gossip|length > 0 %}
+                <span class="text-xs text-muted-foreground">
+                    Last updated: {{ (latest_gossip[0].scraped_at | to_user_tz(user.timezone or 'UTC')).strftime('%I:%M %p') if latest_gossip[0].scraped_at else 'Never' }}
+                </span>
+                {% endif %}
             </div>
             
             {% if latest_gossip %}
@@ -134,11 +129,7 @@
             <div class="text-center py-12 bg-card/30 rounded-xl border border-white/5">
                 <i data-lucide="newspaper" class="w-12 h-12 text-muted-foreground mx-auto mb-4"></i>
                 <h3 class="font-display font-semibold text-lg mb-2">No gossip yet</h3>
-                <p class="text-sm text-muted-foreground mb-4">Our AI agents are scanning the web for the latest entertainment news.</p>
-                <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-primary">
-                    <i data-lucide="sparkles" class="w-4 h-4"></i>
-                    Start Scanning
-                </button>
+                <p class="text-sm text-muted-foreground mb-4">Our AI agents will automatically scan for the latest entertainment news.</p>
             </div>
             {% endif %}
         </div>
