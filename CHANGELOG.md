@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.2.2 (2026-05-24)
+
+### Refactor
+
+- **tasks**: remove manual task system and gossip feed polling
+
 ## v2.2.1 (2026-05-24)
 
 ### Fix
