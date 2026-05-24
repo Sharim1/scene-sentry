@@ -12,16 +12,12 @@
         </h1>
         <p class="text-muted-foreground">AI-scraped entertainment news from across the web.</p>
     </div>
-    <div class="flex items-center gap-4">
-        {% if gossip_items and gossip_items|length > 0 %}
+    <div class="flex items-center gap-3">
         <span class="text-sm text-muted-foreground">
+            {% if gossip_items and gossip_items|length > 0 %}
             Last updated: {{ gossip_items[0].scraped_at.strftime('%I:%M %p') if gossip_items[0].scraped_at else 'Never' }}
+            {% endif %}
         </span>
-        {% endif %}
-        <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-primary">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-            Refresh Feed
-        </button>
     </div>
 </div>
 
@@ -111,13 +107,9 @@
         {% if current_tag %}
         No gossip with tag "{{ current_tag }}" found. Try a different filter.
         {% else %}
-        Our AI agents haven't scraped any gossip yet. Click refresh to start!
+        No gossip yet. Our AI agents will automatically scan for the latest entertainment news.
         {% endif %}
     </p>
-    <button type="button" onclick="startDiscoveryTask('gossip_scrape', this)" class="btn btn-primary">
-        <i data-lucide="sparkles" class="w-4 h-4"></i>
-        Scan for Gossip
-    </button>
 </div>
 {% endif %}
 {% endblock %}
