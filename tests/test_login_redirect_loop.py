@@ -13,10 +13,14 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client():
+    from app.config import settings
     from app.main import app
 
     with (
         patch("app.main.init_db"),
+        patch.object(settings, "clerk_secret_key", "sk_test_fake"),
+        patch.object(settings, "clerk_publishable_key", "pk_test_fake"),
+        patch.object(settings, "clerk_issuer", "https://clerk.example.com"),
         TestClient(app, raise_server_exceptions=False) as c,
     ):
         yield c
