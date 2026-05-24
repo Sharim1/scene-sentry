@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.2.1 (2026-05-24)
+
+### Fix
+
+- **test**: mock Clerk settings in auth tests for CI compatibility
+- **auth**: resolve Clerk session timeout and preserve login redirect destination
+
 ## v2.2.0 (2026-05-23)
 
 ### Feat
