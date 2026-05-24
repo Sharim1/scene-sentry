@@ -21,6 +21,7 @@ from app.config import settings
 from app.dependencies import (
     DbDep,
     OptionalUserDep,
+    login_redirect,
 )
 from app.models.user import User
 from app.templates import templates
@@ -34,10 +35,14 @@ limiter = Limiter(key_func=get_remote_address)
 @router.get("/login", response_class=HTMLResponse, name="login")
 def login_page(request: Request):
     """Login page - shows Clerk SignIn or traditional form"""
+    next_url = request.query_params.get("next", "/dashboard")
+    if not next_url.startswith("/"):
+        next_url = "/dashboard"
+
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
     if clerk_user_id or session_user_id:
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return RedirectResponse(url=next_url, status_code=303)
 
     fallback = request.query_params.get("fallback") == "1"
     clerk_enabled = settings.is_clerk_configured and not fallback
@@ -49,7 +54,7 @@ def login_page(request: Request):
             "error": None,
             "clerk_enabled": clerk_enabled,
             "clerk_publishable_key": settings.clerk_publishable_key or "",
-            "clear_clerk_session": False,
+            "next_url": next_url,
         },
     )
 
@@ -110,7 +115,6 @@ def _register_template_context(
         "error": error,
         "clerk_enabled": clerk_enabled,
         "clerk_publishable_key": settings.clerk_publishable_key or "",
-        "clear_clerk_session": False,
         "prefill_email": raw,
     }
 
@@ -386,7 +390,7 @@ def settings_page(request: Request, user: OptionalUserDep):
     import json
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     current_genres = []
     if user.preferred_genres:
@@ -443,7 +447,7 @@ async def update_settings(
     import json
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     form_data = await request.form()
     genres = form_data.getlist("genres")

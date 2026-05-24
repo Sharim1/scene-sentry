@@ -10,7 +10,7 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep
+from app.dependencies import DbDep, OptionalUserDep, RequireAuthDep, login_redirect
 from app.models.reminder import ReminderType
 from app.services.reminder_service import ReminderService
 
@@ -28,7 +28,7 @@ def reminders_page(
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     tz = user.timezone or "UTC"
     svc = ReminderService(db)
@@ -70,7 +70,7 @@ def create_reminder(
     from app.utils.timezone import local_to_utc
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     type_map = {t.value: t for t in ReminderType}
     rtype = type_map.get(reminder_type, ReminderType.PREMIERE)
@@ -106,7 +106,7 @@ def toggle_reminder(
     db: DbDep,
 ):
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = ReminderService(db)
     svc.toggle_reminder(reminder_id, user.id)
@@ -121,7 +121,7 @@ def delete_reminder(
     db: DbDep,
 ):
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = ReminderService(db)
     svc.delete_reminder(reminder_id, user.id)

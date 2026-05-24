@@ -73,23 +73,20 @@
                 window.addEventListener('load', async function () {
                     try {
                         await Clerk.load();
-                        
-                        // Server detected invalid Clerk session - clear it completely
-                        {% if clear_clerk_session %}
-                        console.log('Server detected invalid Clerk session - clearing...');
-                        try {
-                            await Clerk.signOut();
-                        } catch (e) {
-                            // Ignore signOut errors - session might already be cleared
+
+                        // If user already has an active session, Clerk.load() refreshed the
+                        // __session cookie. Redirect straight to the app — no sign-in needed.
+                        if (Clerk.user) {
+                            window.location.replace('{{ next_url }}');
+                            return;
                         }
-                        {% endif %}
-                        
+
                         // Hide loading indicator
                         const loadingDiv = document.getElementById('clerk-loading');
                         if (loadingDiv) loadingDiv.style.display = 'none';
-                        
+
                         const signInDiv = document.getElementById('clerk-sign-in');
-                        
+
                         // Mount the SignIn component - Clerk handles everything
                         Clerk.mountSignIn(signInDiv, {
                             appearance: {
@@ -124,7 +121,7 @@
                                     },
                                 }
                             },
-                            afterSignInUrl: '/dashboard',
+                            afterSignInUrl: '{{ next_url }}',
                             signUpUrl: '/register',
                         });
                     } catch (error) {

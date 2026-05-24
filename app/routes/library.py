@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.dependencies import DbDep, OptionalUserDep
+from app.dependencies import DbDep, OptionalUserDep, login_redirect
 from app.models import Content, LibraryItem
 from app.models.library import WatchStatus
 from app.repositories.library_repo import LibraryRepository
@@ -31,7 +31,7 @@ def library(
     from app.templates import templates
 
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     query = db.query(LibraryItem).filter(LibraryItem.user_id == user.id)
     query = query.join(Content)
@@ -85,7 +85,7 @@ def update_library_item(
 ):
     """Update library item status"""
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = LibraryService(db)
     svc.update_status(user.id, item_id, status, weekly_release=weekly_release)
@@ -105,7 +105,7 @@ def update_progress(
 ):
     """Update progress on a library item"""
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = LibraryService(db)
     svc.update_progress(user.id, item_id, progress, season=season, episode=episode)
@@ -124,7 +124,7 @@ def rate_item(
 ):
     """Rate a library item"""
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = LibraryService(db)
     svc.rate(user.id, item_id, rating, notes=notes)
@@ -141,7 +141,7 @@ def delete_library_item(
 ):
     """Remove item from library"""
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = LibraryService(db)
     svc.delete(user.id, item_id)
@@ -159,7 +159,7 @@ def add_to_library(
 ):
     """Add content to library"""
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return login_redirect(request)
 
     svc = LibraryService(db)
     svc.add(user.id, content_id, status)
