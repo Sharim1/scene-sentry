@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.3.0 (2026-06-20)
+
+### Feat
+
+- **db**: adopt Alembic for schema migrations
+
 ## v2.2.2 (2026-05-24)
 
 ### Refactor
