@@ -163,7 +163,7 @@ class TVMazeProvider(ContentProvider):
         return NormalizedContent(
             title=title,
             content_type="tv_show",
-            source="tvmaze",
+            provider="tvmaze",
             description=desc,
             release_date=premiered if isinstance(premiered, str) else None,
             year=year,

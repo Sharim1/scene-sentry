@@ -37,7 +37,7 @@ class Content(Base):
     isbn = Column(String(20), nullable=True)
 
     # Which provider originally ingested this record
-    source = Column(String(20), nullable=True)  # "tmdb", "tvdb", "omdb", "tvmaze"
+    provider = Column(String(20), nullable=True)  # "tmdb", "tvdb", "omdb", "tvmaze"
 
     # Media
     poster_url = Column(String(500), nullable=True)

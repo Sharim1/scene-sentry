@@ -17,7 +17,7 @@ class NormalizedContent:
 
     title: str
     content_type: str  # "movie" or "tv_show"
-    source: str  # "tmdb", "tvdb", "omdb", "tvmaze"
+    provider: str  # "tmdb", "tvdb", "omdb", "tvmaze"
 
     description: str | None = None
     release_date: str | None = None  # YYYY-MM-DD (or YYYY)
