@@ -108,7 +108,7 @@ def _normalize_omdb_dict(d: dict[str, Any]) -> NormalizedContent | None:
     return NormalizedContent(
         title=title,
         content_type=content_type,
-        source="omdb",
+        provider="omdb",
         description=plot,
         year=_parse_year(d.get("Year")),
         release_date=_parse_released(d.get("Released")),

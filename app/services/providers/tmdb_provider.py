@@ -83,7 +83,7 @@ class TMDbProvider(ContentProvider):
         return NormalizedContent(
             title=(item.get("title") or item.get("name") or ""),
             content_type=content_type,
-            source="tmdb",
+            provider="tmdb",
             description=item.get("overview"),
             release_date=release if isinstance(release, str) else None,
             year=_year_from_date(release if isinstance(release, str) else None),

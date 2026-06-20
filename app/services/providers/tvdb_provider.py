@@ -134,7 +134,7 @@ def _normalize_search_result(item: dict[str, Any], content_type: str) -> Normali
     return NormalizedContent(
         title=title,
         content_type=content_type,
-        source="tvdb",
+        provider="tvdb",
         description=item.get("overview"),
         year=_parse_year(item),
         release_date=rd,

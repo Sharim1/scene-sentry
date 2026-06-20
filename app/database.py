@@ -84,6 +84,8 @@ def init_db(drop_all: bool = False):
         drop_all: If True, drops all tables first, then rebuilds from migrations
             (development only).
     """
+    from alembic.script import ScriptDirectory
+
     from alembic import command
 
     cfg = _alembic_config()
@@ -104,9 +106,13 @@ def init_db(drop_all: bool = False):
     if "alembic_version" in tables:
         command.upgrade(cfg, "head")
     elif "users" in tables:
-        # Pre-Alembic database created by the legacy bootstrap — adopt it.
-        command.stamp(cfg, "head")
-        logger.info("Adopted existing database into Alembic (stamped head)")
+        # Pre-Alembic database created by the legacy bootstrap. Its schema
+        # matches the baseline revision, so stamp the baseline (without
+        # re-creating tables) and then apply any later migrations.
+        base_rev = ScriptDirectory.from_config(cfg).get_bases()[0]
+        command.stamp(cfg, base_rev)
+        command.upgrade(cfg, "head")
+        logger.info("Adopted existing database into Alembic (stamped %s, upgraded head)", base_rev)
     else:
         command.upgrade(cfg, "head")
         logger.info("Fresh database migrated to head")

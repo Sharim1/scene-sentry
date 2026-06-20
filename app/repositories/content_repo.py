@@ -157,7 +157,7 @@ class ContentRepository:
             episodes=nc.episodes,
             status=nc.status,
             network=nc.network,
-            source=nc.source,
+            provider=nc.provider,
             language=nc.language,
             country=nc.country,
             premiere_date=_parse_datetime(nc.premiered),
@@ -286,7 +286,7 @@ class ContentRepository:
             rating=data.get("vote_average"),
             release_date=data.get("release_date") or data.get("first_air_date"),
             genres=str(data.get("genre_ids", [])),
-            source="tmdb",
+            provider="tmdb",
         )
 
     def _update_from_api(self, content: Content, data: dict[str, Any], content_type: str):
