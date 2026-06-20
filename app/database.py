@@ -5,13 +5,17 @@ Database configuration and session management
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Repo root (parent of the ``app`` package) — where alembic.ini lives.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 engine = create_engine(
     settings.database_url,
@@ -52,94 +56,57 @@ def db_session() -> Generator[Session, None, None]:
         db.close()
 
 
-def _run_migrations():
-    """Add columns that may be missing from existing tables.
+def _alembic_config():
+    """Build a programmatic Alembic config pointing at the repo's alembic.ini."""
+    from alembic.config import Config
 
-    SQLAlchemy's create_all only creates tables that don't exist yet; it won't
-    ALTER existing ones.  This function inspects each table and issues
-    ALTER TABLE ADD COLUMN for any column defined in the model but absent in
-    the database.  Safe to run repeatedly (idempotent).
-    """
-    insp = inspect(engine)
-    existing_tables = insp.get_table_names()
-
-    add_columns: list[tuple[str, str, str]] = [
-        ("users", "timezone", "VARCHAR(50) DEFAULT 'UTC'"),
-    ]
-
-    alter_types: list[tuple[str, str, str]] = [
-        ("reminders", "scheduled_time", "TIMESTAMPTZ"),
-    ]
-
-    with engine.begin() as conn:
-        for table, column, col_type in add_columns:
-            if table not in existing_tables:
-                continue
-            existing_cols = {c["name"] for c in insp.get_columns(table)}
-            if column not in existing_cols:
-                stmt = f'ALTER TABLE "{table}" ADD COLUMN "{column}" {col_type}'
-                conn.execute(text(stmt))
-                logger.info("Migration: added %s.%s", table, column)
-
-        for table, column, new_type in alter_types:
-            if table not in existing_tables:
-                continue
-            result = conn.execute(
-                text("SELECT data_type FROM information_schema.columns WHERE table_name = :tbl AND column_name = :col"),
-                {"tbl": table, "col": column},
-            )
-            row = result.fetchone()
-            if row and row[0] != "timestamp with time zone":
-                stmt = (
-                    f'ALTER TABLE "{table}" ALTER COLUMN "{column}" '
-                    f"TYPE {new_type} USING \"{column}\" AT TIME ZONE current_setting('timezone')"
-                )
-                conn.execute(text(stmt))
-                logger.info("Migration: altered %s.%s to %s", table, column, new_type)
-
-        # Fix FK constraints that need ON DELETE behaviour
-        fk_fixes: list[tuple[str, str, str, str, str]] = [
-            # (table, constraint_name, column, references, on_delete)
-            ("notifications", "notifications_reminder_id_fkey", "reminder_id", "reminders(id)", "SET NULL"),
-        ]
-        for table, constraint, column, references, on_delete in fk_fixes:
-            if table not in existing_tables:
-                continue
-            row = conn.execute(
-                text("SELECT confdeltype FROM pg_constraint WHERE conname = :name"), {"name": constraint}
-            ).fetchone()
-            # 'a' = NO ACTION (default), 'n' = SET NULL, 'c' = CASCADE
-            if row and row[0] != "n":
-                conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{constraint}"'))
-                conn.execute(
-                    text(
-                        f'ALTER TABLE "{table}" ADD CONSTRAINT "{constraint}" '
-                        f'FOREIGN KEY ("{column}") REFERENCES {references} ON DELETE {on_delete}'
-                    )
-                )
-                logger.info("Migration: updated FK %s to ON DELETE %s", constraint, on_delete)
+    cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    # Use absolute script location so this works regardless of the process CWD.
+    cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+    return cfg
 
 
 def init_db(drop_all: bool = False):
-    """Initialize database tables.
+    """Bring the database schema up to date via Alembic.
+
+    Schema is now owned by Alembic (``alembic/versions``) rather than
+    ``create_all`` + hand-rolled ALTERs. This function is the single startup
+    entrypoint (used by the FastAPI lifespan and ``manage.py``) and is safe to
+    run repeatedly:
+
+    * **Fresh database** — ``alembic upgrade head`` builds everything.
+    * **Legacy database** (tables exist from the old ``create_all`` path but no
+      ``alembic_version`` table) — it is *adopted* via ``alembic stamp head``
+      instead of re-running the baseline, which would fail on existing tables.
+    * **Already migrated** — ``alembic upgrade head`` applies any new revisions.
 
     Args:
-        drop_all: If True, drops all tables before creating (use only in development)
+        drop_all: If True, drops all tables first, then rebuilds from migrations
+            (development only).
     """
-    from app.models import (  # noqa: F401
-        content,
-        discovery_state,
-        episode,
-        gossip,
-        library,
-        notification,
-        ranking,
-        reminder,
-        user,
-    )
+    from alembic import command
+
+    cfg = _alembic_config()
+    insp = inspect(engine)
 
     if drop_all:
-        Base.metadata.drop_all(bind=engine)
+        # Ensure all models are registered before dropping.
+        import app.models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
-    _run_migrations()
+        Base.metadata.drop_all(bind=engine)
+        with engine.begin() as conn:
+            conn.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+        command.upgrade(cfg, "head")
+        logger.info("Database reset and migrated to head")
+        return
+
+    tables = set(insp.get_table_names())
+    if "alembic_version" in tables:
+        command.upgrade(cfg, "head")
+    elif "users" in tables:
+        # Pre-Alembic database created by the legacy bootstrap — adopt it.
+        command.stamp(cfg, "head")
+        logger.info("Adopted existing database into Alembic (stamped head)")
+    else:
+        command.upgrade(cfg, "head")
+        logger.info("Fresh database migrated to head")

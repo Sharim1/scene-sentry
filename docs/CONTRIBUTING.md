@@ -55,7 +55,7 @@ Use the domain vocabulary from [CONTEXT.md](../CONTEXT.md). The most common mist
 
 | What you're adding | Where |
 |---|---|
-| New database table | `app/models/` + migration or `init_db()` |
+| New database table | `app/models/` + Alembic migration (`alembic revision --autogenerate`) |
 | Database query | `app/repositories/` — one repo per model |
 | Business logic | `app/services/` |
 | HTTP endpoint | `app/routes/` |
@@ -87,10 +87,22 @@ Use the domain vocabulary from [CONTEXT.md](../CONTEXT.md). The most common mist
 ## Adding a new model
 
 1. Create `app/models/your_model.py`. Import `Base` from `app/database.py`.
-2. Add the import to `app/models/__init__.py` so `init_db()` picks it up.
+2. Add the import to `app/models/__init__.py` so it is registered on `Base.metadata`.
 3. Create `app/repositories/your_model_repo.py`.
 4. If this model has relationships to existing models, add the `relationship()` on both sides.
-5. Run `pytest` — the in-memory SQLite test DB is rebuilt from `Base.metadata.create_all()` on each run, so your new table will appear automatically.
+5. Generate a migration: `uv run alembic revision --autogenerate -m "add your_model"`, review the generated file in `alembic/versions/`, then `uv run alembic upgrade head`.
+6. Run `pytest` — the in-memory SQLite test DB is rebuilt from `Base.metadata.create_all()` on each run, so your new table appears automatically in tests.
+
+### Database migrations (Alembic)
+
+Schema is owned by Alembic, not `create_all`. Common commands (prefix with `uv run`):
+
+- `alembic upgrade head` — apply all pending migrations (also run automatically on app startup via `init_db()`).
+- `alembic revision --autogenerate -m "<message>"` — generate a migration from model changes. **Always review** the generated file before committing.
+- `alembic downgrade -1` — roll back the most recent migration.
+- `alembic current` / `alembic history` — inspect migration state.
+
+A pre-existing database created before Alembic (tables present, no `alembic_version`) is adopted automatically on first startup via `alembic stamp head` — no manual step needed.
 
 ---
 
