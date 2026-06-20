@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.3.1 (2026-06-20)
+
+### Fix
+
+- **db**: freeze Alembic baseline to an explicit snapshot
+
+### Refactor
+
+- **content**: rename Content.source to Content.provider (SCE-5)
+
 ## v2.3.0 (2026-06-20)
 
 ### Feat
