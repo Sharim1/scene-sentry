@@ -302,7 +302,7 @@ Feature flags (`TVMAZE_ENABLED`, `TMDB_ENABLED`, etc.) gate providers at startup
 
 ## Entry points
 
-**`python run.py`** — starts Uvicorn on `0.0.0.0:8000`. FastAPI lifespan hook calls `init_db()` (create tables) and `start_scheduler()`.
+**`python run.py`** — starts Uvicorn on `0.0.0.0:8000`. FastAPI lifespan hook calls `init_db()`, which runs Alembic migrations (`alembic upgrade head`, or `stamp head` to adopt a pre-Alembic database), and `start_scheduler()`.
 
 **`python manage.py <command>`** — admin CLI:
 - `discover` / `discover --full` / `discover --provider tvmaze --pages 20`
