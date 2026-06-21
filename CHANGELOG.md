@@ -3,11 +3,11 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
-## Unreleased
+## v2.4.0 (2026-06-21)
 
 ### Feat
 
-- **embeddings**: add Content pgvector embeddings, refresh job, and similarity demo endpoint (SCE-33)
+- **embeddings**: add Content pgvector embeddings + similarity (SCE-33)
 
 ## v2.3.1 (2026-06-20)
 
