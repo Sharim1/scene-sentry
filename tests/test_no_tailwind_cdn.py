@@ -34,9 +34,7 @@ def _all_template_files() -> list[Path]:
 class TestTemplatesHaveNoCdn:
     def test_no_template_references_tailwind_cdn(self):
         offenders = [
-            str(p.relative_to(REPO_ROOT))
-            for p in _all_template_files()
-            if CDN_HOST in p.read_text(encoding="utf-8")
+            str(p.relative_to(REPO_ROOT)) for p in _all_template_files() if CDN_HOST in p.read_text(encoding="utf-8")
         ]
         assert not offenders, f"Tailwind CDN still referenced in: {offenders}"
 
