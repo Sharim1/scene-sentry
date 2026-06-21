@@ -38,6 +38,31 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
 
+  # ── Gate 1b: Frontend build (Tailwind + esbuild) ────────────────────────
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build CSS + JS
+        run: npm run build
+
+      - name: Assert build outputs exist and are non-empty
+        run: |
+          test -s static/dist/tailwind.css || { echo "::error::static/dist/tailwind.css missing or empty"; exit 1; }
+          test -s static/dist/app.js || { echo "::error::static/dist/app.js missing or empty"; exit 1; }
+          echo "tailwind.css: $(wc -c < static/dist/tailwind.css) bytes"
+          echo "app.js:       $(wc -c < static/dist/app.js) bytes"
+
   # ── Gate 2: Type Check (informational until pre-existing errors are resolved) ─
   typecheck:
     name: Type Check

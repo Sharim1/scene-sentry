@@ -1,0 +1,20 @@
+{
+  "name": "scene-sentry-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Frontend build toolchain for Scene Sentry (Tailwind CSS + esbuild). No runtime app code lives here.",
+  "scripts": {
+    "build": "run-s build:css build:js",
+    "build:css": "tailwindcss -i ./static/css/tailwind.entry.css -o ./static/dist/tailwind.css --minify",
+    "build:js": "esbuild static/js/app.js --bundle --minify --format=iife --outfile=static/dist/app.js",
+    "dev": "run-p dev:css dev:js",
+    "dev:css": "tailwindcss -i ./static/css/tailwind.entry.css -o ./static/dist/tailwind.css --watch",
+    "dev:js": "esbuild static/js/app.js --bundle --format=iife --sourcemap --outfile=static/dist/app.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "npm-run-all": "^4.1.5",
+    "tailwindcss": "^3.4.0"
+  }
+}
