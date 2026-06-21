@@ -36,6 +36,10 @@ celery_app.conf.update(
             "task": "app.tasks.periodic.reminder_task",
             "schedule": timedelta(minutes=settings.reminder_check_interval_minutes),
         },
+        "content-embedding": {
+            "task": "app.tasks.periodic.embedding_refresh_task",
+            "schedule": timedelta(minutes=settings.embedding_interval_minutes),
+        },
         "cleanup": {
             "task": "app.tasks.periodic.cleanup_task",
             "schedule": timedelta(hours=24),

@@ -208,8 +208,10 @@ class ContentRepository:
 
     def _merge_into(self, content: Content, nc: NormalizedContent) -> None:
         """Fill blanks on an existing row from a NormalizedContent."""
+        embedding_input_changed = False
         if nc.description and not content.description:
             content.description = nc.description[:500]
+            embedding_input_changed = True
         if nc.poster_url and not content.poster_url:
             content.poster_url = nc.poster_url
         if nc.backdrop_url and not content.backdrop_url:
@@ -222,6 +224,7 @@ class ContentRepository:
             content.director = nc.director
         if nc.genres and not content.genres:
             content.genres = json.dumps(nc.genres)
+            embedding_input_changed = True
         if nc.status and not content.status:
             content.status = nc.status
         if nc.network and not content.network:
@@ -249,6 +252,8 @@ class ContentRepository:
         if nc.next_episode_date:
             content.next_episode_date = _parse_datetime(nc.next_episode_date)
         content.updated_at = datetime.now(UTC)
+        if embedding_input_changed:
+            content.embedding_hash = None  # mark for re-embedding (SCE-33)
 
     def _apply_filters(self, query, filter_by: str, search: str | None):
         if search:

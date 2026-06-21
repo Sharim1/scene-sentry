@@ -4,10 +4,13 @@ Content model for movies, TV shows, and books
 
 from datetime import UTC, datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+EMBEDDING_DIM = 768
 
 
 def utc_now():
@@ -27,6 +30,13 @@ class Content(Base):
     content_type = Column(String(20), nullable=False, index=True)  # 'movie', 'tv_show', 'book'
     description = Column(Text, nullable=True)
     genres = Column(Text, nullable=True)  # JSON string
+
+    # Semantic embedding for similarity retrieval (SCE-33). Postgres/pgvector only.
+    # On SQLite (tests) the column is created but vector operations are unavailable.
+    embedding = Column(Vector(EMBEDDING_DIM), nullable=True)
+    # sha256 of the embedding-input text; NULL means "needs (re)embedding".
+    embedding_hash = Column(String(64), nullable=True)
+    embedding_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     # External IDs (used for cross-platform deduplication)
     external_id = Column(String(50), nullable=True)

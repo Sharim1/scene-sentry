@@ -20,6 +20,7 @@ dependencies = [
     # Database
     "sqlalchemy>=2.0.43",
     "psycopg2-binary>=2.9.10",
+    "pgvector>=0.3.6",
     # Pydantic
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
@@ -154,7 +155,7 @@ python_functions = ["test_*"]
 addopts = "-ra --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests that require external services",
+    "integration: tests requiring external services (e.g. Postgres+pgvector)",
 ]
 asyncio_mode = "auto"
 
