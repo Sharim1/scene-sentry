@@ -9,7 +9,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    {% include 'partials/_tailwind_cdn.html' %}
+    <!-- Compiled + purged Tailwind (built from tailwind.config.js; replaces the CDN) -->
+    <link rel="stylesheet" href="{{ static_url('dist/tailwind.css') }}">
 
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
     <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>

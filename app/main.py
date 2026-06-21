@@ -34,11 +34,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         csp_parts = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://unpkg.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://fonts.googleapis.com",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
             "img-src 'self' data: https: http:",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
-            "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://cdn.tailwindcss.com",
+            "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.dev",
             "frame-src https://*.clerk.accounts.dev https://challenges.cloudflare.com",
             "worker-src 'self' blob:",
         ]

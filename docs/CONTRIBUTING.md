@@ -7,8 +7,12 @@ Practical guide for making changes to Scene Sentry.
 ## Getting started
 
 ```bash
-# Install dependencies
+# Install Python dependencies
 uv sync
+
+# Install frontend toolchain + build CSS/JS assets (required — see below)
+npm install
+npm run build
 
 # Copy and fill in env vars
 cp .env.example .env
@@ -25,6 +29,21 @@ mypy app/
 ```
 
 The app starts at `http://localhost:8000`. You do not need all API keys — disable unused providers in `.env` (`TVMAZE_ENABLED=false`, etc.).
+
+### Frontend build (Tailwind + esbuild)
+
+The frontend is server-rendered Jinja + Tailwind + Alpine.js. Tailwind CSS and `static/js/app.js` are **compiled by a Node toolchain** (no CDN) into `static/dist/` — a gitignored directory that must be built before the app can serve styles/scripts.
+
+```bash
+npm install          # one-time: installs tailwindcss + esbuild
+npm run build        # build static/dist/tailwind.css (purged) + static/dist/app.js (bundled)
+npm run dev          # watch mode: rebuild CSS + JS on change (run alongside python run.py)
+```
+
+- Tailwind theme lives in `tailwind.config.js` (the single source of truth).
+- Custom component CSS stays in `static/css/app.css` (served as-is).
+- JS source modules live in `static/js/src/*`; `static/js/app.js` is the bundle entry.
+- CI builds these in the `Frontend Build` gate; deploys must run `npm run build` before serving.
 
 ---
 

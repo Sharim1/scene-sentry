@@ -40,6 +40,7 @@ app/
 ### Prerequisites
 
 - Python 3.11 or higher
+- Node.js 18+ and npm (for the Tailwind/JS build step)
 - Redis (for background tasks and on-demand task state)
 
 ### Installation
@@ -63,13 +64,20 @@ pip install -e .
 uv sync
 ```
 
-4. Set up environment variables:
+4. Build frontend assets (Tailwind CSS + bundled JS):
+```bash
+npm install
+npm run build      # outputs static/dist/tailwind.css + static/dist/app.js
+# During development, run `npm run dev` in a separate terminal to rebuild on change
+```
+
+5. Set up environment variables:
 ```bash
 cp .env.example .env
 # Edit .env with your API keys
 ```
 
-5. Start Redis:
+6. Start Redis:
 ```bash
 # Homebrew
 brew install redis && redis-server
@@ -78,7 +86,7 @@ brew install redis && redis-server
 docker run -d -p 6379:6379 redis:7-alpine
 ```
 
-6. Run the application (three terminals):
+7. Run the application (three terminals):
 ```bash
 # Terminal 1 — Web server
 fastapi dev
@@ -90,7 +98,7 @@ uv run celery -A app.celery_app worker --pool=solo --loglevel=info
 uv run celery -A app.celery_app beat --loglevel=info
 ```
 
-7. Open http://localhost:8000 in your browser
+8. Open http://localhost:8000 in your browser
 
 ### Content Provider API Keys
 

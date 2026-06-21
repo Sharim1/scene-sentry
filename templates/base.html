@@ -10,7 +10,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    {% include 'partials/_tailwind_cdn.html' %}
+    <!-- Compiled + purged Tailwind (built from tailwind.config.js; replaces the CDN) -->
+    <link rel="stylesheet" href="{{ static_url('dist/tailwind.css') }}">
     
     <!-- Alpine.js for interactivity (pinned major version) -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
@@ -425,8 +426,8 @@
         }
     </script>
     
-    <!-- Custom JS -->
-    <script src="{{ static_url('js/app.js') }}"></script>
+    <!-- Custom JS (bundled by esbuild) -->
+    <script src="{{ static_url('dist/app.js') }}"></script>
     
     {% block scripts %}{% endblock %}
 </body>

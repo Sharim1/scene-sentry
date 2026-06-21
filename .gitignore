@@ -17,6 +17,10 @@ build/
 # Virtual environment
 .venv/
 
+# Node / frontend build
+node_modules/
+static/dist/
+
 # Tool caches
 .ruff_cache/
 .mypy_cache/
