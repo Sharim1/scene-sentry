@@ -203,6 +203,10 @@ app.include_router(content.router)
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with custom error pages"""
+    if request.url.path.startswith("/api/"):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     if exc.status_code == 404:
         return templates.TemplateResponse(
             "errors/404.html",

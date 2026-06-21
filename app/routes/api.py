@@ -336,3 +336,64 @@ def get_rankings(
         )
         for content, score, reasoning in ranked
     ]
+
+
+class SimilarContentItem(BaseModel):
+    """One nearest-neighbour result in the SCE-33 similarity demo response."""
+
+    id: int
+    title: str
+    content_type: str
+    poster_url: str | None = None
+
+
+class SimilarContentResponse(BaseModel):
+    """Response body for the internal SCE-33 similarity demo endpoint.
+
+    Lists catalog Content most semantically similar to a given Content, using the
+    precomputed pgvector embeddings built in SCE-33. This is an internal demo /
+    verification surface for the embeddings foundation — it is NOT the user-facing
+    personalized recommendations feature, which is built in SCE-34.
+    """
+
+    source_id: int
+    results: list[SimilarContentItem]
+
+
+@router.get("/content/{content_id}/similar", response_model=SimilarContentResponse)
+def get_similar_content(
+    content_id: int,
+    db: DbDep,
+    user: RequireAuthDep,
+    limit: int = Query(10, ge=1, le=50),
+) -> SimilarContentResponse:
+    """Return the Content most similar to a given Content (SCE-33 demo endpoint).
+
+    Internal verification surface for the embeddings + pgvector foundation. Uses the
+    target row's PRECOMPUTED embedding, so it makes NO embedding API call and is safe
+    in the request path. Returns an empty list when the target has no embedding yet
+    (the Scheduled Job has not processed it). This is NOT the personalized
+    recommendations endpoint — see SCE-34.
+    """
+    from app.repositories.content_repo import ContentRepository
+    from app.repositories.embedding_repo import EmbeddingRepository
+
+    content = ContentRepository(db).get_by_id(content_id)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+    if content.embedding is None:
+        return SimilarContentResponse(source_id=content_id, results=[])
+
+    neighbours = EmbeddingRepository(db).find_similar(content.embedding, limit=limit, exclude_id=content_id)
+    return SimilarContentResponse(
+        source_id=content_id,
+        results=[
+            SimilarContentItem(
+                id=c.id,
+                title=c.title,
+                content_type=c.content_type,
+                poster_url=c.poster_url,
+            )
+            for c in neighbours
+        ],
+    )

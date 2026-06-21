@@ -88,6 +88,22 @@ def reminder_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def embedding_refresh_task(self):
+    try:
+        from app.services.embedding_service import EmbeddingService
+
+        with db_session() as db:
+            svc = EmbeddingService(db)
+            embedded = svc.refresh_embeddings()
+            if embedded:
+                logger.info("Embedding refresh: %d items", embedded)
+            return embedded
+    except Exception as exc:
+        logger.exception("embedding_refresh_task failed")
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def cleanup_task(self):
     try:
         cutoff_30 = datetime.now(UTC) - timedelta(days=30)

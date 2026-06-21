@@ -167,3 +167,24 @@ class TestCleanupTask:
             cleanup_task.run()
 
         assert mock_db.query.call_count == 3
+
+
+# ── embedding_refresh_task ──────────────────────────────────────────────
+
+
+class TestEmbeddingRefreshTask:
+    def test_delegates_to_embedding_service(self):
+        from app.tasks.periodic import embedding_refresh_task
+
+        mock_ds, _ = _mock_db_session()
+        mock_svc = MagicMock()
+        mock_svc.refresh_embeddings.return_value = 4
+
+        with (
+            patch("app.tasks.periodic.db_session", mock_ds),
+            patch("app.services.embedding_service.EmbeddingService", return_value=mock_svc),
+        ):
+            result = embedding_refresh_task.run()
+
+        mock_svc.refresh_embeddings.assert_called_once()
+        assert result == 4

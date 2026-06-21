@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
     reminder_check_interval_minutes: int = 1  # how often to check for due reminders
 
+    # Embeddings (SCE-33)
+    embedding_enabled: bool = True
+    embedding_model: str = "models/text-embedding-004"
+    embedding_dim: int = 768
+    embedding_interval_minutes: int = 30
+    embedding_batch_size: int = 100
+
     # Public contact form (override CONTACT_TO_EMAIL in .env)
     contact_to_email: str | None = "contact@example.com"
     contact_from_email: str | None = None  # defaults via effective_contact_from_address

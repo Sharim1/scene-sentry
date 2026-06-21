@@ -42,3 +42,26 @@ def db_session(engine):
     session.close()
     transaction.rollback()
     connection.close()
+
+
+@pytest.fixture()
+def fake_embedder():
+    """Deterministic stand-in for GoogleGenerativeAIEmbeddings — no network."""
+
+    class FakeEmbedder:
+        def __init__(self):
+            self.embed_calls = 0
+
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            self.embed_calls += 1
+            return [self._vec(t) for t in texts]
+
+        def embed_query(self, text: str) -> list[float]:
+            return self._vec(text)
+
+        @staticmethod
+        def _vec(text: str) -> list[float]:
+            seed = (len(text) % 7) + 1
+            return [float((i * seed) % 5) for i in range(768)]
+
+    return FakeEmbedder()
