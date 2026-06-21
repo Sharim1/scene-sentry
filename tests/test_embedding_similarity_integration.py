@@ -10,11 +10,10 @@ TEST_DB = os.environ.get("TEST_DATABASE_URL")
 
 
 @pytest.fixture(scope="module")
-def pg_session():
+def pg_engine():
     if not TEST_DB:
         pytest.skip("TEST_DATABASE_URL not set; skipping pgvector integration test")
     from sqlalchemy import create_engine, text
-    from sqlalchemy.orm import sessionmaker
 
     from app.database import Base
 
@@ -25,12 +24,25 @@ def pg_session():
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"Postgres/pgvector unavailable: {exc}")
     Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.close()
+    yield engine
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
+
+
+@pytest.fixture()
+def pg_session(pg_engine):
+    """Function-scoped session. Tests share one database, so clean the content
+    table after each test to stop committed rows leaking between tests."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models.content import Content
+
+    session = sessionmaker(bind=pg_engine)()
+    yield session
+    session.rollback()
+    session.query(Content).delete()
+    session.commit()
+    session.close()
 
 
 def _vec(first: float, second: float = 0.0) -> list[float]:
