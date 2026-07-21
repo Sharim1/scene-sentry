@@ -22,37 +22,47 @@ from app.database import get_db, init_db
 from app.models.user import User
 from app.templates import static_path, templates
 
+# Clerk development instances share this wildcard host; production instances use
+# the custom Frontend API host derived from CLERK_ISSUER (e.g. clerk.scenesentry.com).
+_CLERK_DEV_WILDCARD = "https://*.clerk.accounts.dev"
+# Shared Clerk domains its JS talks to regardless of instance (telemetry + API).
+_CLERK_SHARED_CONNECT = ("https://*.clerk.com", "https://*.clerk.dev", "https://clerk-telemetry.com")
+# Cloudflare Turnstile — Clerk's bot-protection challenge widget.
+_TURNSTILE = "https://challenges.cloudflare.com"
+
 
 def _build_content_security_policy() -> str:
     """Assemble the CSP once at import time.
 
-    Clerk is allow-listed from a single source of truth: the dev instance host
-    (`*.clerk.accounts.dev`) plus, when a production instance is configured, the
-    custom Frontend API host derived from CLERK_ISSUER (e.g. clerk.scenesentry.com).
-    Without the production host here, Clerk's script/XHR/frames are blocked by CSP
-    under the custom domain.
+    Clerk is allow-listed from a single source of truth: the dev instance wildcard
+    plus, when a production instance is configured, the custom Frontend API host
+    from CLERK_ISSUER. Without the production host here, Clerk's script/XHR/frames
+    are blocked by CSP under the custom domain.
 
     `'unsafe-inline'`/`'unsafe-eval'` are intentionally retained: removing them
     requires a nonce/hash refactor of inline scripts and Alpine.js, which is
     deferred to hardening (SCE-38 fog), not launch-blocking.
     """
-    clerk_hosts = ["https://*.clerk.accounts.dev"]
+    clerk_hosts = [_CLERK_DEV_WILDCARD]
     prod_host = settings.clerk_frontend_api_host
-    if prod_host and "clerk.accounts.dev" not in prod_host:
+    # A dev-instance host is already covered by the wildcard, so only add a
+    # genuinely custom (production) host.
+    if prod_host and not prod_host.endswith(".clerk.accounts.dev"):
         clerk_hosts.append(f"https://{prod_host}")
-    clerk_script = " ".join(clerk_hosts)
-    # Clerk XHR also hits shared telemetry/api domains; frames add Cloudflare Turnstile.
-    clerk_connect = " ".join([*clerk_hosts, "https://*.clerk.com", "https://*.clerk.dev", "https://clerk-telemetry.com"])
-    clerk_frame = " ".join([*clerk_hosts, "https://challenges.cloudflare.com"])
+
+    clerk_script = [*clerk_hosts, _TURNSTILE]
+    clerk_connect = [*clerk_hosts, *_CLERK_SHARED_CONNECT]
+    clerk_frame = [*clerk_hosts, _TURNSTILE]
 
     csp_parts = [
         "default-src 'self'",
-        f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com {clerk_script} https://challenges.cloudflare.com",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com "
+        + " ".join(clerk_script),
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
         "img-src 'self' data: https: http:",
         "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
-        f"connect-src 'self' {clerk_connect}",
-        f"frame-src {clerk_frame}",
+        "connect-src 'self' " + " ".join(clerk_connect),
+        "frame-src " + " ".join(clerk_frame),
         "worker-src 'self' blob:",
     ]
     return "; ".join(csp_parts)

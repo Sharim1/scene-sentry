@@ -4,6 +4,7 @@ Application configuration using Pydantic Settings
 
 import os
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -139,7 +140,10 @@ class Settings(BaseSettings):
         """
         if not self.clerk_issuer:
             return None
-        return self.clerk_issuer.replace("https://", "").replace("http://", "").rstrip("/") or None
+        # urlparse only populates .hostname when a scheme is present; CLERK_ISSUER
+        # is normally a full URL, but tolerate a bare host by assuming https.
+        issuer = self.clerk_issuer if "://" in self.clerk_issuer else f"https://{self.clerk_issuer}"
+        return urlparse(issuer).hostname
 
     @property
     def allowed_hosts_list(self) -> list[str]:
