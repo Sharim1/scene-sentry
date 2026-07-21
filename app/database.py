@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 # Repo root (parent of the ``app`` package) — where alembic.ini lives.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Serialises ``alembic upgrade`` across concurrently booting app replicas.
+# FastAPI Cloud's scale-to-zero can cold-start up to two web replicas at once,
+# and Alembic does not self-serialise DDL across processes. A Postgres advisory
+# lock is a cross-session mutex: the first replica migrates while the others
+# block, then run an idempotent no-op upgrade. SQLite (dev/test) is single-writer
+# so it skips the lock. Value is an arbitrary, stable application-wide constant.
+_MIGRATION_ADVISORY_LOCK_KEY = 728914
+
 engine = create_engine(
     settings.database_url,
     pool_size=10,
@@ -80,10 +88,27 @@ def init_db(drop_all: bool = False):
       instead of re-running the baseline, which would fail on existing tables.
     * **Already migrated** — ``alembic upgrade head`` applies any new revisions.
 
+    On Postgres the whole upgrade runs under a session-level advisory lock so
+    concurrently booting replicas can't race on DDL (see
+    ``_MIGRATION_ADVISORY_LOCK_KEY``). SQLite runs it directly.
+
     Args:
         drop_all: If True, drops all tables first, then rebuilds from migrations
             (development only).
     """
+    if engine.dialect.name == "postgresql":
+        with engine.connect() as lock_conn:
+            lock_conn.exec_driver_sql("SELECT pg_advisory_lock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,))
+            try:
+                _run_migrations(drop_all)
+            finally:
+                lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,))
+    else:
+        _run_migrations(drop_all)
+
+
+def _run_migrations(drop_all: bool = False):
+    """Apply Alembic migrations. Callers hold the advisory lock on Postgres."""
     from alembic.script import ScriptDirectory
 
     from alembic import command

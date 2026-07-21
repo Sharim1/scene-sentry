@@ -5,7 +5,7 @@ Application configuration using Pydantic Settings
 import os
 from functools import lru_cache
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     rate_limit_auth: str = "5/minute"  # For login/register endpoints
     rate_limit_api: str = "60/minute"  # For API endpoints
 
+    # Trusted hosts for TrustedHostMiddleware (comma-separated). "*" disables the
+    # Host check (default); set to the production domain(s) once known (SCE-41).
+    allowed_hosts: str = "*"
+
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     @field_validator("secret_key")
@@ -99,12 +103,37 @@ class Settings(BaseSettings):
             raise ValueError("CLERK_WEBHOOK_SECRET should start with 'whsec_'")
         return v
 
+    @model_validator(mode="after")
+    def _validate_production_config(self) -> "Settings":
+        """Fail fast on insecure dev defaults when ENV=production.
+
+        Keeps development/test (the default env) untouched while ensuring a
+        production deploy never boots against the local dev database, SQLite, or
+        a shared/undefined session secret.
+        """
+        if self.env != "production":
+            return self
+        if self.database_url == "postgresql://scenesentry:scenesentry@localhost:5432/scenesentry":
+            raise ValueError("DATABASE_URL must point at the production database when ENV=production")
+        if self.database_url.startswith("sqlite"):
+            raise ValueError("SQLite is not supported in production; use Postgres with pgvector")
+        if not self.session_secret or self.session_secret == self.secret_key:
+            raise ValueError("SESSION_SECRET must be set and distinct from SECRET_KEY when ENV=production")
+        return self
+
     @property
     def clerk_authorized_parties_list(self) -> list[str]:
         """Parse authorized parties from comma-separated string"""
         if not self.clerk_authorized_parties:
             return []
         return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        """Parsed TrustedHost allow-list; empty list means no restriction ('*')."""
+        if not self.allowed_hosts or self.allowed_hosts.strip() == "*":
+            return []
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
     @property
     def is_clerk_configured(self) -> bool:

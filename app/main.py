@@ -106,7 +106,9 @@ app.add_middleware(
 
 import re
 
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette_csrf import CSRFMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -119,6 +121,16 @@ app.add_middleware(
     cookie_samesite="lax",
     header_name="x-csrftoken",
 )
+
+# Restrict the Host header once the production domain(s) are configured
+# (ALLOWED_HOSTS). Skipped when unset ("*") so dev/preview hosts still work.
+if settings.allowed_hosts_list:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
+
+# Trust the platform proxy's X-Forwarded-Proto/Host so request.url reports https
+# and the real host behind FastAPI Cloud's TLS-terminating proxy — needed for
+# correct redirects and the Clerk handshake. Added last so it runs outermost.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=static_path), name="static")
