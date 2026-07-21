@@ -23,6 +23,44 @@ from app.models.user import User
 from app.templates import static_path, templates
 
 
+def _build_content_security_policy() -> str:
+    """Assemble the CSP once at import time.
+
+    Clerk is allow-listed from a single source of truth: the dev instance host
+    (`*.clerk.accounts.dev`) plus, when a production instance is configured, the
+    custom Frontend API host derived from CLERK_ISSUER (e.g. clerk.scenesentry.com).
+    Without the production host here, Clerk's script/XHR/frames are blocked by CSP
+    under the custom domain.
+
+    `'unsafe-inline'`/`'unsafe-eval'` are intentionally retained: removing them
+    requires a nonce/hash refactor of inline scripts and Alpine.js, which is
+    deferred to hardening (SCE-38 fog), not launch-blocking.
+    """
+    clerk_hosts = ["https://*.clerk.accounts.dev"]
+    prod_host = settings.clerk_frontend_api_host
+    if prod_host and "clerk.accounts.dev" not in prod_host:
+        clerk_hosts.append(f"https://{prod_host}")
+    clerk_script = " ".join(clerk_hosts)
+    # Clerk XHR also hits shared telemetry/api domains; frames add Cloudflare Turnstile.
+    clerk_connect = " ".join([*clerk_hosts, "https://*.clerk.com", "https://*.clerk.dev", "https://clerk-telemetry.com"])
+    clerk_frame = " ".join([*clerk_hosts, "https://challenges.cloudflare.com"])
+
+    csp_parts = [
+        "default-src 'self'",
+        f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com {clerk_script} https://challenges.cloudflare.com",
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+        "img-src 'self' data: https: http:",
+        "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
+        f"connect-src 'self' {clerk_connect}",
+        f"frame-src {clerk_frame}",
+        "worker-src 'self' blob:",
+    ]
+    return "; ".join(csp_parts)
+
+
+_CONTENT_SECURITY_POLICY = _build_content_security_policy()
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: StarletteResponse = await call_next(request)
@@ -32,17 +70,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if settings.env == "production":
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-        csp_parts = [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
-            "img-src 'self' data: https: http:",
-            "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
-            "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.dev",
-            "frame-src https://*.clerk.accounts.dev https://challenges.cloudflare.com",
-            "worker-src 'self' blob:",
-        ]
-        response.headers["Content-Security-Policy"] = "; ".join(csp_parts)
+        response.headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
         return response
 
 

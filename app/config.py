@@ -129,6 +129,19 @@ class Settings(BaseSettings):
         return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
 
     @property
+    def clerk_frontend_api_host(self) -> str | None:
+        """Host of the Clerk Frontend API, derived from CLERK_ISSUER.
+
+        For a Clerk development instance this is a `*.clerk.accounts.dev` host;
+        for a production instance it is the custom FAPI domain (e.g.
+        `clerk.scenesentry.com`). Used to allow-list Clerk in the CSP so the
+        Clerk JS/XHR/frames load under the production custom domain.
+        """
+        if not self.clerk_issuer:
+            return None
+        return self.clerk_issuer.replace("https://", "").replace("http://", "").rstrip("/") or None
+
+    @property
     def allowed_hosts_list(self) -> list[str]:
         """Parsed TrustedHost allow-list; empty list means no restriction ('*')."""
         if not self.allowed_hosts or self.allowed_hosts.strip() == "*":
