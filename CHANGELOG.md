@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.5.0 (2026-07-21)
+
+### Feat
+
+- **config**: harden app configuration for production (SCE-45)
+
+### Fix
+
+- **security**: allow-list production Clerk host in CSP (SCE-49)
+
+### Refactor
+
+- **security**: robustify Clerk CSP host derivation + response-path tests (SCE-49)
+
 ## v2.4.0 (2026-06-21)
 
 ### Feat
