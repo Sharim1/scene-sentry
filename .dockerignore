@@ -1,0 +1,38 @@
+# Version control / CI
+.git
+.github
+
+# Secrets and local env (never bake into the image)
+.env
+.env.*
+
+# Python virtualenv and caches
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Node deps (reinstalled in the assets stage) and prebuilt output
+node_modules
+static/dist
+
+# Local databases / broker dumps
+*.db
+dump.rdb
+celerybeat-schedule
+celerybeat-schedule.*
+
+# Tests, docs, and design scratch — not needed at runtime
+tests
+docs
+temp_design_directory_for_reference
+
+# Coverage / misc
+coverage.xml
+htmlcov
+.coverage
+.DS_Store
