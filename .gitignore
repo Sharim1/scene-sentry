@@ -21,6 +21,9 @@ build/
 node_modules/
 static/dist/
 
+# FastAPI Cloud local app link (created by `fastapi deploy`)
+.fastapicloud/
+
 # Tool caches
 .ruff_cache/
 .mypy_cache/
