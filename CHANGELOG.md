@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.6.1 (2026-10-06)
+
+### Fix
+
+- **library**: sort newest release first and show release year on cards
+
 ## v2.6.0 (2026-10-06)
 
 ### Feat
