@@ -160,11 +160,6 @@
                         <span>{{ content.release_date[:4] }}</span>
                         {% endif %}
                     </div>
-                    {% if content.created_at %}
-                    <span class="text-[10px] text-white/40" title="Discovered: {{ content.created_at.strftime('%Y-%m-%d %H:%M') }}">
-                        {{ content.created_at | time_ago }}
-                    </span>
-                    {% endif %}
                 </div>
             </div>
         </div>

@@ -2,7 +2,7 @@
 <!-- Usage: include 'partials/_movie_card.html' with content=content, status=status, item=item -->
 
 {% set poster = content.poster_url or '' %}
-{% set year = content.release_date.year if content.release_date else '' %}
+{% set year = content.release_date[:4] if content.release_date else '' %}
 {% set type_label = 'TV Show' if content.content_type == 'tv_show' else content.content_type|title %}
 
 <div class="group relative"
@@ -75,12 +75,6 @@
                 <span class="text-xs text-white/60">{{ content.network }}</span>
                 {% else %}
                 <div></div>
-                {% endif %}
-                
-                {% if content.created_at %}
-                <span class="text-[10px] text-white/50" title="Discovered: {{ content.created_at.strftime('%Y-%m-%d %H:%M') }}">
-                    {{ content.created_at | time_ago }}
-                </span>
                 {% endif %}
             </div>
         </div>
