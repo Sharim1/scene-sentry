@@ -6,11 +6,11 @@
   "description": "Frontend build toolchain for Scene Sentry (Tailwind CSS + esbuild). No runtime app code lives here.",
   "scripts": {
     "build": "run-s build:css build:js",
-    "build:css": "tailwindcss -i ./static/css/tailwind.entry.css -o ./static/dist/tailwind.css --minify",
-    "build:js": "esbuild static/js/app.js --bundle --minify --format=iife --outfile=static/dist/app.js",
+    "build:css": "tailwindcss -i ./static/css/tailwind.entry.css -o ./static/assets/tailwind.css --minify",
+    "build:js": "esbuild static/js/app.js --bundle --minify --format=iife --outfile=static/assets/app.js",
     "dev": "run-p dev:css dev:js",
-    "dev:css": "tailwindcss -i ./static/css/tailwind.entry.css -o ./static/dist/tailwind.css --watch",
-    "dev:js": "esbuild static/js/app.js --bundle --format=iife --sourcemap --outfile=static/dist/app.js --watch"
+    "dev:css": "tailwindcss -i ./static/css/tailwind.entry.css -o ./static/assets/tailwind.css --watch",
+    "dev:js": "esbuild static/js/app.js --bundle --format=iife --sourcemap --outfile=static/assets/app.js --watch"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

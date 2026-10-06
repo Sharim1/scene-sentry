@@ -2,12 +2,17 @@
 Database configuration and session management
 """
 
+import base64
 import logging
+import os
+import tempfile
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
@@ -24,11 +29,42 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # block, then run an idempotent no-op upgrade. SQLite (dev/test) is single-writer
 # so it skips the lock. Value is an arbitrary, stable application-wide constant.
 _MIGRATION_ADVISORY_LOCK_KEY = 728914
+# FastAPI Cloud cold starts sometimes fail DNS to the Supabase pooler for a few
+# seconds; retry instead of crashing the replica (which leaves the previous
+# bundle serving).
+_DB_CONNECT_ATTEMPTS = 6
+_DB_CONNECT_BASE_DELAY_S = 2
+
+def tls_connect_args(cfg) -> dict:
+    """Write the configured base64 TLS material to a private dir and return libpq args.
+
+    Returns an empty dict when no TLS material is configured, so local
+    development and SQLite are unaffected. The directory is created with mode
+    0700 and each file with 0600; it is never removed, because the driver reads
+    the files on every new connection.
+    """
+    if not cfg.database_ssl_ca_b64:
+        return {}
+    tls_dir = Path(tempfile.mkdtemp(prefix="scene-sentry-db-tls-"))
+    args = {}
+    for name, value in (
+        ("sslrootcert", cfg.database_ssl_ca_b64),
+        ("sslcert", cfg.database_ssl_cert_b64),
+        ("sslkey", cfg.database_ssl_key_b64),
+    ):
+        path = tls_dir / name
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(base64.b64decode(value))
+        args[name] = str(path)
+    return args
+
 
 engine = create_engine(
     settings.database_url,
-    pool_size=10,
-    max_overflow=20,
+    connect_args=tls_connect_args(settings),
+    pool_size=3,
+    max_overflow=2,
     pool_pre_ping=True,
     pool_recycle=300,
     echo=False,
@@ -96,15 +132,36 @@ def init_db(drop_all: bool = False):
         drop_all: If True, drops all tables first, then rebuilds from migrations
             (development only).
     """
-    if engine.dialect.name == "postgresql":
-        with engine.connect() as lock_conn:
-            lock_conn.exec_driver_sql("SELECT pg_advisory_lock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,))
-            try:
-                _run_migrations(drop_all)
-            finally:
-                lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,))
-    else:
+    if engine.dialect.name != "postgresql":
         _run_migrations(drop_all)
+        return
+
+    last_error: OperationalError | None = None
+    for attempt in range(1, _DB_CONNECT_ATTEMPTS + 1):
+        try:
+            with engine.connect() as lock_conn:
+                lock_conn.exec_driver_sql(
+                    "SELECT pg_advisory_lock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,)
+                )
+                try:
+                    _run_migrations(drop_all)
+                finally:
+                    lock_conn.exec_driver_sql(
+                        "SELECT pg_advisory_unlock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,)
+                    )
+            return
+        except OperationalError as exc:
+            last_error = exc
+            engine.dispose()
+            logger.warning(
+                "Postgres unavailable on startup (attempt %s/%s)",
+                attempt,
+                _DB_CONNECT_ATTEMPTS,
+            )
+            if attempt < _DB_CONNECT_ATTEMPTS:
+                time.sleep(_DB_CONNECT_BASE_DELAY_S * attempt)
+    assert last_error is not None
+    raise last_error
 
 
 def _run_migrations(drop_all: bool = False):

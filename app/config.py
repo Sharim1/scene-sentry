@@ -23,6 +23,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql://scenesentry:scenesentry@localhost:5432/scenesentry"
+    # Optional TLS material for mutual TLS to the database, each base64-encoded
+    # PEM. Set all three together when the database requires client certificates.
+    database_ssl_ca_b64: str | None = None
+    database_ssl_cert_b64: str | None = None
+    database_ssl_key_b64: str | None = None
 
     # Clerk Auth
     clerk_secret_key: str | None = None
@@ -120,6 +125,16 @@ class Settings(BaseSettings):
             raise ValueError("SQLite is not supported in production; use Postgres with pgvector")
         if not self.session_secret or self.session_secret == self.secret_key:
             raise ValueError("SESSION_SECRET must be set and distinct from SECRET_KEY when ENV=production")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_database_tls(self) -> "Settings":
+        """Client-cert TLS needs the CA, the client certificate and the key together."""
+        tls = [self.database_ssl_ca_b64, self.database_ssl_cert_b64, self.database_ssl_key_b64]
+        if any(tls) and not all(tls):
+            raise ValueError(
+                "DATABASE_SSL_CA_B64, DATABASE_SSL_CERT_B64 and DATABASE_SSL_KEY_B64 must be set together"
+            )
         return self
 
     @property

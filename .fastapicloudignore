@@ -1,5 +1,4 @@
-# Un-ignore the frontend build so FastAPI Cloud uploads it.
-# `static/dist/` stays gitignored; `fastapi deploy` respects .gitignore unless
-# this file re-includes the built CSS/JS.
-!static/dist/
-!static/dist/**
+# FastAPI Cloud extra ignore/un-ignore rules (takes precedence over .gitignore).
+# Built CSS/JS live in static/assets/ (not dist/ — Cloud strips dist directories).
+!static/assets/
+!static/assets/**

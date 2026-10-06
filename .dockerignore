@@ -2,9 +2,16 @@
 .git
 .github
 
-# Secrets and local env (never bake into the image)
+# Secrets and local env (never bake into the image). Patterns are anchored to
+# the context root, so the **/ forms also catch nested copies such as deploy/oracle/.env.
 .env
 .env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+deploy
+ubuntu@*
 
 # Python virtualenv and caches
 .venv
@@ -16,9 +23,8 @@ __pycache__
 .ruff_cache
 .mypy_cache
 
-# Node deps (reinstalled in the assets stage) and prebuilt output
+# Node deps (reinstalled in the Dockerfile assets stage).
 node_modules
-static/dist
 
 # Local databases / broker dumps
 *.db

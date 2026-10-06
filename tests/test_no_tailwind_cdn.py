@@ -43,13 +43,13 @@ class TestTemplatesHaveNoCdn:
 
     def test_base_templates_use_compiled_assets(self):
         base = (TEMPLATES_DIR / "base.html").read_text(encoding="utf-8")
-        assert "dist/tailwind.css" in base
-        assert "dist/app.js" in base
+        assert "assets/tailwind.css" in base
+        assert "assets/app.js" in base
 
     def test_public_templates_use_compiled_css(self):
         for name in ("base_public.html", "index.html", "auth/login.html", "auth/register.html"):
             text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
-            assert "dist/tailwind.css" in text, f"{name} missing compiled Tailwind link"
+            assert "assets/tailwind.css" in text, f"{name} missing compiled Tailwind link"
 
 
 class TestCspExcludesCdn:

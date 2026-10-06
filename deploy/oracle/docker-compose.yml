@@ -1,0 +1,64 @@
+# Background tier for Scene Sentry on an OCI Always Free micro instance.
+# Web app runs on FastAPI Cloud; Postgres is Neon; this box runs Redis + Celery.
+# Build context is the repo root so the existing Dockerfile is reused.
+
+services:
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - "${REDIS_PASSWORD:?set REDIS_PASSWORD in deploy/oracle/.env}"
+      - --maxmemory
+      - 96mb
+      # Celery broker: evicting keys would silently drop queued tasks.
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_data:/data
+    # Intentionally no `ports:` — Redis is reachable only from containers on this compose network.
+    mem_limit: 128m
+    restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: scene-sentry:oracle
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=1
+    env_file: .env
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      redis:
+        condition: service_started
+    mem_limit: 384m
+    restart: unless-stopped
+    logging: *logging
+
+  # Exactly ONE beat instance — the schedule is a singleton. Never scale this service.
+  beat:
+    image: scene-sentry:oracle
+    command: celery -A app.celery_app beat --loglevel=info --schedule=/data/celerybeat-schedule
+    env_file: .env
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - beat_schedule:/data
+    depends_on:
+      redis:
+        condition: service_started
+    mem_limit: 160m
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  redis_data:
+  beat_schedule:
