@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.7.0 (2026-10-06)
+
+### Feat
+
+- **discovery**: give new movies a release date at intake
+
 ## v2.6.1 (2026-10-06)
 
 ### Fix
