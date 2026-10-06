@@ -8,18 +8,20 @@ attached_assets/
 .cursor/
 temp_design_directory_for_reference/
 
-# Python build artifacts
+# Python build artifacts (rooted so they do not swallow static/assets/)
 *.egg-info/
-dist/
-build/
+/dist/
+/build/
 *.egg
 
 # Virtual environment
 .venv/
 
-# Node / frontend build
+# Node
 node_modules/
-static/dist/
+
+# FastAPI Cloud local app link (created by `fastapi deploy`)
+.fastapicloud/
 
 # Tool caches
 .ruff_cache/
@@ -39,3 +41,4 @@ celerybeat-schedule
 celerybeat-schedule.db
 celerybeat-schedule.dir
 celerybeat-schedule.bak
+.neon

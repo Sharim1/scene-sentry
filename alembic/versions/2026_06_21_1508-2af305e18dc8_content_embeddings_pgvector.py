@@ -27,7 +27,17 @@ def upgrade() -> None:
     is_postgres = bind.dialect.name == "postgresql"
 
     if is_postgres:
-        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        try:
+            op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception as exc:
+            raise RuntimeError(
+                "PostgreSQL requires the pgvector extension for content embeddings (SCE-33), "
+                "but it is not installed on this server. Fix options:\n"
+                "  • Docker (recommended): docker compose up -d postgres\n"
+                "    then set DATABASE_URL=postgresql://scenesentry:scenesentry@localhost:5433/scenesentry\n"
+                "  • Homebrew: brew install pgvector (must match your Postgres major version)\n"
+                "  • Quick local dev without similarity search: DATABASE_URL=sqlite:///scenesentry.db"
+            ) from exc
     op.add_column("content", sa.Column("embedding", Vector(EMBEDDING_DIM), nullable=True))
     op.add_column("content", sa.Column("embedding_hash", sa.String(length=64), nullable=True))
     op.add_column(

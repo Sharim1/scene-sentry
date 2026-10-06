@@ -8,7 +8,7 @@
 # but the image can also serve the web locally (default CMD) so docker-compose
 # can bring up the full stack.
 
-# ---- Stage 1: build frontend assets (static/dist/*) ----
+# ---- Stage 1: build frontend assets (static/assets/*) ----
 FROM node:20-slim AS assets
 WORKDIR /build
 COPY package.json package-lock.json ./
@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Copy the source, add the built assets, then install the project itself.
 COPY . .
-COPY --from=assets /build/static/dist ./static/dist
+COPY --from=assets /build/static/assets ./static/assets
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 

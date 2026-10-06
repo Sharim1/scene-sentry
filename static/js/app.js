@@ -2,7 +2,7 @@
  * Scene Sentry - Client-side JavaScript (entry point)
  *
  * Source modules live in static/js/src/*. This entry wires them together and is
- * bundled into static/dist/app.js by esbuild (see package.json). Modules that
+ * bundled into static/assets/app.js by esbuild (see package.json). Modules that
  * register Alpine components / global helpers do so via `window.*` on import.
  */
 

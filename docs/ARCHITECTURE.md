@@ -218,9 +218,9 @@ Incoming request →
 Three core FastAPI dependencies used across all routes:
 
 ```python
-DbDep          = Annotated[Session, Depends(get_db)]         # SQLAlchemy session
-OptionalUserDep = Annotated[User | None, Depends(...)]       # current user, may be None
-RequireAuthDep  = Annotated[User, Depends(...)]              # 401 if not authenticated
+DbDep = Annotated[Session, Depends(get_db)]  # SQLAlchemy session
+OptionalUserDep = Annotated[User | None, Depends(...)]  # current user, may be None
+RequireAuthDep = Annotated[User, Depends(...)]  # 401 if not authenticated
 ```
 
 ---

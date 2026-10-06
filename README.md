@@ -13,7 +13,7 @@ AI-powered cinema intelligence platform. Get personalized content rankings, trac
 ## Tech Stack
 
 - **Backend**: FastAPI + Python 3.11+
-- **Database**: SQLAlchemy ORM (SQLite for dev, PostgreSQL for production)
+- **Database**: SQLAlchemy ORM + Alembic migrations (SQLite or PostgreSQL; pgvector required on Postgres for embeddings)
 - **Background Tasks**: Celery + Redis (periodic jobs via Celery Beat)
 - **AI**: LangChain + LangGraph + Google Gemini (content re-ranking agent)
 - **Content APIs**: Multi-provider (TVMaze, TVDB, OMDb, TMDb) with deduplication
@@ -74,15 +74,15 @@ npm run build      # outputs static/dist/tailwind.css + static/dist/app.js
 5. Set up environment variables:
 ```bash
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env with your API keys and DATABASE_URL (see Database below)
 ```
 
-6. Start Redis:
+6. Start backing services:
 ```bash
-# Homebrew
-brew install redis && redis-server
+# Postgres (pgvector) + Redis — recommended for full feature parity
+docker compose up -d postgres redis
 
-# Or Docker
+# Or Redis only if you use SQLite in .env:
 docker run -d -p 6379:6379 redis:7-alpine
 ```
 
@@ -99,6 +99,23 @@ uv run celery -A app.celery_app beat --loglevel=info
 ```
 
 8. Open http://localhost:8000 in your browser
+
+### Database
+
+The app runs Alembic migrations on startup. Choose one setup:
+
+| Setup | `DATABASE_URL` | Embeddings / similarity |
+|-------|----------------|-------------------------|
+| **Docker Postgres (recommended)** | `postgresql://scenesentry:scenesentry@localhost:5433/scenesentry` | Full (pgvector included) |
+| **SQLite (quickest)** | `sqlite:///scenesentry.db` | Columns only — no vector search |
+| **Local Homebrew Postgres** | your existing URL | Requires `brew install pgvector` for your Postgres version |
+
+```bash
+# Recommended: pgvector-enabled Postgres (port 5433 avoids clashing with Homebrew Postgres on 5432)
+docker compose up -d postgres
+```
+
+If startup fails with `could not open extension control file ... vector.control`, you are pointing at Postgres **without** pgvector — switch to the Docker URL above or SQLite.
 
 ### Content Provider API Keys
 
@@ -137,10 +154,12 @@ pytest
 ```
 
 ### Database Migrations
-The app uses SQLAlchemy with automatic table creation. For schema changes, you may need to recreate the database during development:
+Schema is managed by Alembic (`alembic/versions/`). Migrations run automatically on app startup via `init_db()`.
+
 ```bash
-rm scenesentry.db
-python run.py
+# Manual migration commands (optional)
+uv run alembic upgrade head
+uv run alembic downgrade -1
 ```
 
 ### Tailwind CSS
