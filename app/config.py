@@ -132,9 +132,7 @@ class Settings(BaseSettings):
         """Client-cert TLS needs the CA, the client certificate and the key together."""
         tls = [self.database_ssl_ca_b64, self.database_ssl_cert_b64, self.database_ssl_key_b64]
         if any(tls) and not all(tls):
-            raise ValueError(
-                "DATABASE_SSL_CA_B64, DATABASE_SSL_CERT_B64 and DATABASE_SSL_KEY_B64 must be set together"
-            )
+            raise ValueError("DATABASE_SSL_CA_B64, DATABASE_SSL_CERT_B64 and DATABASE_SSL_KEY_B64 must be set together")
         return self
 
     @property

@@ -35,6 +35,7 @@ _MIGRATION_ADVISORY_LOCK_KEY = 728914
 _DB_CONNECT_ATTEMPTS = 6
 _DB_CONNECT_BASE_DELAY_S = 2
 
+
 def tls_connect_args(cfg) -> dict:
     """Write the configured base64 TLS material to a private dir and return libpq args.
 
@@ -140,15 +141,11 @@ def init_db(drop_all: bool = False):
     for attempt in range(1, _DB_CONNECT_ATTEMPTS + 1):
         try:
             with engine.connect() as lock_conn:
-                lock_conn.exec_driver_sql(
-                    "SELECT pg_advisory_lock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,)
-                )
+                lock_conn.exec_driver_sql("SELECT pg_advisory_lock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,))
                 try:
                     _run_migrations(drop_all)
                 finally:
-                    lock_conn.exec_driver_sql(
-                        "SELECT pg_advisory_unlock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,)
-                    )
+                    lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_MIGRATION_ADVISORY_LOCK_KEY,))
             return
         except OperationalError as exc:
             last_error = exc

@@ -3,6 +3,7 @@
 import base64
 import os
 import stat
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -29,7 +30,7 @@ def test_tls_material_written_to_private_files():
     args = tls_connect_args(cfg)
 
     assert set(args) == {"sslrootcert", "sslcert", "sslkey"}
-    contents = {name: open(path, "rb").read() for name, path in args.items()}
+    contents = {name: Path(path).read_bytes() for name, path in args.items()}
     assert contents == {"sslrootcert": b"CA PEM", "sslcert": b"CERT PEM", "sslkey": b"KEY PEM"}
     for path in args.values():
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
