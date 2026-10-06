@@ -268,7 +268,8 @@ class ContentRepository:
         elif filter_by == "recent":
             query = query.order_by(Content.created_at.desc())
         else:
-            query = query.order_by(Content.title)
+            # Newest release first; titles without a release date go last.
+            query = query.order_by(Content.release_date.desc().nullslast(), Content.id.desc())
         return query
 
     def _create_from_api(self, data: dict[str, Any], content_type: str) -> Content:
