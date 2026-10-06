@@ -229,6 +229,29 @@ class ContentDiscoveryService:
         shows = self._discover("tv_show", pages=pages, provider_filter=provider_name)
         return {"movies": movies, "tv_shows": shows}
 
+    def _fill_new_movie_release_dates(self, items: list[NormalizedContent]) -> None:
+        """Give new movies a release date and poster before they are saved.
+
+        TVDB's movie list omits the date, so a movie saved straight from the list
+        has no date and sorts to the end. Only new titles are looked up; titles
+        already in the catalogue are left to the enrichment job.
+        """
+        tvdb = next((p for p in self.providers if p.name == "tvdb" and hasattr(p, "get_movie_release")), None)
+        if tvdb is None:
+            return
+        for nc in items:
+            if nc.content_type != "movie" or nc.release_date or not nc.tvdb_id:
+                continue
+            if self.repo.get_by_tvdb_id(nc.tvdb_id):
+                continue
+            date, poster = tvdb.get_movie_release(nc.tvdb_id)
+            if date:
+                nc.release_date = date
+                if date[:4].isdigit():
+                    nc.year = int(date[:4])
+            if poster and not nc.poster_url:
+                nc.poster_url = poster
+
     def _discover(
         self,
         content_type: str,
@@ -253,6 +276,7 @@ class ContentDiscoveryService:
 
         deduped = _deduplicate(all_items)
         to_save = deduped[:limit] if limit > 0 else deduped
+        self._fill_new_movie_release_dates(to_save)
         saved = self.repo.bulk_upsert_normalized(to_save)
         self.db.commit()
         logger.info(
