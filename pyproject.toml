@@ -7,7 +7,7 @@ include = ["app*"]
 
 [project]
 name = "scenesentry"
-version = "2.5.0"
+version = "2.6.0"
 description = "AI-powered cinema intelligence platform"
 requires-python = ">=3.11"
 dependencies = [
@@ -79,7 +79,7 @@ entrypoint = "app.main:app"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "2.5.0"
+version = "2.6.0"
 version_files = ["pyproject.toml:^version"]
 tag_format = "v$version"
 update_changelog_on_bump = true

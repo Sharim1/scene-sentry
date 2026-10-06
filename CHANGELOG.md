@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## v2.6.0 (2026-10-06)
+
+### Feat
+
+- **db**: mutual TLS to Postgres and production hardening
+
+### Fix
+
+- **ci**: pin test DB driver to psycopg2 and satisfy lint
+
 ## v2.5.0 (2026-07-21)
 
 ### Feat
