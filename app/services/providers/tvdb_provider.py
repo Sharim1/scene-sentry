@@ -212,6 +212,22 @@ class TVDBProvider(ContentProvider):
             logger.warning("TVDB discover_movies failed: %s", e)
             return []
 
+    def get_movie_release(self, tvdb_id: int) -> tuple[str | None, str | None]:
+        """Release date and poster for a movie. The list endpoint omits the date, so ask the detail endpoint."""
+        if not self.client:
+            return None, None
+        try:
+            raw = self.client.get_movie_extended(int(tvdb_id))
+        except Exception as e:
+            logger.debug("TVDB get_movie_release(%s) failed: %s", tvdb_id, e)
+            return None, None
+        item = raw.get("data", raw) if isinstance(raw, dict) else {}
+        first = item.get("first_release") or {}
+        date = first.get("date") if isinstance(first, dict) else None
+        if not date and item.get("year"):
+            date = str(item["year"])
+        return (str(date)[:10] if date else None), _poster_url(item)
+
     def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
         if not self.client:
             return []
