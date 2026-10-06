@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # Content provider feature flags (provider is active only when enabled AND key is present)
     tmdb_enabled: bool = False  # Requires commercial license for revenue projects
     tvdb_enabled: bool = True
-    omdb_enabled: bool = True
+    omdb_enabled: bool = False  # not licensed for commercial use; enable only with an approved key
     tvmaze_enabled: bool = True
 
     # Email delivery (Mailgun primary, Resend fallback)
