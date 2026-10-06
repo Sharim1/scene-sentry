@@ -78,6 +78,7 @@ dev = [
 entrypoint = "app.main:app"
 
 [tool.commitizen]
+pre_bump_hooks = ["uv lock", "git add uv.lock"]
 name = "cz_conventional_commits"
 version = "2.7.0"
 version_files = ["pyproject.toml:^version"]
