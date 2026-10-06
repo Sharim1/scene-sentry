@@ -173,6 +173,7 @@ This creates a new file whose `down_revision` is auto-set to the current head. *
 
 Revises: 97226edff71a   # the SCE-5 rename head — auto-filled by `alembic revision`
 """
+
 import sqlalchemy as sa
 from alembic import op
 from pgvector.sqlalchemy import Vector
@@ -290,7 +291,7 @@ class EmbeddingService:
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
         self._embedder = GoogleGenerativeAIEmbeddings(
-            model=settings.embedding_model,           # "models/text-embedding-004"
+            model=settings.embedding_model,  # "models/text-embedding-004"
             google_api_key=settings.gemini_api_key,
             task_type="RETRIEVAL_DOCUMENT",
         )
@@ -383,11 +384,7 @@ class EmbeddingRepository:
             query = query.filter(Content.id != exclude_id)
         if content_type:
             query = query.filter(Content.content_type == content_type)
-        return (
-            query.order_by(Content.embedding.cosine_distance(embedding))
-            .limit(limit)
-            .all()
-        )
+        return query.order_by(Content.embedding.cosine_distance(embedding)).limit(limit).all()
 ```
 
 ### Staleness trigger — `app/repositories/content_repo.py`
@@ -515,9 +512,7 @@ def get_similar_content(
     if content.embedding is None:
         return SimilarContentResponse(source_id=content_id, results=[])
 
-    neighbours = EmbeddingRepository(db).find_similar(
-        content.embedding, limit=limit, exclude_id=content_id
-    )
+    neighbours = EmbeddingRepository(db).find_similar(content.embedding, limit=limit, exclude_id=content_id)
     return SimilarContentResponse(
         source_id=content_id,
         results=[
@@ -548,6 +543,7 @@ Add a deterministic fake embedder to `tests/conftest.py`:
 @pytest.fixture()
 def fake_embedder():
     """Deterministic stand-in for GoogleGenerativeAIEmbeddings — no network."""
+
     class FakeEmbedder:
         def __init__(self):
             self.embed_calls = 0

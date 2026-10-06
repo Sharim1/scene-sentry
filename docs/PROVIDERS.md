@@ -41,7 +41,7 @@ The platform-agnostic object that all providers return:
 @dataclass
 class NormalizedContent:
     title: str
-    content_type: str           # "movie" or "tv_show"
+    content_type: str  # "movie" or "tv_show"
     year: int | None
     description: str | None
     poster_url: str | None
@@ -50,7 +50,7 @@ class NormalizedContent:
     genres: list[str]
     rating: float | None
     runtime_minutes: int | None
-    status: str | None          # "Ended", "Running", etc.
+    status: str | None  # "Ended", "Running", etc.
     language: str | None
     # External IDs — used for deduplication
     imdb_id: str | None
@@ -58,8 +58,8 @@ class NormalizedContent:
     tvdb_id: str | None
     tvmaze_id: str | None
     # Computed for dedup fallback
-    dedup_key: str              # f"{title.lower()}_{year}_{content_type}"
-    source: str                 # provider name, e.g. "tmdb"
+    dedup_key: str  # f"{title.lower()}_{year}_{content_type}"
+    source: str  # provider name, e.g. "tmdb"
 ```
 
 ---
