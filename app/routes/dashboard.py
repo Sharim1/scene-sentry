@@ -38,12 +38,16 @@ ROW_SIZE = 12
 
 
 def _trending_or_fallback(repo: ContentRepository, content_type: str) -> list:
-    """Titles most added to a library this week; falls back to top rated when
-    the app has too little library activity yet to produce a real trend."""
+    """Titles most added to a library this week; falls back to top rated, then
+    to most recent, when the app lacks the signal for a real trend yet (e.g.
+    movies in this catalog currently have no rating data at all)."""
     trending = repo.get_trending_by_library_adds(content_type=content_type, limit=ROW_SIZE)
     if trending:
         return trending
-    return repo.get_top_rated(content_type=content_type, limit=ROW_SIZE)
+    top_rated = repo.get_top_rated(content_type=content_type, limit=ROW_SIZE)
+    if top_rated:
+        return top_rated
+    return repo.get_recent(content_type=content_type, limit=ROW_SIZE)
 
 
 def _pick_spotlight(new_this_week: list, top_rated: list):
