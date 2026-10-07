@@ -355,11 +355,45 @@ h1, h2, h3, h4, h5, h6 {
   background-color: hsl(var(--card));
 }
 
-/* Sidebar navigation */
-.sidebar-nav-item {
+/* Standalone filter chip (type/sort/genre filters that aren't one .tabs strip) */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  background-color: transparent;
+  border: 1px solid hsl(0 0% 100% / 0.1);
+  border-radius: 999px;
+  transition: all 0.2s ease;
+}
+
+.pill:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(0 0% 100% / 0.05);
+}
+
+.pill.active {
+  color: hsl(var(--primary-foreground));
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+
+/* Hide the scrollbar on horizontally-scrolling category rows */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Top nav (desktop: icon + label; mobile: icon-only — same menu, no drawer to open) */
+.topnav-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   color: hsl(var(--muted-foreground));
@@ -368,25 +402,37 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
 }
 
-.sidebar-nav-item:hover {
+.topnav-item:hover {
   color: hsl(var(--foreground));
   background-color: hsl(0 0% 100% / 0.05);
 }
 
-.sidebar-nav-item.active {
+.topnav-item.active {
   color: hsl(var(--primary));
   background-color: hsl(var(--primary) / 0.1);
   font-weight: 500;
 }
 
-.sidebar-nav-item.active::after {
-  content: '';
-  margin-left: auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: hsl(var(--primary));
-  box-shadow: 0 0 8px hsl(var(--primary));
+.topnav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  color: hsl(var(--muted-foreground));
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.topnav-icon:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(0 0% 100% / 0.05);
+}
+
+.topnav-icon.active {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
 }
 
 /* Toast/Alert styles */

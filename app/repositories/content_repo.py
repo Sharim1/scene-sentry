@@ -8,7 +8,7 @@ title+year matching.
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import or_
@@ -90,6 +90,83 @@ class ContentRepository:
         query = self.db.query(Content).filter(Content.content_type == "tv_show")
         query = self._apply_filters(query, filter_by, search)
         return query.offset(offset).limit(limit).all()
+
+    # ---- Home page sections ---- #
+
+    def get_recent(self, content_type: str | None = None, limit: int = 12) -> list[Content]:
+        """Most recently released titles that have a release date. Used for "New This Week"."""
+        query = self.db.query(Content).filter(Content.release_date.isnot(None))
+        if content_type:
+            query = query.filter(Content.content_type == content_type)
+        return query.order_by(Content.release_date.desc()).limit(limit).all()
+
+    def get_top_rated(self, content_type: str | None = None, limit: int = 12) -> list[Content]:
+        """Highest-rated titles in the catalog."""
+        query = self.db.query(Content).filter(Content.rating.isnot(None))
+        if content_type:
+            query = query.filter(Content.content_type == content_type)
+        return query.order_by(Content.rating.desc()).limit(limit).all()
+
+    def get_coming_soon(self, content_type: str | None = None, limit: int = 12) -> list[Content]:
+        """Titles with a release date after today, soonest first."""
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        query = self.db.query(Content).filter(Content.release_date > today)
+        if content_type:
+            query = query.filter(Content.content_type == content_type)
+        return query.order_by(Content.release_date.asc()).limit(limit).all()
+
+    def get_trending_by_library_adds(
+        self, content_type: str | None = None, days: int = 7, limit: int = 12
+    ) -> list[Content]:
+        """Titles most added to any user's library in the last `days` days."""
+        from sqlalchemy import func
+
+        from app.models import LibraryItem
+
+        query = (
+            self.db.query(Content)
+            .join(LibraryItem)
+            .filter(LibraryItem.added_at >= datetime.now(UTC) - timedelta(days=days))
+        )
+        if content_type:
+            query = query.filter(Content.content_type == content_type)
+        return query.group_by(Content.id).order_by(func.count(LibraryItem.id).desc()).limit(limit).all()
+
+    def browse(
+        self,
+        query_str: str | None = None,
+        content_type: str | None = None,
+        genre: str | None = None,
+        sort: str = "relevance",
+        limit: int = 40,
+        offset: int = 0,
+    ) -> tuple[list[Content], int]:
+        """Unified search/browse for the Search Results page. Returns (results, total_count)."""
+        q = self.db.query(Content)
+        if query_str:
+            q = q.filter(
+                or_(
+                    Content.title.ilike(f"%{query_str}%"),
+                    Content.description.ilike(f"%{query_str}%"),
+                )
+            )
+        if content_type and content_type != "all":
+            q = q.filter(Content.content_type == content_type)
+        if genre:
+            q = q.filter(Content.genres.ilike(f'%"{genre}"%'))
+
+        total = q.count()
+
+        if sort == "top_rated":
+            q = q.order_by(Content.rating.desc().nullslast())
+        elif sort == "recent":
+            q = q.order_by(Content.release_date.desc().nullslast())
+        elif query_str:
+            q = q.order_by(Content.title)
+        else:
+            q = q.order_by(Content.release_date.desc().nullslast())
+
+        return q.offset(offset).limit(limit).all(), total
 
     def count(self, content_type: str | None = None) -> int:
         query = self.db.query(Content)

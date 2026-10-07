@@ -1,5 +1,5 @@
 """
-Content routes for Movies and TV Shows
+Content routes: the unified search/browse page and content detail pages.
 """
 
 import json as _json
@@ -13,7 +13,6 @@ from app.dependencies import DbDep, OptionalUserDep, login_redirect
 from app.repositories.content_repo import ContentRepository
 from app.repositories.episode_repo import EpisodeRepository
 from app.repositories.library_repo import LibraryRepository
-from app.repositories.ranking_repo import RankingRepository
 from app.services.library_service import LibraryService
 
 logger = logging.getLogger(__name__)
@@ -22,101 +21,45 @@ router = APIRouter(tags=["content"])
 PER_PAGE = 40
 
 
-@router.get("/movies", response_class=HTMLResponse)
-def movies_page(
+@router.get("/search", response_class=HTMLResponse)
+def search_page(
     request: Request,
     user: OptionalUserDep,
     db: DbDep,
-    filter: Annotated[str, Query()] = "all",
     q: Annotated[str | None, Query()] = None,
+    type: Annotated[str, Query()] = "all",
+    genre: Annotated[str | None, Query()] = None,
+    sort: Annotated[str, Query()] = "relevance",
     page: Annotated[int, Query(ge=1)] = 1,
 ):
+    """The full catalog, reached only by searching, a genre shortcut, or a "See all" link.
+
+    There is no standalone browse page for movies or TV shows — this page covers both.
+    """
     from app.templates import templates
 
     if not user:
         return login_redirect(request)
 
     repo = ContentRepository(db)
-    total = repo.count("movie")
-
-    if q:
-        movies = repo.search(q, content_type="movie", limit=PER_PAGE)
-        total = len(movies)
-    else:
-        ranking_repo = RankingRepository(db)
-        ranked = ranking_repo.get_ranked_content(user.id, content_type="movie", limit=PER_PAGE)
-        if ranked and ranked[0][1] is not None:
-            movies = [r[0] for r in ranked]
-        else:
-            offset = (page - 1) * PER_PAGE
-            movies = repo.get_movies(filter_by=filter, search=q, limit=PER_PAGE, offset=offset)
-
+    offset = (page - 1) * PER_PAGE
+    results, total = repo.browse(query_str=q, content_type=type, genre=genre, sort=sort, limit=PER_PAGE, offset=offset)
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
 
     lib_repo = LibraryRepository(db)
-    library_items = lib_repo.get_by_user(user.id)
-    library_status = {item.content_id: item.status.value for item in library_items}
+    library_items_map = {item.content_id: item for item in lib_repo.get_by_user(user.id)}
 
     return templates.TemplateResponse(
-        "movies.html",
+        "search_results.html",
         {
             "request": request,
             "user": user,
-            "movies": movies,
-            "current_filter": filter,
-            "search_query": q,
-            "library_status": library_status,
-            "page": page,
-            "total_pages": total_pages,
-            "total_count": total,
-        },
-    )
-
-
-@router.get("/tv-shows", response_class=HTMLResponse)
-def tv_shows_page(
-    request: Request,
-    user: OptionalUserDep,
-    db: DbDep,
-    filter: Annotated[str, Query()] = "all",
-    q: Annotated[str | None, Query()] = None,
-    page: Annotated[int, Query(ge=1)] = 1,
-):
-    from app.templates import templates
-
-    if not user:
-        return login_redirect(request)
-
-    repo = ContentRepository(db)
-    total = repo.count("tv_show")
-
-    if q:
-        tv_shows = repo.search(q, content_type="tv_show", limit=PER_PAGE)
-        total = len(tv_shows)
-    else:
-        ranking_repo = RankingRepository(db)
-        ranked = ranking_repo.get_ranked_content(user.id, content_type="tv_show", limit=PER_PAGE)
-        if ranked and ranked[0][1] is not None:
-            tv_shows = [r[0] for r in ranked]
-        else:
-            offset = (page - 1) * PER_PAGE
-            tv_shows = repo.get_tv_shows(filter_by=filter, search=q, limit=PER_PAGE, offset=offset)
-
-    total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
-
-    lib_repo = LibraryRepository(db)
-    library_items = lib_repo.get_by_user(user.id)
-    library_status = {item.content_id: item.status.value for item in library_items}
-
-    return templates.TemplateResponse(
-        "tv_shows.html",
-        {
-            "request": request,
-            "user": user,
-            "tv_shows": tv_shows,
-            "current_filter": filter,
-            "search_query": q,
-            "library_status": library_status,
+            "results": results,
+            "search_query": q or "",
+            "current_type": type,
+            "current_genre": genre or "",
+            "current_sort": sort,
+            "library_items_map": library_items_map,
             "page": page,
             "total_pages": total_pages,
             "total_count": total,
@@ -143,12 +86,12 @@ def add_to_library(
     else:
         svc.add(user.id, content_id, status)
 
-    referer = request.headers.get("referer", "/movies")
+    referer = request.headers.get("referer", "/dashboard")
     if not referer.startswith("/"):
         from urllib.parse import urlparse
 
         parsed = urlparse(referer)
-        referer = parsed.path or "/movies"
+        referer = parsed.path or "/dashboard"
     return RedirectResponse(url=referer, status_code=303)
 
 
@@ -166,7 +109,7 @@ def content_detail(
 
     content = ContentRepository(db).get_by_id(content_id)
     if not content:
-        return RedirectResponse(url="/movies", status_code=303)
+        return RedirectResponse(url="/dashboard", status_code=303)
 
     library_item = LibraryRepository(db).get_by_user_and_content(user.id, content_id)
 

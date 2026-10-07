@@ -58,88 +58,128 @@
     {% block head %}{% endblock %}
 </head>
 <body class="bg-background text-foreground font-sans antialiased" data-authenticated="{{ 'true' if user else 'false' }}" x-data="{ mobileMenuOpen: false, globalSearchOpen: false }">
-    <div class="min-h-screen flex overflow-hidden">
-        
-        <!-- Desktop Sidebar - Fixed structure to prevent profile scrolling -->
-        <aside class="hidden md:flex w-64 flex-col border-r border-white/5 bg-sidebar fixed top-0 left-0 h-screen">
-            <!-- Logo Section (Fixed at top) -->
-            <div class="flex-shrink-0 p-4">
-                <div class="flex items-center gap-2 px-2">
-                    <img src="{{ static_url('images/logo.svg') }}" alt="Scene Sentry" class="w-8 h-8">
-                    <span class="font-display font-bold text-xl tracking-tight">Scene Sentry</span>
+    <div class="min-h-screen flex flex-col">
+
+        {% if user %}
+        <!-- Top Nav - menu stays directly visible, never behind an extra tap to open -->
+        <header class="sticky top-0 z-50 h-16 border-b border-white/5 bg-background/80 backdrop-blur-xl">
+            <div class="h-full px-4 md:px-6 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-6 min-w-0">
+                    <a href="/dashboard" class="flex items-center gap-2 flex-shrink-0">
+                        <img src="{{ static_url('images/logo.svg') }}" alt="Scene Sentry" class="w-8 h-8">
+                        <span class="hidden sm:inline font-display font-bold text-lg tracking-tight">Scene Sentry</span>
+                    </a>
+                    <!-- Desktop: full labeled nav -->
+                    <nav class="hidden md:flex items-center gap-1">
+                        <a href="/dashboard" class="topnav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+                            <i data-lucide="home" class="w-4 h-4"></i>
+                            <span>Home</span>
+                        </a>
+                        <a href="/gossip" class="topnav-item {% if '/gossip' in request.url.path %}active{% endif %}">
+                            <i data-lucide="flame" class="w-4 h-4"></i>
+                            <span>Gossip Feed</span>
+                        </a>
+                        <a href="/library" class="topnav-item {% if request.url.path == '/library' %}active{% endif %}">
+                            <i data-lucide="library" class="w-4 h-4"></i>
+                            <span>My Library</span>
+                        </a>
+                        <a href="/reminders" class="topnav-item {% if '/reminders' in request.url.path %}active{% endif %}">
+                            <i data-lucide="bell" class="w-4 h-4"></i>
+                            <span>Reminders</span>
+                        </a>
+                    </nav>
+                    <!-- Mobile: icon-only nav, no drawer to open -->
+                    <nav class="flex md:hidden items-center gap-1">
+                        <a href="/dashboard" class="topnav-icon {% if request.url.path == '/dashboard' %}active{% endif %}" title="Home" aria-label="Home">
+                            <i data-lucide="home" class="w-5 h-5"></i>
+                        </a>
+                        <a href="/gossip" class="topnav-icon {% if '/gossip' in request.url.path %}active{% endif %}" title="Gossip Feed" aria-label="Gossip Feed">
+                            <i data-lucide="flame" class="w-5 h-5"></i>
+                        </a>
+                        <a href="/library" class="topnav-icon {% if request.url.path == '/library' %}active{% endif %}" title="My Library" aria-label="My Library">
+                            <i data-lucide="library" class="w-5 h-5"></i>
+                        </a>
+                        <a href="/reminders" class="topnav-icon {% if '/reminders' in request.url.path %}active{% endif %}" title="Reminders" aria-label="Reminders">
+                            <i data-lucide="bell" class="w-5 h-5"></i>
+                        </a>
+                    </nav>
                 </div>
-            </div>
-            
-            <!-- Navigation Section (Scrollable if needed) -->
-            <nav class="flex-1 overflow-y-auto px-4 pb-4">
-                <div class="text-xs font-medium text-muted-foreground px-3 mb-2 uppercase tracking-wider">Menu</div>
-                
-                <div class="flex flex-col gap-1">
-                    <a href="/dashboard" class="sidebar-nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
-                        <i data-lucide="home" class="w-5 h-5"></i>
-                        <span>Home</span>
+
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <button type="button" @click="globalSearchOpen = true; $nextTick(() => { const el = document.getElementById('global-search-q'); if (el) el.focus(); })" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Search catalog" title="Search catalog">
+                        <i data-lucide="search" class="w-5 h-5 text-muted-foreground"></i>
+                    </button>
+                    <div class="relative" x-data="notificationBell()" x-init="init()" @keydown.escape.window="open = false">
+                        <button @click="toggle()" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Notifications">
+                            <i data-lucide="bell" class="w-5 h-5 text-muted-foreground"></i>
+                            <span x-show="unreadCount > 0"
+                                  x-text="unreadCount > 9 ? '9+' : unreadCount"
+                                  x-cloak
+                                  class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white px-1 shadow-lg shadow-accent/30">
+                            </span>
+                        </button>
+
+                        <!-- Dropdown -->
+                        <div x-show="open" x-cloak
+                             x-transition:enter="transition ease-out duration-150"
+                             x-transition:enter-start="opacity-0 scale-95 -translate-y-1"
+                             x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+                             x-transition:leave="transition ease-in duration-100"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             @click.away="open = false"
+                             class="absolute max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto right-0 mt-2 w-80 max-h-[28rem] bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[70]">
+                            <!-- Header -->
+                            <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                                <h3 class="text-sm font-semibold">Notifications</h3>
+                                <button x-show="unreadCount > 0" @click="markAllRead()" class="text-xs text-primary hover:underline">Mark all read</button>
+                            </div>
+                            <!-- List -->
+                            <div class="overflow-y-auto max-h-[22rem] divide-y divide-white/5">
+                                <template x-if="notifications.length === 0">
+                                    <div class="px-4 py-8 text-center text-sm text-muted-foreground">
+                                        <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+                                        <p>No notifications yet</p>
+                                    </div>
+                                </template>
+                                <template x-for="n in notifications" :key="n.id">
+                                    <button @click="clickNotification(n)"
+                                            class="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors flex items-start gap-3"
+                                            :class="{ 'bg-primary/5': !n.is_read }">
+                                        <div class="flex-shrink-0 mt-0.5 w-2 h-2 rounded-full"
+                                             :class="n.is_read ? 'bg-transparent' : 'bg-primary'"></div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium truncate" :class="n.is_read ? 'text-muted-foreground' : 'text-foreground'" x-text="n.title"></p>
+                                            <p class="text-xs text-muted-foreground line-clamp-2 mt-0.5" x-text="n.body"></p>
+                                            <p class="text-[10px] text-muted-foreground/60 mt-1" x-text="timeAgo(n.created_at)"></p>
+                                        </div>
+                                    </button>
+                                </template>
+                            </div>
+                            <!-- Footer -->
+                            <div class="border-t border-white/5 px-4 py-2">
+                                <a href="/reminders" class="text-xs text-primary hover:underline">Reminders</a>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="/settings" class="p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Settings" title="Settings">
+                        <i data-lucide="settings" class="w-5 h-5 text-muted-foreground"></i>
                     </a>
-                    
-                    <a href="/movies" class="sidebar-nav-item {% if '/movies' in request.url.path %}active{% endif %}">
-                        <i data-lucide="film" class="w-5 h-5"></i>
-                        <span>Movies</span>
-                    </a>
-                    
-                    <a href="/tv-shows" class="sidebar-nav-item {% if '/tv-shows' in request.url.path %}active{% endif %}">
-                        <i data-lucide="tv" class="w-5 h-5"></i>
-                        <span>TV Shows</span>
-                    </a>
-                    
-                    <a href="/gossip" class="sidebar-nav-item {% if '/gossip' in request.url.path %}active{% endif %}">
-                        <i data-lucide="flame" class="w-5 h-5"></i>
-                        <span>Gossip Feed</span>
-                    </a>
-                    
-                    <a href="/library" class="sidebar-nav-item {% if request.url.path == '/library' %}active{% endif %}">
-                        <i data-lucide="library" class="w-5 h-5"></i>
-                        <span>My Library</span>
-                    </a>
-                    
-                    
-                    <a href="/reminders" class="sidebar-nav-item {% if '/reminders' in request.url.path %}active{% endif %}">
-                        <i data-lucide="bell" class="w-5 h-5"></i>
-                        <span>Reminders</span>
-                    </a>
-                </div>
-                
-                <div class="text-xs font-medium text-muted-foreground px-3 mt-6 mb-2 uppercase tracking-wider">Account</div>
-                
-                <div class="flex flex-col gap-1">
-                    <a href="/settings" class="sidebar-nav-item {% if '/settings' in request.url.path %}active{% endif %}">
-                        <i data-lucide="settings" class="w-5 h-5"></i>
-                        <span>Settings</span>
-                    </a>
-                </div>
-            </nav>
-            
-            <!-- User Profile Section (Fixed at bottom) -->
-            <div class="flex-shrink-0 p-4 border-t border-white/5">
-                {% if user %}
                     <div x-data="{ profileOpen: false }" class="relative">
-                        <button @click="profileOpen = !profileOpen" 
-                                class="flex items-center gap-3 w-full px-2 py-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors">
+                        <button @click="profileOpen = !profileOpen" class="flex items-center gap-1 p-1 rounded-lg hover:bg-white/5 transition-colors" aria-label="Account menu">
                             {% if user.avatar_url %}
-                            <img src="{{ user.avatar_url }}" alt="{{ user.username }}" class="w-10 h-10 rounded-full object-cover ring-2 ring-primary/30">
+                            <img src="{{ user.avatar_url }}" alt="{{ user.username }}" class="w-8 h-8 rounded-full object-cover ring-2 ring-primary/30">
                             {% else %}
-                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-sm font-bold ring-2 ring-primary/30">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold ring-2 ring-primary/30">
                                 {{ user.username[0].upper() }}
                             </div>
                             {% endif %}
-                            <div class="flex-1 overflow-hidden text-left">
-                                <div class="text-sm font-medium truncate">{{ user.username }}</div>
-                                <div class="text-xs text-muted-foreground truncate">{{ user.email }}</div>
-                            </div>
-                            <i data-lucide="chevron-up" class="w-4 h-4 text-muted-foreground transition-transform"
+                            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-muted-foreground transition-transform hidden sm:inline"
                                :class="{ 'rotate-180': profileOpen }"></i>
                         </button>
-                        
+
                         <!-- Profile Dropdown Menu -->
-                        <div x-show="profileOpen" 
+                        <div x-show="profileOpen"
                              x-cloak
                              x-transition:enter="transition ease-out duration-100"
                              x-transition:enter-start="opacity-0 scale-95"
@@ -148,7 +188,11 @@
                              x-transition:leave-start="opacity-100 scale-100"
                              x-transition:leave-end="opacity-0 scale-95"
                              @click.away="profileOpen = false"
-                             class="absolute bottom-full left-0 right-0 mb-2 bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                             class="absolute top-full right-0 mt-2 w-56 bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                            <div class="px-3 py-3 border-b border-white/5">
+                                <div class="text-sm font-medium truncate">{{ user.username }}</div>
+                                <div class="text-xs text-muted-foreground truncate">{{ user.email }}</div>
+                            </div>
                             <div class="p-2">
                                 <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
                                     <i data-lucide="user" class="w-4 h-4 text-muted-foreground"></i>
@@ -177,173 +221,12 @@
                             </div>
                         </div>
                     </div>
-                {% else %}
-                <a href="/login" class="btn btn-primary w-full">
-                    <i data-lucide="log-in" class="w-4 h-4"></i>
-                    Sign In
-                </a>
-                {% endif %}
-            </div>
-        </aside>
-        
-        <!-- Mobile Header -->
-        <div class="md:hidden fixed top-0 left-0 right-0 h-16 border-b border-white/5 bg-background/80 backdrop-blur-xl z-50 flex items-center justify-between px-4">
-            <div class="flex items-center gap-2">
-                <img src="{{ static_url('images/logo.svg') }}" alt="Scene Sentry" class="w-8 h-8">
-                <span class="font-display font-bold text-lg">Scene Sentry</span>
-            </div>
-            <div class="flex items-center gap-1">
-                <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 hover:bg-white/5 rounded-lg transition-colors">
-                    <i data-lucide="menu" class="w-6 h-6" x-show="!mobileMenuOpen"></i>
-                    <i data-lucide="x" class="w-6 h-6" x-show="mobileMenuOpen" x-cloak></i>
-                </button>
-            </div>
-        </div>
-        
-        <!-- Mobile Menu Overlay -->
-        <div x-show="mobileMenuOpen" x-cloak
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0"
-             class="md:hidden fixed inset-0 bg-black/60 z-40"
-             @click="mobileMenuOpen = false">
-        </div>
-        
-        <!-- Mobile Menu -->
-        <div x-show="mobileMenuOpen" x-cloak
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="-translate-x-full"
-             x-transition:enter-end="translate-x-0"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="translate-x-0"
-             x-transition:leave-end="-translate-x-full"
-             class="md:hidden fixed top-0 left-0 bottom-0 w-72 bg-sidebar border-r border-white/10 p-4 z-50 flex flex-col gap-6">
-            
-            <div class="flex items-center gap-2 px-2">
-                <img src="{{ static_url('images/logo.svg') }}" alt="Scene Sentry" class="w-8 h-8">
-                <span class="font-display font-bold text-xl">Scene Sentry</span>
-            </div>
-            
-            <nav class="flex flex-col gap-1 flex-1">
-                <a href="/dashboard" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="home" class="w-5 h-5"></i>
-                    <span>Home</span>
-                </a>
-                <a href="/movies" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="film" class="w-5 h-5"></i>
-                    <span>Movies</span>
-                </a>
-                <a href="/tv-shows" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="tv" class="w-5 h-5"></i>
-                    <span>TV Shows</span>
-                </a>
-                <a href="/gossip" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="flame" class="w-5 h-5"></i>
-                    <span>Gossip Feed</span>
-                </a>
-                <a href="/library" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="library" class="w-5 h-5"></i>
-                    <span>My Library</span>
-                </a>
-                <a href="/reminders" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                    <i data-lucide="bell" class="w-5 h-5"></i>
-                    <span>Reminders</span>
-                </a>
-                
-                {% if user %}
-                <div class="border-t border-white/5 mt-auto pt-4">
-                    <a href="/settings" class="sidebar-nav-item py-3" @click="mobileMenuOpen = false">
-                        <i data-lucide="settings" class="w-5 h-5"></i>
-                        <span>Settings</span>
-                    </a>
-                    {% if clerk_enabled %}
-                    <button type="button"
-                            onclick="(async function(btn){btn.disabled=true;btn.querySelector('span').textContent='Signing out…';try{if(window.__clerkReady){var c=await window.__clerkReady;if(c)await c.signOut()}}catch(e){console.warn('Clerk signOut error:',e)}var f=document.createElement('form');f.method='POST';f.action='/logout';document.body.appendChild(f);f.submit()})(this)"
-                            class="sidebar-nav-item py-3 text-destructive hover:bg-destructive/10 w-full text-left flex items-center gap-3">
-                        <i data-lucide="log-out" class="w-5 h-5"></i>
-                        <span>Sign out</span>
-                    </button>
-                    {% else %}
-                    <form method="POST" action="/logout" class="m-0">
-                        <button type="submit" class="sidebar-nav-item py-3 text-destructive hover:bg-destructive/10 w-full text-left flex items-center gap-3">
-                            <i data-lucide="log-out" class="w-5 h-5"></i>
-                            <span>Sign out</span>
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-                {% endif %}
-            </nav>
-        </div>
-        
-        <!-- Main Content - Add left margin to account for fixed sidebar -->
-        <main class="flex-1 overflow-y-auto overflow-x-hidden md:ml-64 md:p-6 p-4 pt-20 md:pt-6">
-            {% if user %}
-            <!-- Catalog search + notifications (fixed on mobile below top bar — single notification control, no duplicate /reminders link) -->
-            <div class="flex justify-end items-center gap-1 mb-2 max-md:fixed max-md:top-3 max-md:right-14 max-md:z-[60] max-md:mb-0 max-md:pointer-events-auto" id="app-header-actions">
-                <button type="button" @click="globalSearchOpen = true; $nextTick(() => { const el = document.getElementById('global-search-q'); if (el) el.focus(); })" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Search catalog" title="Search catalog">
-                    <i data-lucide="search" class="w-5 h-5 text-muted-foreground"></i>
-                </button>
-                <div class="relative" x-data="notificationBell()" x-init="init()" @keydown.escape.window="open = false">
-                    <button @click="toggle()" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Notifications">
-                        <i data-lucide="bell" class="w-5 h-5 text-muted-foreground"></i>
-                        <span x-show="unreadCount > 0"
-                              x-text="unreadCount > 9 ? '9+' : unreadCount"
-                              x-cloak
-                              class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white px-1 shadow-lg shadow-accent/30">
-                        </span>
-                    </button>
-
-                    <!-- Dropdown -->
-                    <div x-show="open" x-cloak
-                         x-transition:enter="transition ease-out duration-150"
-                         x-transition:enter-start="opacity-0 scale-95 -translate-y-1"
-                         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
-                         x-transition:leave="transition ease-in duration-100"
-                         x-transition:leave-start="opacity-100 scale-100"
-                         x-transition:leave-end="opacity-0 scale-95"
-                         @click.away="open = false"
-                         class="absolute max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto right-0 mt-2 w-80 max-h-[28rem] bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[70]">
-                        <!-- Header -->
-                        <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
-                            <h3 class="text-sm font-semibold">Notifications</h3>
-                            <button x-show="unreadCount > 0" @click="markAllRead()" class="text-xs text-primary hover:underline">Mark all read</button>
-                        </div>
-                        <!-- List -->
-                        <div class="overflow-y-auto max-h-[22rem] divide-y divide-white/5">
-                            <template x-if="notifications.length === 0">
-                                <div class="px-4 py-8 text-center text-sm text-muted-foreground">
-                                    <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
-                                    <p>No notifications yet</p>
-                                </div>
-                            </template>
-                            <template x-for="n in notifications" :key="n.id">
-                                <button @click="clickNotification(n)"
-                                        class="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors flex items-start gap-3"
-                                        :class="{ 'bg-primary/5': !n.is_read }">
-                                    <div class="flex-shrink-0 mt-0.5 w-2 h-2 rounded-full"
-                                         :class="n.is_read ? 'bg-transparent' : 'bg-primary'"></div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-medium truncate" :class="n.is_read ? 'text-muted-foreground' : 'text-foreground'" x-text="n.title"></p>
-                                        <p class="text-xs text-muted-foreground line-clamp-2 mt-0.5" x-text="n.body"></p>
-                                        <p class="text-[10px] text-muted-foreground/60 mt-1" x-text="timeAgo(n.created_at)"></p>
-                                    </div>
-                                </button>
-                            </template>
-                        </div>
-                        <!-- Footer -->
-                        <div class="border-t border-white/5 px-4 py-2">
-                            <a href="/reminders" class="text-xs text-primary hover:underline">Reminders</a>
-                        </div>
-                    </div>
                 </div>
             </div>
+        </header>
 
-            <!-- Global catalog search modal -->
-            <div x-show="globalSearchOpen" x-cloak
+        <!-- Global catalog search modal -->
+        <div x-show="globalSearchOpen" x-cloak
                  x-transition:enter="transition ease-out duration-200"
                  x-transition:enter-start="opacity-0"
                  x-transition:enter-end="opacity-100"
@@ -374,6 +257,7 @@
             </div>
             {% endif %}
 
+        <main class="flex-1 p-4 md:p-6">
             <div class="max-w-7xl mx-auto space-y-8 animate-in">
                 
                 <!-- Flash Messages -->
