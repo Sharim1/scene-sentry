@@ -95,8 +95,9 @@
         </button>
         
         <!-- Dropdown Menu -->
-        <div 
-            x-show="showMenu" 
+        <div
+            x-show="showMenu"
+            x-cloak
             @click.away="showMenu = false"
             x-transition:enter="transition ease-out duration-150"
             x-transition:enter-start="opacity-0 scale-95"
@@ -104,38 +105,38 @@
             x-transition:leave="transition ease-in duration-100"
             x-transition:leave-start="opacity-100 scale-100"
             x-transition:leave-end="opacity-0 scale-95"
-            class="absolute right-0 mt-2 w-44 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30"
+            class="absolute right-0 mt-2 w-32 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30"
         >
             <div class="p-2 border-b border-white/10">
                 <p class="text-xs font-medium text-muted-foreground px-2" x-text="status ? 'Change Status' : 'Add to Library'"></p>
             </div>
             <div @click.stop>
                 <button type="button" @click="status ? updateStatus(itemId, 'watching', status) : addToLibrary(contentId, 'watching'); showMenu = false"
-                        class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-green-500/20 flex items-center gap-1.5 transition-colors"
                         :class="status === 'watching' ? 'text-green-400 font-medium' : ''">
                     <i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i>
                     Watching
                 </button>
                 <button type="button" @click="status ? updateStatus(itemId, 'planned', status) : addToLibrary(contentId, 'planned'); showMenu = false"
-                        class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-500/20 flex items-center gap-2 transition-colors"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-blue-500/20 flex items-center gap-1.5 transition-colors"
                         :class="status === 'planned' ? 'text-blue-400 font-medium' : ''">
                     <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
                     Planned
                 </button>
                 <button type="button" @click="status ? updateStatus(itemId, 'completed', status) : addToLibrary(contentId, 'completed'); showMenu = false"
-                        class="w-full px-4 py-2.5 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-2 transition-colors"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors"
                         :class="status === 'completed' ? 'text-emerald-400 font-medium' : ''">
                     <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
                     Completed
                 </button>
                 <button type="button" @click="status ? updateStatus(itemId, 'dropped', status) : addToLibrary(contentId, 'dropped'); showMenu = false"
-                        class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-red-500/20 flex items-center gap-1.5 transition-colors"
                         :class="status === 'dropped' ? 'text-red-400 font-medium' : ''">
                     <i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>
                     Dropped
                 </button>
                 <button type="button" @click="status ? updateStatus(itemId, 'maybe', status) : addToLibrary(contentId, 'maybe'); showMenu = false"
-                        class="w-full px-4 py-2.5 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-2 transition-colors"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-1.5 transition-colors"
                         :class="status === 'maybe' ? 'text-yellow-400 font-medium' : ''">
                     <i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i>
                     Maybe
@@ -145,7 +146,7 @@
                     <div class="border-t border-white/10 mt-1 pt-1">
                         <button type="button"
                             @click="removeFromLibrary(itemId, '{{ content.title|e }}', status); showMenu = false"
-                            class="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 flex items-center gap-2 transition-colors text-red-400">
+                            class="w-full px-2.5 py-2 text-left text-sm hover:bg-red-500/20 flex items-center gap-1.5 transition-colors text-red-400">
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                             Remove from Library
                         </button>

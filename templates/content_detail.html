@@ -144,7 +144,7 @@
                             <i data-lucide="edit" class="w-4 h-4"></i>
                             Change Status
                         </button>
-                        <div x-show="showMenu" @click.away="showMenu = false" x-transition
+                        <div x-show="showMenu" x-cloak @click.away="showMenu = false" x-transition
                              class="absolute top-full left-0 mt-2 w-48 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30">
                             <div>
                                 <button type="button" @click="addToLibrary(contentId, 'watching'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors" :class="status === 'watching' ? 'text-green-400 font-medium' : ''"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
@@ -168,7 +168,7 @@
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         Add to Library
                     </button>
-                    <div x-show="showMenu" @click.away="showMenu = false" x-transition
+                    <div x-show="showMenu" x-cloak @click.away="showMenu = false" x-transition
                          class="absolute top-full left-0 mt-2 w-48 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30">
                         <div>
                             <button type="button" @click="addToLibrary(contentId, 'watching'); showMenu = false" class="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 flex items-center gap-2 transition-colors"><i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i> Watching</button>
@@ -258,7 +258,7 @@
 
         <!-- Episode List -->
         {% for season_num, eps in seasons_map.items()|sort %}
-        <div x-show="activeSeason === {{ season_num }}" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+        <div x-show="activeSeason === {{ season_num }}" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
             <div class="space-y-2">
                 {% for ep in eps %}
                 <div class="flex items-start gap-4 p-4 bg-card/50 rounded-lg border border-white/5 hover:border-white/10 transition-colors">

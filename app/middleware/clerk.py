@@ -109,6 +109,11 @@ def _log_token_verification_failure(reason: TokenVerificationErrorReason) -> Non
 async def verify_clerk_token(token: str) -> dict[str, Any] | None:
     """
     Verify a Clerk session JWT using clerk-backend-api and return the payload.
+
+    Re-raises TokenVerificationError (after logging) so the caller can tell an
+    expired token apart from any other failure — the middleware uses that to
+    decide whether a handshake retry is worth attempting. A non-Clerk error
+    still just returns None.
     """
     if not settings.clerk_secret_key:
         logger.warning("CLERK_SECRET_KEY not configured, skipping token verification")
@@ -123,7 +128,7 @@ async def verify_clerk_token(token: str) -> dict[str, Any] | None:
         return await verify_token_async(token, options)
     except TokenVerificationError as e:
         _log_token_verification_failure(e.reason)
-        return None
+        raise
     except Exception as e:
         logger.error(f"Token verification error: {e}")
         return None
@@ -172,8 +177,18 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         token = self._extract_token(request) if clerk_configured else None
 
         if token and clerk_configured:
-            # Verify Clerk token (uses cached JWKS)
-            payload = await verify_clerk_token(token)
+            # Verify Clerk token (uses cached JWKS). An expired token is not
+            # the same as a missing/invalid one: the browser had a real
+            # session, so a handshake retry is always worth attempting, even
+            # when __client_uat isn't a reliable signal in this environment
+            # (Clerk Development instances lean on __clerk_db_jwt instead —
+            # see _should_initiate_handshake).
+            token_expired = False
+            try:
+                payload = await verify_clerk_token(token)
+            except TokenVerificationError as e:
+                payload = None
+                token_expired = e.reason == TokenVerificationErrorReason.TOKEN_EXPIRED
 
             if payload:
                 # Get database session and sync user
@@ -192,7 +207,7 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                     except StopIteration:
                         pass
                     db.close()
-            elif self._should_initiate_handshake(request):
+            elif self._should_initiate_handshake(request, force=token_expired):
                 return self._initiate_handshake(request)
 
         elif clerk_configured and not token and self._should_initiate_handshake(request):
@@ -304,17 +319,28 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         redirect_url = self._get_url_without_handshake(request)
         return RedirectResponse(url=redirect_url, status_code=307)
 
-    def _should_initiate_handshake(self, request: Request) -> bool:
+    def _should_initiate_handshake(self, request: Request, force: bool = False) -> bool:
         """Check whether we should redirect to Clerk's FAPI for a token refresh.
 
         Only for GET page navigations — never for POST/API/static requests.
+
+        __client_uat normally has to look like an active session before we
+        bother, so a visitor who was never signed in doesn't get redirected
+        through Clerk. `force=True` skips that check: we already know the
+        request carried an actual session token that just expired (see the
+        caller), which is a stronger signal than __client_uat — and on a
+        Clerk Development instance, __client_uat isn't guaranteed to be set
+        the way it is on Production (Clerk's "dev browser" mechanism uses
+        __clerk_db_jwt via querystring instead), so requiring it here would
+        make the handshake retry miss its one real use case on dev instances.
         """
         if request.method != "GET":
             return False
 
-        client_uat = request.cookies.get("__client_uat")
-        if not client_uat or client_uat == "0":
-            return False
+        if not force:
+            client_uat = request.cookies.get("__client_uat")
+            if not client_uat or client_uat == "0":
+                return False
 
         if not settings.clerk_issuer:
             return False

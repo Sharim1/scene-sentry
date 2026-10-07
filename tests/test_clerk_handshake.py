@@ -50,6 +50,53 @@ class TestExpiredTokenHandshake:
         assert "/v1/client/handshake" in location
         assert "redirect_url" in location
 
+    def test_expired_token_without_client_uat_still_handshakes(self, client: TestClient):
+        """An expired __session with no (or stale) __client_uat still gets a
+        handshake retry, not a login redirect.
+
+        __client_uat isn't a reliable signal on a Clerk Development instance
+        — Clerk's "dev browser" mechanism there uses __clerk_db_jwt via
+        querystring instead (see Clerk's docs on managing environments). An
+        expired token is itself proof the browser had a real session, so
+        that alone should be enough to retry, regardless of __client_uat.
+        """
+        from clerk_backend_api.security.types import TokenVerificationError, TokenVerificationErrorReason
+
+        with patch(
+            "app.middleware.clerk.verify_clerk_token",
+            new_callable=AsyncMock,
+            side_effect=TokenVerificationError(TokenVerificationErrorReason.TOKEN_EXPIRED),
+        ):
+            resp = client.get(
+                "/dashboard",
+                cookies={"__session": "expired.jwt.token"},  # no __client_uat at all
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 307
+        assert "/v1/client/handshake" in resp.headers["location"]
+
+    def test_non_expiry_verification_failure_without_client_uat_goes_to_login(self, client: TestClient):
+        """A token that's invalid for some other reason (not expiry), with no
+        __client_uat, should NOT force a handshake retry — that's reserved
+        for the one case where we know for certain the browser had a real,
+        merely-expired session."""
+        from clerk_backend_api.security.types import TokenVerificationError, TokenVerificationErrorReason
+
+        with patch(
+            "app.middleware.clerk.verify_clerk_token",
+            new_callable=AsyncMock,
+            side_effect=TokenVerificationError(TokenVerificationErrorReason.TOKEN_INVALID_SIGNATURE),
+        ):
+            resp = client.get(
+                "/dashboard",
+                cookies={"__session": "garbage"},
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login?next=/dashboard"
+
     def test_no_cookies_at_all_goes_to_login(self, client: TestClient):
         """No Clerk cookies at all → normal redirect to login."""
         resp = client.get("/dashboard", follow_redirects=False)
