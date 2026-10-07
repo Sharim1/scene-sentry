@@ -225,14 +225,26 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         """
         Handle Clerk's handshake flow.
 
-        When Clerk authenticates a user, it redirects to your app with a
-        __clerk_handshake query parameter. This JWT contains Set-Cookie
-        instructions that need to be applied.
+        Clerk's Frontend API hands back the handshake payload as a
+        short-lived, HttpOnly __clerk_handshake COOKIE on the redirect
+        response (`Set-Cookie: __clerk_handshake=<jwt>; Domain=...;
+        Max-Age=70`) — not as a __clerk_handshake query parameter appended to
+        the redirect's Location. The browser just sends that cookie back on
+        the very next request like any other cookie.
+
+        We still check the query parameter too, for compatibility with any
+        flow that might append it there, but the cookie is the one that
+        actually arrives in practice. Missing it here means we never decode
+        the handshake JWT, never apply its __client_uat=0 / __session-clear
+        instructions, and the next request looks identical to the one that
+        triggered the handshake in the first place — causing an infinite
+        redirect loop against Clerk's FAPI for any browser with a truthy
+        __client_uat and no valid __session (i.e. every real sign-in, not
+        just a stale one).
 
         Returns a redirect response if handshake is handled, None otherwise.
         """
-        # Check for handshake query parameter
-        handshake_token = request.query_params.get("__clerk_handshake")
+        handshake_token = request.query_params.get("__clerk_handshake") or request.cookies.get("__clerk_handshake")
         if not handshake_token:
             return None
 
@@ -294,6 +306,13 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                     samesite=cookie_data.get("samesite", "lax").lower() if cookie_data.get("samesite") else "lax",
                 )
                 logger.debug(f"Handshake: setting cookie {name}")
+
+        # __clerk_handshake itself is never in ALLOWED_HANDSHAKE_COOKIES (it's
+        # not a session cookie), so Clerk's own delete-instruction for it gets
+        # filtered out above. Clear it explicitly so a page load within its
+        # ~70s Max-Age can't re-trigger processing of an already-consumed
+        # handshake token.
+        response.delete_cookie(key="__clerk_handshake", path="/", domain=request.url.hostname)
 
         logger.info(f"Clerk handshake processed, redirecting to {redirect_url}")
         return response
