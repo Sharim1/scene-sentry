@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}My Library - Scene Sentry{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+    <div>
+        <h1 class="text-3xl font-display font-bold mb-1">My Library</h1>
+        <p class="text-muted-foreground">Track your watch history and future plans.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <button class="btn btn-outline" onclick="document.getElementById('filterModal').classList.remove('hidden')">
+            <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+            Filter
+        </button>
+    </div>
+</div>
+
+<!-- Search Bar -->
+<div class="mb-6">
+    {% set search_form_action = '/library' %}
+    {% set search_placeholder = 'Search your library by title...' %}
+    {% set search_value = search_query or '' %}
+    {% set search_hidden_status = current_status %}
+    {% set search_hidden_type = current_type %}
+    {% if search_query %}
+    {%- set search_clear_href -%}
+/library{%- if current_status != 'all' -%}?status={{ current_status }}{%- if current_type != 'all' -%}&type={{ current_type }}{%- endif -%}
+{%- elif current_type != 'all' -%}?type={{ current_type }}
+{%- endif -%}
+    {%- endset -%}
+    {% endif %}
+    {% include 'partials/_search_bar.html' %}
+</div>
+
+{% if search_query %}
+<div class="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-xl flex items-center justify-between">
+    <div class="flex items-center gap-2">
+        <i data-lucide="search" class="w-5 h-5 text-primary"></i>
+        <span class="text-sm">Showing library results for "<strong>{{ search_query }}</strong>"</span>
+        <span class="text-muted-foreground text-sm">({{ library_items|length }} found)</span>
+    </div>
+</div>
+{% endif %}
+
+<!-- Tabs (Alpine-reactive counts + client-side tab switching) -->
+<div class="mb-8"
+     x-data='libraryCounts({{ counts | tojson }})'
+     @library:status-changed.window="onStatusChanged($event.detail)"
+     @library:item-added.window="onItemAdded($event.detail)"
+     @library:item-removed.window="onItemRemoved($event.detail)"
+     @library-tab="switchLibraryTab($event.detail.url, $event.detail.tab)">
+    <div class="tabs inline-flex" id="library-tabs">
+        <a href="/library?status=all&type={{ current_type }}" class="tab {% if current_status == 'all' %}active{% endif %}" data-tab-status="all" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
+            All Content
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.all + ')'">({{ counts.all }})</span>
+        </a>
+        <a href="/library?status=watching&type={{ current_type }}" class="tab {% if current_status == 'watching' %}active{% endif %}" data-tab-status="watching" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
+            Watching
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.watching + ')'">({{ counts.watching }})</span>
+        </a>
+        <a href="/library?status=planned&type={{ current_type }}" class="tab {% if current_status == 'planned' %}active{% endif %}" data-tab-status="planned" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
+            Planned
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.planned + ')'">({{ counts.planned }})</span>
+        </a>
+        <a href="/library?status=completed&type={{ current_type }}" class="tab {% if current_status == 'completed' %}active{% endif %}" data-tab-status="completed" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
+            Completed
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.completed + ')'">({{ counts.completed }})</span>
+        </a>
+        <a href="/library?status=dropped&type={{ current_type }}" class="tab {% if current_status == 'dropped' %}active{% endif %}" data-tab-status="dropped" @click.prevent="$dispatch('library-tab', { url: $el.href, tab: $el })">
+            Dropped
+            <span class="ml-1 text-xs opacity-60" x-text="'(' + c.dropped + ')'">({{ counts.dropped }})</span>
+        </a>
+    </div>
+</div>
+
+<!-- Content Grid (swapped client-side on tab switch) -->
+<div id="library-content">
+{% if library_items %}
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 animate-in">
+    {% for item in library_items %}
+    {% set content = item.content %}
+    {% set status = item.status.value %}
+    {% include 'partials/_movie_card.html' %}
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
+    <i data-lucide="library" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
+    <h2 class="font-display font-semibold text-xl mb-2">Your library is empty</h2>
+    <p class="text-muted-foreground mb-6 max-w-md mx-auto">
+        {% if current_status == 'all' %}
+        Start adding content to track what you're watching, planning to watch, or have completed.
+        {% else %}
+        No content with status "{{ current_status }}" found.
+        {% endif %}
+    </p>
+    <div class="flex items-center justify-center gap-4">
+        <a href="/dashboard" class="btn btn-primary">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            Discover Content
+        </a>
+        <a href="/gossip" class="btn btn-outline">
+            <i data-lucide="flame" class="w-4 h-4"></i>
+            Browse Gossip
+        </a>
+    </div>
+</div>
+{% endif %}
+</div>
+
+<!-- Filter Modal -->
+<div id="filterModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('filterModal').classList.add('hidden')"></div>
+    <div class="relative bg-card rounded-xl border border-white/10 p-6 w-full max-w-md shadow-2xl animate-in">
+        <div class="flex items-center justify-between mb-6">
+            <h3 class="font-display font-bold text-xl">Filter Library</h3>
+            <button onclick="document.getElementById('filterModal').classList.add('hidden')" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        
+        <form action="/library" method="GET" class="space-y-6">
+            <!-- Content Type -->
+            <div>
+                <label class="block text-sm font-medium mb-2">Content Type</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if current_type == 'all' %}ring-2 ring-primary{% endif %}">
+                        <input type="radio" name="type" value="all" {% if current_type == 'all' %}checked{% endif %} class="hidden">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                        <span class="text-sm">All</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if current_type == 'movie' %}ring-2 ring-primary{% endif %}">
+                        <input type="radio" name="type" value="movie" {% if current_type == 'movie' %}checked{% endif %} class="hidden">
+                        <i data-lucide="film" class="w-4 h-4"></i>
+                        <span class="text-sm">Movies</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if current_type == 'tv_show' %}ring-2 ring-primary{% endif %}">
+                        <input type="radio" name="type" value="tv_show" {% if current_type == 'tv_show' %}checked{% endif %} class="hidden">
+                        <i data-lucide="tv" class="w-4 h-4"></i>
+                        <span class="text-sm">TV Shows</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Status -->
+            <div>
+                <label class="block text-sm font-medium mb-2">Status</label>
+                <select name="status" class="input">
+                    <option value="all" {% if current_status == 'all' %}selected{% endif %}>All Statuses</option>
+                    <option value="watching" {% if current_status == 'watching' %}selected{% endif %}>Watching</option>
+                    <option value="planned" {% if current_status == 'planned' %}selected{% endif %}>Planned</option>
+                    <option value="completed" {% if current_status == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="dropped" {% if current_status == 'dropped' %}selected{% endif %}>Dropped</option>
+                    <option value="maybe" {% if current_status == 'maybe' %}selected{% endif %}>Maybe</option>
+                </select>
+            </div>
+            
+            <div class="flex gap-3">
+                <button type="submit" class="btn btn-primary flex-1">Apply Filters</button>
+                <a href="/library" class="btn btn-outline">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
