@@ -326,21 +326,32 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
 
         __client_uat normally has to look like an active session before we
         bother, so a visitor who was never signed in doesn't get redirected
-        through Clerk. `force=True` skips that check: we already know the
-        request carried an actual session token that just expired (see the
-        caller), which is a stronger signal than __client_uat — and on a
-        Clerk Development instance, __client_uat isn't guaranteed to be set
-        the way it is on Production (Clerk's "dev browser" mechanism uses
-        __clerk_db_jwt via querystring instead), so requiring it here would
-        make the handshake retry miss its one real use case on dev instances.
+        through Clerk. `force=True` skips the "__client_uat is missing"
+        version of that check: we already know the request carried an actual
+        session token that just expired (see the caller), which is a
+        stronger signal than __client_uat — and on a Clerk Development
+        instance, __client_uat isn't guaranteed to be set the way it is on
+        Production (Clerk's "dev browser" mechanism uses __clerk_db_jwt via
+        querystring instead), so requiring it here would make the handshake
+        retry miss its one real use case on dev instances.
+
+        __client_uat == "0" is different and always wins, force or not:
+        it's Clerk's own explicit "this browser is signed out" signal, sent
+        back by the handshake we just completed. Treating force=True as a
+        license to ignore it causes an infinite redirect loop against
+        Clerk's FAPI whenever the browser's session token can never be
+        refreshed (e.g. it was issued by an instance we've since migrated
+        away from) — every retry re-expires, forces another handshake,
+        Clerk says "signed out" again, and we'd keep ignoring that forever.
         """
         if request.method != "GET":
             return False
 
-        if not force:
-            client_uat = request.cookies.get("__client_uat")
-            if not client_uat or client_uat == "0":
-                return False
+        client_uat = request.cookies.get("__client_uat")
+        if client_uat == "0":
+            return False
+        if not force and not client_uat:
+            return False
 
         if not settings.clerk_issuer:
             return False

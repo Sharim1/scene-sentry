@@ -97,6 +97,33 @@ class TestExpiredTokenHandshake:
         assert resp.status_code == 303
         assert resp.headers["location"] == "/login?next=/dashboard"
 
+    def test_expired_token_with_client_uat_zero_goes_to_login_not_loop(self, client: TestClient):
+        """An expired/unrefreshable __session alongside __client_uat=0 must
+        NOT force another handshake.
+
+        __client_uat=0 is Clerk's own explicit "this browser is signed out"
+        signal, sent back by a handshake that already ran (e.g. because the
+        session token was issued by an instance we've since migrated away
+        from and can never be refreshed). Forcing another handshake anyway
+        ignores that signal and loops forever against Clerk's FAPI —
+        reproduces the ERR_TOO_MANY_REDIRECTS bug.
+        """
+        from clerk_backend_api.security.types import TokenVerificationError, TokenVerificationErrorReason
+
+        with patch(
+            "app.middleware.clerk.verify_clerk_token",
+            new_callable=AsyncMock,
+            side_effect=TokenVerificationError(TokenVerificationErrorReason.TOKEN_EXPIRED),
+        ):
+            resp = client.get(
+                "/dashboard",
+                cookies={"__session": "stale.unrefreshable.token", "__client_uat": "0"},
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login?next=/dashboard"
+
     def test_no_cookies_at_all_goes_to_login(self, client: TestClient):
         """No Clerk cookies at all → normal redirect to login."""
         resp = client.get("/dashboard", follow_redirects=False)
