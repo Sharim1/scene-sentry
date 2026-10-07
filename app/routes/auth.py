@@ -226,13 +226,19 @@ def logout(request: Request):
 
     response = RedirectResponse(url="/", status_code=303)
 
-    # Clear Clerk cookies (client-side tokens)
-    response.delete_cookie("__session", path="/")
-    response.delete_cookie("__clerk_db_jwt", path="/")
-    response.delete_cookie("scenesentry_session", path="/")
-
-    # Clear any other auth-related cookies
-    response.delete_cookie("__client_uat", path="/")
+    # Clear Clerk cookies (client-side tokens). These are set with an
+    # explicit Domain=<host> attribute (by our own handshake handler, and by
+    # Clerk's own JS) so they're shared with the Clerk FAPI subdomain. A
+    # delete_cookie() call with no domain only clears a host-only cookie —
+    # it's a *different* cookie-jar entry from a domain-scoped one with the
+    # same name, even when the domain string matches the serving host, so it
+    # silently leaves the real session cookie in place. Confirmed directly:
+    # curl with a real RFC 6265 cookie jar still had __session/__client_uat
+    # after hitting this endpoint, pre-fix. Clear both variants so logout
+    # works regardless of which way a given cookie was actually set.
+    for name in ("__session", "__clerk_db_jwt", "scenesentry_session", "__client_uat"):
+        response.delete_cookie(name, path="/")
+        response.delete_cookie(name, path="/", domain=request.url.hostname)
 
     logger.info("User logged out")
     return response
