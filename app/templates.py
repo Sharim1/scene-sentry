@@ -126,11 +126,25 @@ def to_user_tz_filter(utc_dt, tz_name="UTC"):
     return utc_to_local(utc_dt, tz_name)
 
 
+def urlencode_truthy_filter(params: dict) -> str:
+    """Build a query string, dropping keys whose value is falsy (None, '', 0, 'all').
+
+    Used to carry the search page's filters between links without the URL
+    accumulating empty or default params (?type=&genre=&sort=relevance...).
+    """
+    from urllib.parse import urlencode
+
+    skip_values = {None, "", "all", "relevance"}
+    clean = {k: v for k, v in params.items() if v not in skip_values}
+    return urlencode(clean)
+
+
 # Register template filters and globals
 templates.env.filters["from_json"] = from_json_filter
 templates.env.filters["time_ago"] = time_ago_filter
 templates.env.filters["to_user_tz"] = to_user_tz_filter
 templates.env.filters["tojson"] = tojson_filter
+templates.env.filters["urlencode_truthy"] = urlencode_truthy_filter
 templates.env.globals["static_url"] = static_url
 templates.env.globals["get_flashed_messages"] = get_flashed_messages
 templates.env.globals["get_ai_status"] = get_ai_status
