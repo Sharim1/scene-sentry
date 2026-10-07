@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if search_query %}“{{ search_query }}” — Search{% else %}Search{% endif %} - Scene Sentry
+{% endblock %}
+
+{% block content %}
+<!-- Search -->
+<form method="GET" action="/search" class="mb-6">
+    {% if current_type and current_type != 'all' %}<input type="hidden" name="type" value="{{ current_type }}">{% endif %}
+    {% if current_genre %}<input type="hidden" name="genre" value="{{ current_genre }}">{% endif %}
+    {% if current_sort and current_sort != 'relevance' %}<input type="hidden" name="sort" value="{{ current_sort }}">{% endif %}
+    <div class="relative max-w-xl">
+        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none"></i>
+        <input
+            type="text"
+            name="q"
+            value="{{ search_query }}"
+            placeholder="Search movies, shows, people…"
+            autofocus
+            class="w-full h-14 pl-12 pr-28 bg-card border border-white/10 rounded-2xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+        >
+        <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 h-10 px-5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold transition-colors">
+            Search
+        </button>
+    </div>
+</form>
+
+<!-- Filters -->
+<div class="flex items-center justify-between flex-wrap gap-4 mb-8">
+    <div class="flex items-center gap-2 flex-wrap">
+        {% for t, label in [('all', 'All'), ('movie', 'Movies'), ('tv_show', 'TV Shows')] %}
+        <a href="/search?{{ {'q': search_query, 'type': t, 'genre': current_genre, 'sort': current_sort} | urlencode_truthy }}"
+           class="pill {% if current_type == t %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+        <span class="w-px h-5 bg-white/10 mx-1"></span>
+        {% for s, label in [('relevance', 'Relevance'), ('recent', 'Newest'), ('top_rated', 'Top Rated')] %}
+        <a href="/search?{{ {'q': search_query, 'type': current_type, 'genre': current_genre, 'sort': s} | urlencode_truthy }}"
+           class="pill {% if current_sort == s %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+        {% if current_genre %}
+        <a href="/search?{{ {'q': search_query, 'type': current_type, 'sort': current_sort} | urlencode_truthy }}" class="pill flex items-center gap-1">
+            {{ current_genre }} <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+    </div>
+    <div class="text-sm text-muted-foreground">
+        {{ total_count }} result{{ 's' if total_count != 1 else '' }}{% if search_query %} for “{{ search_query }}”{% endif %}
+    </div>
+</div>
+
+<!-- Results -->
+{% if results %}
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-6 animate-in">
+    {% for content in results %}
+    {% set item = library_items_map.get(content.id) %}
+    {% set status = item.status.value if item else none %}
+    {% include 'partials/_movie_card.html' %}
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="flex items-center justify-center gap-2 mt-10">
+    {% if page > 1 %}
+    <a href="/search?{{ {'q': search_query, 'type': current_type, 'genre': current_genre, 'sort': current_sort, 'page': page - 1} | urlencode_truthy }}"
+       class="h-10 px-4 bg-card border border-white/10 rounded-lg text-sm font-medium hover:bg-white/10 flex items-center gap-2 transition-colors">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i> Previous
+    </a>
+    {% endif %}
+    <span class="h-10 px-4 bg-primary/20 border border-primary/30 rounded-lg text-sm font-medium flex items-center gap-1">
+        Page {{ page }} of {{ total_pages }}
+    </span>
+    {% if page < total_pages %}
+    <a href="/search?{{ {'q': search_query, 'type': current_type, 'genre': current_genre, 'sort': current_sort, 'page': page + 1} | urlencode_truthy }}"
+       class="h-10 px-4 bg-card border border-white/10 rounded-lg text-sm font-medium hover:bg-white/10 flex items-center gap-2 transition-colors">
+        Next <i data-lucide="chevron-right" class="w-4 h-4"></i>
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
+    <i data-lucide="search-x" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
+    <h2 class="font-display font-semibold text-xl mb-2">No results found</h2>
+    <p class="text-muted-foreground mb-6 max-w-md mx-auto">
+        {% if search_query %}Nothing matches “{{ search_query }}”. Try a different title or spelling.{% else %}No titles match these filters yet.{% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

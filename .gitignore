@@ -1,0 +1,44 @@
+.env
+instance/  
+__pycache__/
+attached_assets/
+.replit
+*.db
+.DS_Store
+.cursor/
+temp_design_directory_for_reference/
+
+# Python build artifacts (rooted so they do not swallow static/assets/)
+*.egg-info/
+/dist/
+/build/
+*.egg
+
+# Virtual environment
+.venv/
+
+# Node
+node_modules/
+
+# FastAPI Cloud local app link (created by `fastapi deploy`)
+.fastapicloud/
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Testing / coverage
+coverage.xml
+htmlcov/
+.coverage
+
+# Redis
+dump.rdb
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat-schedule.dir
+celerybeat-schedule.bak
+.neon
