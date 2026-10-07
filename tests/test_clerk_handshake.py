@@ -6,10 +6,23 @@ rather than treating the user as unauthenticated. This is the standard
 Clerk SSR pattern.
 """
 
+import base64
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+def _fake_handshake_jwt(cookie_instructions: list[str]) -> str:
+    """Build a fake (unsigned) handshake JWT like Clerk's FAPI issues.
+
+    Our decoder never verifies the signature — it only reads the payload —
+    so a throwaway header/signature is fine for testing.
+    """
+    header = base64.urlsafe_b64encode(b'{"alg":"RS256","typ":"JWT"}').rstrip(b"=").decode()
+    payload = base64.urlsafe_b64encode(json.dumps({"handshake": cookie_instructions}).encode()).rstrip(b"=").decode()
+    return f"{header}.{payload}.fakesignature"
 
 
 @pytest.fixture()
@@ -123,6 +136,37 @@ class TestExpiredTokenHandshake:
 
         assert resp.status_code == 303
         assert resp.headers["location"] == "/login?next=/dashboard"
+
+    def test_handshake_delivered_as_cookie_is_processed_not_ignored(self, client: TestClient):
+        """Clerk's FAPI hands back the handshake payload as a __clerk_handshake
+        COOKIE on the redirect response, not as a query parameter appended to
+        the Location. Missing that meant we never decoded it, never applied
+        __client_uat=0 / cleared __session, and the next request looked
+        identical to the one that triggered the handshake — causing an
+        infinite loop against Clerk's FAPI for every real sign-in (not just
+        a stale one). This reproduces the live ERR_TOO_MANY_REDIRECTS bug.
+        """
+        handshake_jwt = _fake_handshake_jwt(
+            [
+                "__client_uat=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax",
+                "__client_uat=0; Path=/; Domain=scenesentry.com; Max-Age=315360000; Secure; SameSite=Lax",
+                "__session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax",
+            ]
+        )
+
+        resp = client.get(
+            "/dashboard",
+            cookies={"__client_uat": "1716500000", "__clerk_handshake": handshake_jwt},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 307
+        # The redirect target must not still be carrying a handshake param —
+        # and critically, the client_uat=0 instruction must actually have
+        # been applied, which is what stops the loop on the next request.
+        set_cookie_headers = resp.headers.get_list("set-cookie")
+        assert any("__client_uat=0" in h for h in set_cookie_headers)
+        assert any(h.startswith("__session=") for h in set_cookie_headers)
 
     def test_no_cookies_at_all_goes_to_login(self, client: TestClient):
         """No Clerk cookies at all → normal redirect to login."""
