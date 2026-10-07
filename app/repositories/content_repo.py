@@ -94,23 +94,38 @@ class ContentRepository:
     # ---- Home page sections ---- #
 
     def get_recent(self, content_type: str | None = None, limit: int = 12) -> list[Content]:
-        """Most recently released titles that have a release date. Used for "New This Week"."""
-        query = self.db.query(Content).filter(Content.release_date.isnot(None))
+        """Already-released titles, newest first. Used for "New This Week".
+
+        release_date is a free-text column and a handful of rows carry an
+        implausible value straight from the source (TVDB has at least one
+        title dated "9696-01-01" — a typo on their end). That sorts to the
+        very top of a plain string ORDER BY, so both bounds are checked
+        against today, not just "has a date".
+        """
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        query = self.db.query(Content).filter(Content.release_date.isnot(None), Content.release_date <= today)
         if content_type:
             query = query.filter(Content.content_type == content_type)
         return query.order_by(Content.release_date.desc()).limit(limit).all()
 
     def get_top_rated(self, content_type: str | None = None, limit: int = 12) -> list[Content]:
-        """Highest-rated titles in the catalog."""
-        query = self.db.query(Content).filter(Content.rating.isnot(None))
+        """Highest-rated titles in the catalog, on the usual 0-10 scale."""
+        query = self.db.query(Content).filter(Content.rating.isnot(None), Content.rating <= 10)
         if content_type:
             query = query.filter(Content.content_type == content_type)
         return query.order_by(Content.rating.desc()).limit(limit).all()
 
     def get_coming_soon(self, content_type: str | None = None, limit: int = 12) -> list[Content]:
-        """Titles with a release date after today, soonest first."""
-        today = datetime.now(UTC).strftime("%Y-%m-%d")
-        query = self.db.query(Content).filter(Content.release_date > today)
+        """Titles releasing after today and within a few years, soonest first.
+
+        The upper bound excludes the same class of bad source data as
+        get_recent (a bare typo'd year would otherwise look like the
+        furthest-out "coming soon" title there is).
+        """
+        today = datetime.now(UTC)
+        today_str = today.strftime("%Y-%m-%d")
+        cutoff_str = (today + timedelta(days=3 * 365)).strftime("%Y-%m-%d")
+        query = self.db.query(Content).filter(Content.release_date > today_str, Content.release_date <= cutoff_str)
         if content_type:
             query = query.filter(Content.content_type == content_type)
         return query.order_by(Content.release_date.asc()).limit(limit).all()
