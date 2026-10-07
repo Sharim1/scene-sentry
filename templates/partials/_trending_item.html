@@ -1,0 +1,18 @@
+<!-- Trending Item Component -->
+<!-- Usage: include 'partials/_trending_item.html' with item=content, rank=loop.index -->
+
+<a href="/{{ item.id }}" class="flex items-center gap-3 group cursor-pointer">
+    <div class="font-display font-bold text-2xl text-white/10 group-hover:text-primary transition-colors w-8">
+        {{ "%02d"|format(rank) }}
+    </div>
+    <div class="flex-1 min-w-0">
+        <div class="font-medium text-sm group-hover:text-primary transition-colors line-clamp-1">
+            {{ item.title }}
+        </div>
+        <div class="text-xs text-muted-foreground">
+            {% if item.network %}{{ item.network }} • {% endif %}
+            {{ item.content_type|replace('_', ' ')|title }}
+        </div>
+    </div>
+</a>
+

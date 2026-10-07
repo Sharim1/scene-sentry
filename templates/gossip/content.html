@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}{{ content.title }} News - Scene Sentry{% endblock %}
+
+{% block content %}
+<!-- Back Button -->
+<a href="/gossip" class="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Back to Feed
+</a>
+
+<!-- Content Header -->
+<div class="bg-card rounded-xl border border-white/5 p-6 mb-8">
+    <div class="flex gap-6">
+        {% if content.poster_url %}
+        <img src="{{ content.poster_url }}" alt="{{ content.title }}" class="w-32 h-48 rounded-lg object-cover">
+        {% endif %}
+        <div class="flex-1">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="text-sm px-2 py-1 rounded bg-white/10">{{ content.content_type|replace('_', ' ')|title }}</span>
+                {% if content.release_date %}
+                <span class="text-sm text-muted-foreground">{{ content.release_date[:4] }}</span>
+                {% endif %}
+            </div>
+            <h1 class="text-3xl font-display font-bold mb-2">{{ content.title }}</h1>
+            {% if content.rating %}
+            <div class="flex items-center gap-1 text-yellow-400 mb-4">
+                <i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                <span class="font-bold text-foreground">{{ "%.1f"|format(content.rating) }}</span>
+            </div>
+            {% endif %}
+            <p class="text-muted-foreground line-clamp-3">{{ content.description }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Gossip for this content -->
+<h2 class="text-2xl font-display font-bold mb-6 flex items-center gap-2">
+    <i data-lucide="flame" class="w-6 h-6 text-accent"></i>
+    Latest News about {{ content.title }}
+</h2>
+
+{% if gossip_items %}
+<div class="space-y-4">
+    {% for gossip in gossip_items %}
+    {% include 'partials/_gossip_card.html' %}
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-12 bg-card/30 rounded-xl border border-white/5">
+    <i data-lucide="newspaper" class="w-12 h-12 text-muted-foreground mx-auto mb-4"></i>
+    <h3 class="font-display font-semibold text-lg mb-2">No news yet</h3>
+    <p class="text-sm text-muted-foreground">We haven't found any recent news about {{ content.title }}.</p>
+</div>
+{% endif %}
+{% endblock %}
+

@@ -1,0 +1,34 @@
+{# Catalog / library search field — set before include: search_form_action, search_placeholder, search_value (optional), search_clear_href (optional when clearing query) #}
+{# Optional hidden filters: search_hidden_filter, search_hidden_status, search_hidden_type (omit or 'all' to skip) #}
+<form method="GET" action="{{ search_form_action }}" class="relative">
+    {% if search_hidden_filter is defined and search_hidden_filter and search_hidden_filter != 'all' %}
+    <input type="hidden" name="filter" value="{{ search_hidden_filter }}">
+    {% endif %}
+    {% if search_hidden_status is defined and search_hidden_status != 'all' %}
+    <input type="hidden" name="status" value="{{ search_hidden_status }}">
+    {% endif %}
+    {% if search_hidden_type is defined and search_hidden_type != 'all' %}
+    <input type="hidden" name="type" value="{{ search_hidden_type }}">
+    {% endif %}
+    <div class="relative">
+        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none"></i>
+        <input
+            type="text"
+            name="q"
+            value="{{ search_value or '' }}"
+            placeholder="{{ search_placeholder }}"
+            class="w-full h-12 pl-12 pr-32 bg-card/50 border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+        >
+        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+            {% if search_value and search_clear_href is defined %}
+            <a href="{{ search_clear_href }}" class="h-8 px-3 bg-muted hover:bg-muted/80 text-muted-foreground rounded-lg text-sm font-medium flex items-center gap-1 transition-colors">
+                <i data-lucide="x" class="w-4 h-4"></i>
+                Clear
+            </a>
+            {% endif %}
+            <button type="submit" class="h-8 px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+                Search
+            </button>
+        </div>
+    </div>
+</form>
