@@ -1,0 +1,158 @@
+<!-- Movie/Content Card Component -->
+<!-- Usage: include 'partials/_movie_card.html' with content=content, status=status, item=item -->
+
+{% set poster = content.poster_url or '' %}
+{% set year = content.release_date[:4] if content.release_date else '' %}
+{% set type_label = 'TV Show' if content.content_type == 'tv_show' else content.content_type|title %}
+
+<div class="group relative"
+     x-data="{ showMenu: false, status: '{{ status or '' }}', itemId: {{ item.id if item else 'null' }}, contentId: {{ content.id }} }"
+     :data-content-id="contentId"
+     :data-item-id="itemId"
+     @library:item-added.window="if ($event.detail.contentId === contentId) { status = $event.detail.status; itemId = $event.detail.itemId; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }); }"
+     @library:status-changed.window="if ($event.detail.itemId === itemId) { status = $event.detail.status; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }); }"
+     @library:item-removed.window="if ($event.detail.itemId === itemId) { status = ''; itemId = null; $nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }); }">
+    <a href="/{{ content.id }}" class="block relative aspect-[2/3] rounded-xl overflow-hidden bg-card border border-white/5 shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10">
+        <!-- Poster Image -->
+        {% if poster %}
+        <img 
+            src="{{ poster }}" 
+            alt="{{ content.title }}"
+            class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+            loading="lazy"
+        >
+        {% else %}
+        <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center">
+            <i data-lucide="{{ 'tv' if content.content_type == 'tv_show' else 'film' }}" class="w-16 h-16 text-white/20"></i>
+        </div>
+        {% endif %}
+        
+        <!-- Gradient Overlay -->
+        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
+        
+        <!-- Status Badge (Alpine-reactive) -->
+        <div class="absolute top-3 left-3 z-10" x-show="status" x-cloak>
+            <div class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-md border border-white/20"
+                 :class="{
+                     'bg-green-500/90 text-white': status === 'watching',
+                     'bg-blue-500/90 text-white': status === 'planned',
+                     'bg-emerald-500/90 text-white': status === 'completed',
+                     'bg-red-500/90 text-white': status === 'dropped',
+                     'bg-yellow-500/90 text-black': status === 'maybe'
+                 }">
+                <template x-if="status === 'watching'"><i data-lucide="play-circle" class="w-3 h-3"></i></template>
+                <template x-if="status === 'completed'"><i data-lucide="check-circle" class="w-3 h-3"></i></template>
+                <template x-if="status === 'planned'"><i data-lucide="plus" class="w-3 h-3"></i></template>
+                <template x-if="status === 'dropped'"><i data-lucide="x-circle" class="w-3 h-3"></i></template>
+                <template x-if="status === 'maybe'"><i data-lucide="help-circle" class="w-3 h-3"></i></template>
+                <span x-text="status"></span>
+            </div>
+        </div>
+        
+        <!-- Content Info -->
+        <div class="absolute bottom-0 left-0 right-0 p-4 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
+            <!-- Type badge -->
+            <div class="flex items-center gap-2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/10 text-white/80 border border-white/10">{{ type_label }}</span>
+                {% if year %}
+                <span class="text-[10px] text-white/60">{{ year }}</span>
+                {% endif %}
+            </div>
+            
+            <!-- Title -->
+            <h3 class="font-display font-bold text-base leading-tight text-white mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                {{ content.title }}
+            </h3>
+            
+            <!-- Rating and Discovery Time -->
+            <div class="flex items-center justify-between">
+                {% if content.rating %}
+                <div class="flex items-center gap-1 text-yellow-400">
+                    <i data-lucide="star" class="w-3.5 h-3.5 fill-current"></i>
+                    <span class="text-xs font-bold text-white/90">{{ "%.1f"|format(content.rating) }}</span>
+                </div>
+                {% elif content.network %}
+                <span class="text-xs text-white/60">{{ content.network }}</span>
+                {% else %}
+                <div></div>
+                {% endif %}
+            </div>
+        </div>
+    </a>
+
+    <!-- Action Menu Button (top-right) -->
+    <div class="absolute top-3 right-3 z-20">
+        <button 
+            @click.stop.prevent="showMenu = !showMenu"
+            class="w-9 h-9 rounded-full bg-black/50 hover:bg-primary text-white flex items-center justify-center transition-all backdrop-blur-sm opacity-0 group-hover:opacity-100"
+        >
+            <template x-if="status">
+                <i data-lucide="more-vertical" class="w-4 h-4"></i>
+            </template>
+            <template x-if="!status">
+                <i data-lucide="plus" class="w-5 h-5"></i>
+            </template>
+        </button>
+        
+        <!-- Dropdown Menu -->
+        <div
+            x-show="showMenu"
+            x-cloak
+            @click.away="showMenu = false"
+            x-transition:enter="transition ease-out duration-150"
+            x-transition:enter-start="opacity-0 scale-95"
+            x-transition:enter-end="opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-100"
+            x-transition:leave-start="opacity-100 scale-100"
+            x-transition:leave-end="opacity-0 scale-95"
+            class="absolute right-0 mt-2 w-32 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-30"
+        >
+            <div class="p-2 border-b border-white/10">
+                <p class="text-xs font-medium text-muted-foreground px-2" x-text="status ? 'Change Status' : 'Add to Library'"></p>
+            </div>
+            <div @click.stop>
+                <button type="button" @click="status ? updateStatus(itemId, 'watching', status) : addToLibrary(contentId, 'watching'); showMenu = false"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-green-500/20 flex items-center gap-1.5 transition-colors"
+                        :class="status === 'watching' ? 'text-green-400 font-medium' : ''">
+                    <i data-lucide="play-circle" class="w-4 h-4 text-green-400"></i>
+                    Watching
+                </button>
+                <button type="button" @click="status ? updateStatus(itemId, 'planned', status) : addToLibrary(contentId, 'planned'); showMenu = false"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-blue-500/20 flex items-center gap-1.5 transition-colors"
+                        :class="status === 'planned' ? 'text-blue-400 font-medium' : ''">
+                    <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i>
+                    Planned
+                </button>
+                <button type="button" @click="status ? updateStatus(itemId, 'completed', status) : addToLibrary(contentId, 'completed'); showMenu = false"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors"
+                        :class="status === 'completed' ? 'text-emerald-400 font-medium' : ''">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+                    Completed
+                </button>
+                <button type="button" @click="status ? updateStatus(itemId, 'dropped', status) : addToLibrary(contentId, 'dropped'); showMenu = false"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-red-500/20 flex items-center gap-1.5 transition-colors"
+                        :class="status === 'dropped' ? 'text-red-400 font-medium' : ''">
+                    <i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>
+                    Dropped
+                </button>
+                <button type="button" @click="status ? updateStatus(itemId, 'maybe', status) : addToLibrary(contentId, 'maybe'); showMenu = false"
+                        class="w-full px-2.5 py-2 text-left text-sm hover:bg-yellow-500/20 flex items-center gap-1.5 transition-colors"
+                        :class="status === 'maybe' ? 'text-yellow-400 font-medium' : ''">
+                    <i data-lucide="help-circle" class="w-4 h-4 text-yellow-400"></i>
+                    Maybe
+                </button>
+                <!-- Remove option (only when in library) -->
+                <template x-if="status">
+                    <div class="border-t border-white/10 mt-1 pt-1">
+                        <button type="button"
+                            @click="removeFromLibrary(itemId, '{{ content.title|e }}', status); showMenu = false"
+                            class="w-full px-2.5 py-2 text-left text-sm hover:bg-red-500/20 flex items-center gap-1.5 transition-colors text-red-400">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            Remove from Library
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>

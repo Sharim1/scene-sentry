@@ -1,0 +1,66 @@
+<!-- Gossip Card Component -->
+<!-- Usage: include 'partials/_gossip_card.html' with gossip=gossip -->
+
+{% set tag_label = gossip.tag.value|title if gossip.tag else 'Rumor' %}
+{% set time_display = gossip.time_ago if gossip.time_ago else 'Just now' %}
+
+<div class="group relative bg-card rounded-xl overflow-hidden border border-white/5 hover:border-primary/30 transition-all duration-300 animate-in">
+    <div class="flex flex-col md:flex-row">
+        <!-- Image -->
+        <div class="md:w-80 w-full h-64 md:h-auto relative overflow-hidden flex-shrink-0">
+            {% if gossip.image_url %}
+            <img 
+                src="{{ gossip.image_url }}" 
+                alt="{{ gossip.title }}" 
+                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                loading="lazy"
+            >
+            {% else %}
+            <div class="w-full h-full bg-gradient-to-br from-primary/20 to-accent/10 flex items-center justify-center">
+                <i data-lucide="newspaper" class="w-16 h-16 text-white/20"></i>
+            </div>
+            {% endif %}
+            <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+        </div>
+        
+        <!-- Content -->
+        <div class="flex-1 p-6 flex flex-col justify-between min-h-[240px]">
+            <div>
+                <!-- Tags and AI Badge -->
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-accent text-white">
+                        {{ tag_label }}
+                    </span>
+                    <span class="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-primary"></i>
+                        AI Scraped
+                    </span>
+                </div>
+                
+                <!-- Title -->
+                <h3 class="font-display font-bold text-xl md:text-2xl leading-tight mb-3 line-clamp-2 group-hover:text-primary transition-colors">
+                    {{ gossip.title }}
+                </h3>
+                
+                <!-- Preview text -->
+                <p class="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+                    {{ gossip.preview_text or gossip.content[:250] }}
+                </p>
+            </div>
+            
+            <!-- Footer -->
+            <div class="flex items-center justify-between pt-4 mt-4 border-t border-white/5">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span class="font-medium text-white/90">{{ gossip.source_name or 'Unknown' }}</span>
+                    <span class="text-white/30">&bull;</span>
+                    <span>{{ time_display }}</span>
+                </div>
+                
+                <a href="{{ gossip.source_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-primary hover:text-accent transition-colors inline-flex items-center gap-1.5 font-semibold">
+                    Read More
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
