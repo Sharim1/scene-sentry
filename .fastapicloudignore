@@ -1,0 +1,4 @@
+# FastAPI Cloud extra ignore/un-ignore rules (takes precedence over .gitignore).
+# Built CSS/JS live in static/assets/ (not dist/ — Cloud strips dist directories).
+!static/assets/
+!static/assets/**

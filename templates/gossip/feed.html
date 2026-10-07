@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Gossip Feed - Scene Sentry{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div>
+        <h1 class="text-3xl font-display font-bold mb-1 flex items-center gap-3">
+            <i data-lucide="flame" class="w-8 h-8 text-accent"></i>
+            Gossip Feed
+        </h1>
+        <p class="text-muted-foreground">AI-scraped entertainment news from across the web.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <span class="text-sm text-muted-foreground">
+            {% if gossip_items and gossip_items|length > 0 %}
+            Last updated: {{ gossip_items[0].scraped_at.strftime('%I:%M %p') if gossip_items[0].scraped_at else 'Never' }}
+            {% endif %}
+        </span>
+    </div>
+</div>
+
+<!-- Tag Filters -->
+{% if tag_counts %}
+<div class="flex flex-wrap gap-2 mb-8">
+    <a href="/gossip" class="px-4 py-2 rounded-full text-sm font-medium transition-all {% if not current_tag %}bg-primary text-white{% else %}bg-white/5 text-muted-foreground hover:bg-white/10{% endif %}">
+        All
+    </a>
+    {% for tag, count in tag_counts.items() %}
+    <a href="/gossip?tag={{ tag }}" class="px-4 py-2 rounded-full text-sm font-medium transition-all {% if current_tag == tag %}bg-primary text-white{% else %}bg-white/5 text-muted-foreground hover:bg-white/10{% endif %}">
+        {{ tag|title }}
+        <span class="ml-1 opacity-60">({{ count }})</span>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Gossip Grid -->
+{% if gossip_items %}
+<div class="space-y-4">
+    {% for gossip in gossip_items %}
+    <div class="group relative bg-card rounded-xl overflow-hidden border border-white/5 hover:border-primary/30 transition-all duration-300 animate-in">
+        <div class="flex flex-col md:flex-row">
+            <!-- Banner Image -->
+            <div class="md:w-80 w-full h-64 md:h-auto relative overflow-hidden flex-shrink-0">
+                {% if gossip.image_url %}
+                <img 
+                    src="{{ gossip.image_url }}" 
+                    alt="{{ gossip.title }}" 
+                    class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    loading="lazy"
+                >
+                {% else %}
+                <div class="w-full h-full bg-gradient-to-br from-primary/20 to-accent/10 flex items-center justify-center">
+                    <i data-lucide="newspaper" class="w-16 h-16 text-white/20"></i>
+                </div>
+                {% endif %}
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+            </div>
+            
+            <!-- Content -->
+            <div class="flex-1 p-6 flex flex-col justify-between min-h-[240px]">
+                <div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-accent text-white">
+                            {{ gossip.tag.value|title if gossip.tag else 'Rumor' }}
+                        </span>
+                        <span class="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-primary"></i>
+                            AI Scraped
+                        </span>
+                    </div>
+                    
+                    <h3 class="font-display font-bold text-xl md:text-2xl leading-tight mb-3 line-clamp-2 group-hover:text-primary transition-colors">
+                        {{ gossip.title }}
+                    </h3>
+                    
+                    <p class="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+                        {{ gossip.preview_text or gossip.content[:250] }}
+                    </p>
+                </div>
+                
+                <!-- Footer -->
+                <div class="flex items-center justify-between pt-4 mt-4 border-t border-white/5">
+                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span class="font-medium text-white/90">{{ gossip.source_name or 'Unknown' }}</span>
+                        <span class="text-white/30">&bull;</span>
+                        <span>{{ gossip.time_ago if gossip.time_ago else 'Just now' }}</span>
+                    </div>
+                    
+                    <a href="{{ gossip.source_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-primary hover:text-accent transition-colors inline-flex items-center gap-1.5 font-semibold">
+                        Read More
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-20 bg-card/30 rounded-xl border border-white/5">
+    <i data-lucide="newspaper" class="w-16 h-16 text-muted-foreground mx-auto mb-6"></i>
+    <h2 class="font-display font-semibold text-xl mb-2">No gossip found</h2>
+    <p class="text-muted-foreground mb-6 max-w-md mx-auto">
+        {% if current_tag %}
+        No gossip with tag "{{ current_tag }}" found. Try a different filter.
+        {% else %}
+        No gossip yet. Our AI agents will automatically scan for the latest entertainment news.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,159 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://www.conventionalcommits.org/) for commit guidelines.
+
+## v2.7.0 (2026-10-06)
+
+### Feat
+
+- **discovery**: give new movies a release date at intake
+
+## v2.6.1 (2026-10-06)
+
+### Fix
+
+- **library**: sort newest release first and show release year on cards
+
+## v2.6.0 (2026-10-06)
+
+### Feat
+
+- **db**: mutual TLS to Postgres and production hardening
+
+### Fix
+
+- **ci**: pin test DB driver to psycopg2 and satisfy lint
+
+## v2.5.0 (2026-07-21)
+
+### Feat
+
+- **config**: harden app configuration for production (SCE-45)
+
+### Fix
+
+- **security**: allow-list production Clerk host in CSP (SCE-49)
+
+### Refactor
+
+- **security**: robustify Clerk CSP host derivation + response-path tests (SCE-49)
+
+## v2.4.0 (2026-06-21)
+
+### Feat
+
+- **embeddings**: add Content pgvector embeddings + similarity (SCE-33)
+
+## v2.3.1 (2026-06-20)
+
+### Fix
+
+- **db**: freeze Alembic baseline to an explicit snapshot
+
+### Refactor
+
+- **content**: rename Content.source to Content.provider (SCE-5)
+
+## v2.3.0 (2026-06-20)
+
+### Feat
+
+- **db**: adopt Alembic for schema migrations
+
+## v2.2.2 (2026-05-24)
+
+### Refactor
+
+- **tasks**: remove manual task system and gossip feed polling
+
+## v2.2.1 (2026-05-24)
+
+### Fix
+
+- **test**: mock Clerk settings in auth tests for CI compatibility
+- **auth**: resolve Clerk session timeout and preserve login redirect destination
+
+## v2.2.0 (2026-05-23)
+
+### Feat
+
+- **tasks**: replace APScheduler with Celery + Redis
+
+## v2.1.8 (2026-05-21)
+
+### Fix
+
+- **ui**: add x-cloak CSS rule and remove redundant search page
+
+## v2.1.7 (2026-05-21)
+
+### Refactor
+
+- **providers**: inline TMDbService HTTP logic into TMDbProvider
+
+## v2.1.6 (2026-05-21)
+
+### Fix
+
+- **lint**: remove unused imports and fix import sorting
+
+### Refactor
+
+- **auth**: extract IdentitySync service from ClerkAuthMiddleware
+
+## v2.1.5 (2026-05-21)
+
+### Refactor
+
+- **services**: strip pass-through methods from Gossip and Ranking services
+
+## v2.1.4 (2026-05-21)
+
+### Refactor
+
+- **agents**: inject session factory to decouple from db_session
+
+## v2.1.3 (2026-05-21)
+
+### Fix
+
+- **notifications**: prevent SSE reconnection storm and battery drain
+
+## v2.1.2 (2026-05-21)
+
+### Fix
+
+- **ui**: eliminate full-page reloads on library mutations and tab switching
+
+## v2.1.1 (2026-05-20)
+
+### Fix
+
+- **auth**: replace Clerk UserButton with custom profile dropdown
+
+## v2.1.0 (2026-05-20)
+
+### Feat
+
+- **library**: add card management menu and remove-from-library UI
+
+### Fix
+
+- **ui**: move status dropdown out of button element on detail page
+
+## v2.0.2 (2026-05-20)
+
+### Refactor
+
+- **library**: extract LibraryService for all Library Item mutations
+
+## v2.0.1 (2026-05-20)
+
+### Fix
+
+- **security**: harden application against audit findings
+
+## v2.0.0 (2026-05-19)
+
+Initial tracked release.
