@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Scene Sentry{% endblock %}</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Compiled + purged Tailwind (built from tailwind.config.js; replaces the CDN) -->
+    <link rel="stylesheet" href="{{ static_url('assets/tailwind.css') }}">
+    
+    <!-- Alpine.js for interactivity (pinned major version) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
+    
+    <!-- Lucide Icons (pinned) -->
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
+    
+    {% if clerk_enabled %}
+    <!-- Clerk JavaScript SDK (loaded from Clerk's CDN for full UI component support) -->
+    <script
+        async
+        crossorigin="anonymous"
+        data-clerk-publishable-key="{{ clerk_publishable_key }}"
+        src="https://{{ clerk_fapi_url }}/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+        type="text/javascript"
+        onload="window.__clerkScriptLoaded = true; window.dispatchEvent(new Event('clerk-script-loaded'));"
+    ></script>
+    <script>
+        window.__clerkReady = new Promise(function(resolve) {
+            function initClerk() {
+                if (typeof Clerk !== 'undefined') {
+                    Clerk.load().then(function() {
+                        resolve(Clerk);
+                    }).catch(function(err) {
+                        console.warn('Clerk.load() failed:', err);
+                        resolve(null);
+                    });
+                } else if (!window.__clerkScriptLoaded) {
+                    window.addEventListener('clerk-script-loaded', initClerk, { once: true });
+                }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initClerk);
+            } else {
+                initClerk();
+            }
+        });
+    </script>
+    {% endif %}
+    
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-background text-foreground font-sans antialiased" data-authenticated="{{ 'true' if user else 'false' }}" x-data="{ mobileMenuOpen: false, globalSearchOpen: false }">
+    <div class="min-h-screen flex flex-col">
+
+        {% if user %}
+        <!-- Top Nav - menu stays directly visible, never behind an extra tap to open -->
+        <header class="sticky top-0 z-50 h-16 border-b border-white/5 bg-background/80 backdrop-blur-xl">
+            <div class="h-full px-4 md:px-6 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-6 min-w-0">
+                    <a href="/dashboard" class="flex items-center gap-2 flex-shrink-0">
+                        <img src="{{ static_url('images/logo.svg') }}" alt="Scene Sentry" class="w-8 h-8">
+                        <span class="hidden sm:inline font-display font-bold text-lg tracking-tight">Scene Sentry</span>
+                    </a>
+                    <!-- Desktop: full labeled nav -->
+                    <nav class="hidden md:flex items-center gap-1">
+                        <a href="/dashboard" class="topnav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+                            <i data-lucide="home" class="w-4 h-4"></i>
+                            <span>Home</span>
+                        </a>
+                        <a href="/gossip" class="topnav-item {% if '/gossip' in request.url.path %}active{% endif %}">
+                            <i data-lucide="flame" class="w-4 h-4"></i>
+                            <span>Gossip Feed</span>
+                        </a>
+                        <a href="/library" class="topnav-item {% if request.url.path == '/library' %}active{% endif %}">
+                            <i data-lucide="library" class="w-4 h-4"></i>
+                            <span>My Library</span>
+                        </a>
+                        <a href="/reminders" class="topnav-item {% if '/reminders' in request.url.path %}active{% endif %}">
+                            <i data-lucide="bell" class="w-4 h-4"></i>
+                            <span>Reminders</span>
+                        </a>
+                    </nav>
+                    <!-- Mobile: icon-only nav, no drawer to open -->
+                    <nav class="flex md:hidden items-center gap-1">
+                        <a href="/dashboard" class="topnav-icon {% if request.url.path == '/dashboard' %}active{% endif %}" title="Home" aria-label="Home">
+                            <i data-lucide="home" class="w-5 h-5"></i>
+                        </a>
+                        <a href="/gossip" class="topnav-icon {% if '/gossip' in request.url.path %}active{% endif %}" title="Gossip Feed" aria-label="Gossip Feed">
+                            <i data-lucide="flame" class="w-5 h-5"></i>
+                        </a>
+                        <a href="/library" class="topnav-icon {% if request.url.path == '/library' %}active{% endif %}" title="My Library" aria-label="My Library">
+                            <i data-lucide="library" class="w-5 h-5"></i>
+                        </a>
+                        <a href="/reminders" class="topnav-icon {% if '/reminders' in request.url.path %}active{% endif %}" title="Reminders" aria-label="Reminders">
+                            <i data-lucide="bell" class="w-5 h-5"></i>
+                        </a>
+                    </nav>
+                </div>
+
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <button type="button" @click="globalSearchOpen = true; $nextTick(() => { const el = document.getElementById('global-search-q'); if (el) el.focus(); })" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Search catalog" title="Search catalog">
+                        <i data-lucide="search" class="w-5 h-5 text-muted-foreground"></i>
+                    </button>
+                    <div class="relative" x-data="notificationBell()" x-init="init()" @keydown.escape.window="open = false">
+                        <button @click="toggle()" class="relative p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Notifications">
+                            <i data-lucide="bell" class="w-5 h-5 text-muted-foreground"></i>
+                            <span x-show="unreadCount > 0"
+                                  x-text="unreadCount > 9 ? '9+' : unreadCount"
+                                  x-cloak
+                                  class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white px-1 shadow-lg shadow-accent/30">
+                            </span>
+                        </button>
+
+                        <!-- Dropdown -->
+                        <div x-show="open" x-cloak
+                             x-transition:enter="transition ease-out duration-150"
+                             x-transition:enter-start="opacity-0 scale-95 -translate-y-1"
+                             x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+                             x-transition:leave="transition ease-in duration-100"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             @click.away="open = false"
+                             class="absolute max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto right-0 mt-2 w-80 max-h-[28rem] bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[70]">
+                            <!-- Header -->
+                            <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                                <h3 class="text-sm font-semibold">Notifications</h3>
+                                <button x-show="unreadCount > 0" @click="markAllRead()" class="text-xs text-primary hover:underline">Mark all read</button>
+                            </div>
+                            <!-- List -->
+                            <div class="overflow-y-auto max-h-[22rem] divide-y divide-white/5">
+                                <template x-if="notifications.length === 0">
+                                    <div class="px-4 py-8 text-center text-sm text-muted-foreground">
+                                        <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+                                        <p>No notifications yet</p>
+                                    </div>
+                                </template>
+                                <template x-for="n in notifications" :key="n.id">
+                                    <button @click="clickNotification(n)"
+                                            class="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors flex items-start gap-3"
+                                            :class="{ 'bg-primary/5': !n.is_read }">
+                                        <div class="flex-shrink-0 mt-0.5 w-2 h-2 rounded-full"
+                                             :class="n.is_read ? 'bg-transparent' : 'bg-primary'"></div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium truncate" :class="n.is_read ? 'text-muted-foreground' : 'text-foreground'" x-text="n.title"></p>
+                                            <p class="text-xs text-muted-foreground line-clamp-2 mt-0.5" x-text="n.body"></p>
+                                            <p class="text-[10px] text-muted-foreground/60 mt-1" x-text="timeAgo(n.created_at)"></p>
+                                        </div>
+                                    </button>
+                                </template>
+                            </div>
+                            <!-- Footer -->
+                            <div class="border-t border-white/5 px-4 py-2">
+                                <a href="/reminders" class="text-xs text-primary hover:underline">Reminders</a>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="/settings" class="p-2 rounded-lg hover:bg-white/5 transition-colors" aria-label="Settings" title="Settings">
+                        <i data-lucide="settings" class="w-5 h-5 text-muted-foreground"></i>
+                    </a>
+                    <div x-data="{ profileOpen: false }" class="relative">
+                        <button @click="profileOpen = !profileOpen" class="flex items-center gap-1 p-1 rounded-lg hover:bg-white/5 transition-colors" aria-label="Account menu">
+                            {% if user.avatar_url %}
+                            <img src="{{ user.avatar_url }}" alt="{{ user.username }}" class="w-8 h-8 rounded-full object-cover ring-2 ring-primary/30">
+                            {% else %}
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xs font-bold ring-2 ring-primary/30">
+                                {{ user.username[0].upper() }}
+                            </div>
+                            {% endif %}
+                            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-muted-foreground transition-transform hidden sm:inline"
+                               :class="{ 'rotate-180': profileOpen }"></i>
+                        </button>
+
+                        <!-- Profile Dropdown Menu -->
+                        <div x-show="profileOpen"
+                             x-cloak
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-75"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             @click.away="profileOpen = false"
+                             class="absolute top-full right-0 mt-2 w-56 bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                            <div class="px-3 py-3 border-b border-white/5">
+                                <div class="text-sm font-medium truncate">{{ user.username }}</div>
+                                <div class="text-xs text-muted-foreground truncate">{{ user.email }}</div>
+                            </div>
+                            <div class="p-2">
+                                <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
+                                    <i data-lucide="user" class="w-4 h-4 text-muted-foreground"></i>
+                                    <span class="text-sm">My Profile</span>
+                                </a>
+                                <a href="/settings" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
+                                    <i data-lucide="settings" class="w-4 h-4 text-muted-foreground"></i>
+                                    <span class="text-sm">Settings</span>
+                                </a>
+                                <div class="border-t border-white/5 my-1"></div>
+                                {% if clerk_enabled %}
+                                <button type="button"
+                                        onclick="(async function(btn){btn.disabled=true;btn.querySelector('span').textContent='Signing out…';try{if(window.__clerkReady){var c=await window.__clerkReady;if(c)await c.signOut()}}catch(e){console.warn('Clerk signOut error:',e)}var f=document.createElement('form');f.method='POST';f.action='/logout';document.body.appendChild(f);f.submit()})(this)"
+                                        class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors w-full text-left">
+                                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                                    <span class="text-sm">Sign out</span>
+                                </button>
+                                {% else %}
+                                <form method="POST" action="/logout" class="m-0">
+                                    <button type="submit" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors w-full text-left">
+                                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                                        <span class="text-sm">Sign out</span>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Global catalog search modal -->
+        <div x-show="globalSearchOpen" x-cloak
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 class="fixed inset-0 z-[80] flex items-start justify-center pt-24 px-4 bg-black/70 backdrop-blur-sm"
+                 @click.self="globalSearchOpen = false"
+                 @keydown.escape.window="globalSearchOpen = false">
+                <div id="global-search-root" class="w-full max-w-lg bg-card border border-white/10 rounded-2xl shadow-2xl overflow-hidden" @click.stop role="dialog" aria-modal="true" aria-labelledby="global-search-dialog-title">
+                    <div class="p-4 border-b border-white/5 flex items-center gap-3">
+                        <i data-lucide="search" class="w-5 h-5 text-muted-foreground flex-shrink-0"></i>
+                        <input type="search" id="global-search-q" data-global-search-input autocomplete="off"
+                               class="flex-1 bg-transparent border-0 text-foreground placeholder:text-muted-foreground focus:ring-0 text-base"
+                               placeholder="Search movies and TV in your catalog…"
+                               aria-label="Search catalog">
+                        <button type="button" @click="globalSearchOpen = false" class="p-2 rounded-lg hover:bg-white/10 text-muted-foreground" aria-label="Close search">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div id="global-search-results" data-global-search-results class="max-h-[min(60vh,24rem)] overflow-y-auto p-2 text-sm text-muted-foreground">
+                        <p class="px-3 py-6 text-center" id="global-search-hint">Type at least one character to search.</p>
+                    </div>
+                    <div class="px-4 py-2 border-t border-white/5 text-xs text-muted-foreground">
+                        <span id="global-search-dialog-title">Catalog search</span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+        <main class="flex-1 p-4 md:p-6">
+            <div class="max-w-7xl mx-auto space-y-8 animate-in">
+                
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="space-y-2">
+                            {% for category, message in messages %}
+                            <div class="toast {% if category == 'error' %}toast-error{% elif category == 'success' %}toast-success{% elif category == 'warning' %}toast-warning{% else %}{% endif %} relative"
+                                 x-data="{ show: true }"
+                                 x-show="show"
+                                 x-init="setTimeout(() => show = false, 5000)">
+                                <div class="flex items-center gap-3">
+                                    {% if category == 'success' %}
+                                    <i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>
+                                    {% elif category == 'error' %}
+                                    <i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>
+                                    {% elif category == 'warning' %}
+                                    <i data-lucide="alert-triangle" class="w-5 h-5 text-yellow-400"></i>
+                                    {% else %}
+                                    <i data-lucide="info" class="w-5 h-5 text-blue-400"></i>
+                                    {% endif %}
+                                    <span class="text-sm">{{ message }}</span>
+                                    <button @click="show = false" class="ml-auto p-1 hover:bg-white/10 rounded transition-colors">
+                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+                
+                {% block content %}{% endblock %}
+            </div>
+            
+            <footer class="mt-16 py-6 border-t border-white/5 text-center">
+                <p class="text-xs text-muted-foreground">Scene Sentry. The Digital Auteur Experience.</p>
+            </footer>
+        </main>
+    </div>
+    
+    <!-- Initialize Lucide Icons (only once) -->
+    <script>
+        // Prevent double initialization
+        if (!window.lucideInitialized) {
+            window.lucideInitialized = true;
+            document.addEventListener('DOMContentLoaded', function() {
+                lucide.createIcons();
+            });
+        }
+    </script>
+    
+    <!-- Custom JS (bundled by esbuild) -->
+    <script src="{{ static_url('assets/app.js') }}"></script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Scene Sentry{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-display font-bold mb-1">Settings</h1>
+        <p class="text-muted-foreground">Customize your Scene Sentry experience.</p>
+    </div>
+    
+    <form method="POST" action="/settings" class="space-y-8">
+        <!-- Profile Section -->
+        <div class="bg-card rounded-xl border border-white/5 p-6">
+            <h2 class="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                <i data-lucide="user" class="w-5 h-5 text-primary"></i>
+                Profile
+            </h2>
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-2xl font-bold text-white">
+                    {{ user.username[0].upper() }}
+                </div>
+                <div>
+                    <div class="font-semibold">{{ user.username }}</div>
+                    <div class="text-sm text-muted-foreground">{{ user.email }}</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Preferences Section -->
+        <div class="bg-card rounded-xl border border-white/5 p-6">
+            <h2 class="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                <i data-lucide="sliders-horizontal" class="w-5 h-5 text-primary"></i>
+                Preferences
+            </h2>
+            
+            <!-- Search API -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium mb-2">Search API</label>
+                <select name="search_api" class="input">
+                    <option value="tavily" {% if user.search_api_preference == 'tavily' %}selected{% endif %}>Tavily (Recommended)</option>
+                    <option value="brightdata" {% if user.search_api_preference == 'brightdata' %}selected{% endif %}>Bright Data</option>
+                </select>
+                <p class="text-xs text-muted-foreground mt-1">Choose which search API to use for content discovery.</p>
+            </div>
+            
+            <!-- Timezone -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium mb-2">Timezone</label>
+                <select name="user_timezone" class="input">
+                    {% for tz_value, tz_label in timezones %}
+                    <option value="{{ tz_value }}" {% if user.timezone == tz_value %}selected{% endif %}>{{ tz_label }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-muted-foreground mt-1">Used for reminder scheduling and time display.</p>
+            </div>
+
+            <!-- Discovery Frequency -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium mb-2">Discovery Frequency</label>
+                <select name="discovery_frequency" class="input">
+                    <option value="15" {% if user.discovery_frequency == 15 %}selected{% endif %}>Every 15 minutes</option>
+                    <option value="30" {% if user.discovery_frequency == 30 %}selected{% endif %}>Every 30 minutes</option>
+                    <option value="60" {% if user.discovery_frequency == 60 %}selected{% endif %}>Every hour</option>
+                    <option value="120" {% if user.discovery_frequency == 120 %}selected{% endif %}>Every 2 hours</option>
+                </select>
+                <p class="text-xs text-muted-foreground mt-1">How often AI agents should search for new content.</p>
+            </div>
+        </div>
+        
+        <!-- Genre Preferences -->
+        <div class="bg-card rounded-xl border border-white/5 p-6">
+            <h2 class="font-display font-bold text-lg mb-4 flex items-center gap-2">
+                <i data-lucide="heart" class="w-5 h-5 text-accent"></i>
+                Favorite Genres
+            </h2>
+            <p class="text-sm text-muted-foreground mb-4">Select genres you're interested in. This helps our AI find better recommendations.</p>
+            
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {% for genre in available_genres %}
+                <label class="flex items-center gap-2 p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer transition-colors {% if genre in current_genres %}ring-2 ring-primary bg-primary/10{% endif %}">
+                    <input type="checkbox" name="genres" value="{{ genre }}" {% if genre in current_genres %}checked{% endif %} class="hidden">
+                    <div class="w-4 h-4 rounded border border-white/20 flex items-center justify-center {% if genre in current_genres %}bg-primary border-primary{% endif %}">
+                        {% if genre in current_genres %}
+                        <i data-lucide="check" class="w-3 h-3 text-white"></i>
+                        {% endif %}
+                    </div>
+                    <span class="text-sm">{{ genre }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Submit -->
+        <div class="flex justify-end">
+            <button type="submit" class="btn btn-primary">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                Save Settings
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

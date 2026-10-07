@@ -1,0 +1,170 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[project]
+name = "scenesentry"
+version = "2.7.0"
+description = "AI-powered cinema intelligence platform"
+requires-python = ">=3.11"
+dependencies = [
+    # FastAPI and web
+    "fastapi[standard]>=0.115.0",
+    "jinja2>=3.1.4",
+    "python-multipart>=0.0.20",
+    "starlette-session>=0.4.0",
+    "itsdangerous>=2.2.0",
+    # Database
+    "sqlalchemy>=2.0.43",
+    "psycopg2-binary>=2.9.10",
+    "pgvector>=0.3.6",
+    # Pydantic
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    # Auth
+    "werkzeug>=3.1.3",
+    "clerk-backend-api>=1.0.0",
+    "svix>=1.41.0",
+    # Rate limiting
+    "slowapi>=0.1.9",
+    # AI and LangChain
+    "langchain>=0.3.27",
+    "langchain-core>=0.3.75",
+    "langchain-google-genai>=2.1.10",
+    "langchain-community>=0.3.29",
+    "langgraph>=0.6.6",
+    "langgraph-checkpoint>=2.1.1",
+    "google-genai>=1.33.0",
+    "google-generativeai>=0.8.0",
+    "google-api-core>=2.20.0",
+    "protobuf>=5.28.0",
+    "grpcio>=1.68.0",
+    # Search (gossip only)
+    "tavily-python>=0.7.11",
+    # HTTP
+    "httpx>=0.28.0",
+    "requests>=2.32.5",
+    # TVDB
+    "tvdb_v4_official>=1.1.0",
+    # Background tasks
+    "celery[redis]>=5.4.0",
+    "redis[hiredis]>=5.0.0",
+    # Email delivery
+    "resend>=2.26.0",
+    # Utilities
+    "email-validator>=2.3.0",
+    "starlette-csrf>=3.0.0",
+    "alembic>=1.18.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "fakeredis>=2.26.0",
+    "commitizen>=4.8.0",
+    "pre-commit>=4.2.0",
+    "ruff>=0.11.0",
+    "mypy>=1.15.0",
+    "pip-audit>=2.10.0",
+    "httpx>=0.28.0",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+[tool.commitizen]
+pre_bump_hooks = ["uv lock", "git add uv.lock"]
+name = "cz_conventional_commits"
+version = "2.7.0"
+version_files = ["pyproject.toml:^version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_start_rev = "v2.0.0"
+
+[dependency-groups]
+dev = [
+    "pip-audit>=2.10.0",
+    "pre-commit>=4.6.0",
+]
+
+# ── Ruff ────────────────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit (security)
+    "T20",  # flake8-print
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",   # line-length handled by formatter
+    "E402",   # module-level import ordering (FastAPI lazy-import pattern)
+    "E712",   # == True/False comparisons required by SQLAlchemy column filters
+    "S101",   # assert allowed in tests
+    "S105",   # hardcoded password bindings (too noisy for config defaults)
+    "S106",   # same — password-in-argument false positives
+    "UP042",  # str+Enum → StrEnum migration deferred (needs broader refactor)
+    "SIM102", # nested if suggestion — readability trade-off
+    "SIM105", # contextlib.suppress suggestion — opt-in later
+    "SIM108", # ternary operator suggestion — readability trade-off
+    "S110",   # try-except-pass — acceptable in specific provider/agent code
+    "S704",   # Markup usage — intentional in templates
+    "B039",   # mutable ContextVar default — pre-existing, needs audit
+    "B904",   # exception chaining — adopt incrementally
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"app/config.py" = ["S105"]
+"manage.py" = ["T201"]
+"run.py" = ["T201", "S104"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ── Mypy ────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = ["tests", "tests.*"]
+disallow_untyped_defs = false
+
+# ── Pytest ──────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: tests requiring external services (e.g. Postgres+pgvector)",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/agents/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 0
