@@ -39,6 +39,19 @@ def login_page(request: Request):
     if not next_url.startswith("/"):
         next_url = "/dashboard"
 
+    refused = getattr(request.state, "identity_refused", None)
+    if refused:
+        message = (
+            "Your email address hasn't been verified yet. Verify it in your account settings, then sign in again."
+            if refused == "unverified_email"
+            else "This account is already connected to a different sign-in. Contact support if that's unexpected."
+        )
+        return templates.TemplateResponse(
+            "errors/error.html",
+            {"request": request, "status_code": 403, "error": message},
+            status_code=403,
+        )
+
     clerk_user_id = getattr(request.state, "clerk_user_id", None)
     session_user_id = getattr(request.state, "session_user_id", None)
     if clerk_user_id or session_user_id:
