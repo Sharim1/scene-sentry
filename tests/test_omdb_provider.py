@@ -101,12 +101,13 @@ class TestOmdbKeyStaysOutOfLogs:
         with caplog.at_level(logging.DEBUG, logger="app.services.providers.omdb_provider"):
             result = provider.search("dune") if call == "search" else provider.get_details("tt1160419")
 
-        assert not result  # still degrades to "nothing found"
+        assert not result
         ours = [r.getMessage() for r in caplog.records if r.name == "app.services.providers.omdb_provider"]
         assert ours, "the failure should still be logged"
         assert all(API_KEY not in m for m in ours)
 
 
+@pytest.mark.slow
 class TestHttpClientLogsAreQuietedAtStartup:
     """httpx logs every request URL at INFO, and providers pass their API keys in
     the query string, so a freshly started process must not emit those lines.

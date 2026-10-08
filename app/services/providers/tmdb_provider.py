@@ -14,6 +14,7 @@ import httpx
 
 from app.config import settings
 from app.services.providers.base import ContentProvider, NormalizedContent, _year_from_date
+from app.utils.log_safety import describe_http_error
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class TMDbProvider(ContentProvider):
                 resp.raise_for_status()
                 return resp.json()
         except Exception as e:
-            logger.error("TMDb API error (%s): %s", endpoint, e)
+            logger.error("TMDb API error (%s): %s", endpoint, describe_http_error(e))
             return None
 
     def _format_poster(self, item: dict[str, Any]) -> dict[str, Any]:
