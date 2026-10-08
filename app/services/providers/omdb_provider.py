@@ -13,10 +13,11 @@ import httpx
 
 from app.config import settings
 from app.services.providers.base import ContentProvider, NormalizedContent
+from app.utils.log_safety import describe_http_error
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "http://www.omdbapi.com/"
+BASE_URL = "https://www.omdbapi.com/"
 
 
 def _parse_year(year_val: Any) -> int | None:
@@ -163,7 +164,7 @@ class OMDbProvider(ContentProvider):
             resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.debug("OMDb search failed: %s", exc)
+            logger.debug("OMDb search failed: %s", describe_http_error(exc))
             return []
 
         if not isinstance(data, dict) or data.get("Response") == "False":
@@ -194,7 +195,7 @@ class OMDbProvider(ContentProvider):
             resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.debug("OMDb get_details failed: %s", exc)
+            logger.debug("OMDb get_details failed: %s", describe_http_error(exc))
             return None
 
         if not isinstance(data, dict) or data.get("Response") == "False":

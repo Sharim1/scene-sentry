@@ -3,6 +3,9 @@ from datetime import timedelta
 from celery import Celery
 
 from app.config import settings
+from app.utils.log_safety import quiet_http_client_logs
+
+quiet_http_client_logs()
 
 celery_app = Celery("scenesentry", include=["app.tasks.periodic"])
 

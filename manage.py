@@ -27,10 +27,13 @@ import argparse
 import logging
 import sys
 
+from app.utils.log_safety import quiet_http_client_logs
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+quiet_http_client_logs()
 logger = logging.getLogger("manage")
 
 
