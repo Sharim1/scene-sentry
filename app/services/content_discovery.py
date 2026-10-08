@@ -5,8 +5,8 @@ deduplicates, and persists via ContentRepository.
 Tracks per-provider page state so each run fetches the *next* batch of
 content rather than re-scanning the same data.  Once a provider returns
 an empty page the provider is marked ``fully_synced`` and subsequent runs
-switch to "refresh mode" — fetching page 1 to pick up newly-registered
-content on the source platform.
+switch to "refresh mode" — fetching page 1, plus any pages past the last one
+seen, to pick up newly-registered content on the source platform.
 """
 
 import logging
@@ -115,12 +115,38 @@ class ContentDiscoveryService:
         content_type: str,
         pages: int = 1,
     ) -> list[NormalizedContent]:
-        """Fetch *pages* consecutive pages from a provider, advancing state."""
+        """Fetch up to *pages* consecutive pages from a provider, advancing state.
+
+        A fully-synced provider is still checked for new content: its first page
+        (for sources that list the newest titles first) and any pages past the
+        last one we saw (for sources that list oldest first and append new titles
+        at the end, like TVDB).
+        """
         state = self._get_state(provider.name, content_type)
-        all_items: list[NormalizedContent] = []
 
         if state.fully_synced:
-            return self._refresh_provider(provider, content_type, state)
+            refreshed = self._refresh_provider(provider, content_type, state)
+            appended, _ = self._walk_pages(provider, content_type, state, pages)
+            return refreshed + appended
+
+        items, reached_end = self._walk_pages(provider, content_type, state, pages)
+        if reached_end:
+            self._mark_fully_synced(state)
+        return items
+
+    def _walk_pages(
+        self,
+        provider: ContentProvider,
+        content_type: str,
+        state: DiscoveryState,
+        pages: int,
+    ) -> tuple[list[NormalizedContent], bool]:
+        """Read consecutive pages after ``state.last_page``; returns (items, reached_end).
+
+        ``reached_end`` is True when an empty page was hit, i.e. there is nothing
+        further on the source right now.
+        """
+        all_items: list[NormalizedContent] = []
 
         for _ in range(pages):
             next_page = state.last_page + 1
@@ -137,17 +163,11 @@ class ContentDiscoveryService:
                     content_type,
                     e,
                 )
-                break
+                return all_items, False
 
             if not items:
-                logger.info(
-                    "%s: empty page %d for %s — marking fully synced",
-                    provider.name,
-                    next_page,
-                    content_type,
-                )
-                self._mark_fully_synced(state)
-                break
+                logger.info("%s: empty page %d for %s", provider.name, next_page, content_type)
+                return all_items, True
 
             logger.info(
                 "%s: fetched %d %s items from page %d",
@@ -159,7 +179,7 @@ class ContentDiscoveryService:
             all_items.extend(items)
             self._advance_state(state, len(items))
 
-        return all_items
+        return all_items, False
 
     def _refresh_provider(
         self,
