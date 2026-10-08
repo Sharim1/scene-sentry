@@ -163,3 +163,9 @@ class TestCreditsPage:
 
     def test_does_not_claim_ownership_of_artwork(self, page):
         assert "property of their respective owners" in visible_text(page)
+
+    def test_tells_rights_holders_how_to_ask_for_removal(self, page):
+        text = visible_text(page)
+        assert "Copyright and takedown requests" in text
+        assert "remove" in text.lower()
+        assert any(h == "/contact" and t for h, t in page.links)
