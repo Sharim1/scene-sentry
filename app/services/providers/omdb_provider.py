@@ -16,7 +16,18 @@ from app.services.providers.base import ContentProvider, NormalizedContent
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "http://www.omdbapi.com/"
+BASE_URL = "https://www.omdbapi.com/"
+
+
+def _describe_error(exc: Exception) -> str:
+    """Short, key-safe description of a failed request.
+
+    An httpx error's text includes the full request URL, and OMDb takes the API
+    key as a query parameter, so never log ``str(exc)``.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
 
 
 def _parse_year(year_val: Any) -> int | None:
@@ -163,7 +174,7 @@ class OMDbProvider(ContentProvider):
             resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.debug("OMDb search failed: %s", exc)
+            logger.debug("OMDb search failed: %s", _describe_error(exc))
             return []
 
         if not isinstance(data, dict) or data.get("Response") == "False":
@@ -194,7 +205,7 @@ class OMDbProvider(ContentProvider):
             resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.debug("OMDb get_details failed: %s", exc)
+            logger.debug("OMDb get_details failed: %s", _describe_error(exc))
             return None
 
         if not isinstance(data, dict) or data.get("Response") == "False":

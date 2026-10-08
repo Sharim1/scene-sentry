@@ -21,6 +21,7 @@ from app.config import settings
 from app.database import get_db, init_db
 from app.models.user import User
 from app.templates import static_path, templates
+from app.utils.log_safety import quiet_http_client_logs
 
 # Clerk development instances share this wildcard host; production instances use
 # the custom Frontend API host derived from CLERK_ISSUER (e.g. clerk.scenesentry.com).
@@ -93,6 +94,7 @@ logger = logging.getLogger(__name__)
 
 # Reduce SQLAlchemy engine noise (removes ROLLBACK/COMMIT logs)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+quiet_http_client_logs()
 
 
 @asynccontextmanager
