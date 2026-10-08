@@ -13,7 +13,7 @@ import logging
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -50,6 +50,9 @@ class GossipScraperAgent:
         "denofgeek.com",
     ]
 
+    # Article pages sometimes redirect (canonical URL, http -> https); more hops than this is not a real page.
+    MAX_OG_REDIRECTS = 3
+
     def __init__(self, session_factory: SessionFactory | None = None):
         from app.database import db_session
 
@@ -73,7 +76,7 @@ class GossipScraperAgent:
 
     @staticmethod
     def _is_safe_url(url: str) -> bool:
-        """Reject private/internal URLs to prevent SSRF."""
+        """Only allow http(s) URLs whose host resolves exclusively to public addresses."""
         import ipaddress
         import socket
 
@@ -85,39 +88,57 @@ class GossipScraperAgent:
             return False
         try:
             addr = ipaddress.ip_address(hostname)
-            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            if not addr.is_global or addr.is_multicast:
                 return False
         except ValueError:
             try:
                 resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
                 for _, _, _, _, sockaddr in resolved:
                     addr = ipaddress.ip_address(sockaddr[0])
-                    if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                    if not addr.is_global or addr.is_multicast:
                         return False
             except socket.gaierror:
                 return False
         return True
 
     async def _fetch_og_image(self, url: str) -> str | None:
+        """Fetch an article page and return its preview image URL, if any.
+
+        Every hop, not just the first URL, must pass ``_is_safe_url``: redirects
+        are followed by hand so a public page cannot bounce the request to an
+        internal address.
+        """
         try:
-            if not self._is_safe_url(url):
-                return None
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, follow_redirects=True)
-                if resp.status_code != 200:
-                    return None
-                html = resp.text
-                patterns = [
-                    r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']',
-                    r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:image["\']',
-                    r'<meta\s+name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']',
-                ]
-                for pat in patterns:
-                    match = re.search(pat, html, re.IGNORECASE)
-                    if match and match.group(1).startswith("http"):
-                        return match.group(1)
-        except Exception:
-            pass
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                current = url
+                for _ in range(self.MAX_OG_REDIRECTS + 1):
+                    if not self._is_safe_url(current):
+                        return None
+                    resp = await client.get(current)
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            return None
+                        current = urljoin(current, location)
+                        continue
+                    if resp.status_code != 200:
+                        return None
+                    return self._extract_og_image(resp.text)
+        except Exception as e:
+            logger.debug("og:image fetch failed: %s", type(e).__name__)
+        return None
+
+    @staticmethod
+    def _extract_og_image(html: str) -> str | None:
+        patterns = [
+            r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']',
+            r'<meta\s+content=["\']([^"\']+)["\']\s+property=["\']og:image["\']',
+            r'<meta\s+name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']',
+        ]
+        for pat in patterns:
+            match = re.search(pat, html, re.IGNORECASE)
+            if match and match.group(1).startswith("http"):
+                return match.group(1)
         return None
 
     def _validate_article_url(self, url: str) -> bool:
