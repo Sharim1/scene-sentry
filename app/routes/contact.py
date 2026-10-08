@@ -79,6 +79,15 @@ def terms_page(request: Request):
     )
 
 
+@router.get("/credits", response_class=HTMLResponse)
+def credits_page(request: Request):
+    user = _optional_user(request)
+    return templates.TemplateResponse(
+        "pages/credits.html",
+        {"request": request, "user": user},
+    )
+
+
 @router.get("/contact", response_class=HTMLResponse)
 def contact_page(request: Request):
     user = _optional_user(request)
