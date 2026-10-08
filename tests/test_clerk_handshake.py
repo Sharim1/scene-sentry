@@ -6,23 +6,12 @@ rather than treating the user as unauthenticated. This is the standard
 Clerk SSR pattern.
 """
 
-import base64
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-
-def _fake_handshake_jwt(cookie_instructions: list[str]) -> str:
-    """Build a fake (unsigned) handshake JWT like Clerk's FAPI issues.
-
-    Our decoder never verifies the signature — it only reads the payload —
-    so a throwaway header/signature is fine for testing.
-    """
-    header = base64.urlsafe_b64encode(b'{"alg":"RS256","typ":"JWT"}').rstrip(b"=").decode()
-    payload = base64.urlsafe_b64encode(json.dumps({"handshake": cookie_instructions}).encode()).rstrip(b"=").decode()
-    return f"{header}.{payload}.fakesignature"
+from tests.clerk_helpers import ClerkSigner, clerk_jwks
 
 
 @pytest.fixture()
@@ -146,7 +135,8 @@ class TestExpiredTokenHandshake:
         infinite loop against Clerk's FAPI for every real sign-in (not just
         a stale one). This reproduces the live ERR_TOO_MANY_REDIRECTS bug.
         """
-        handshake_jwt = _fake_handshake_jwt(
+        signer = ClerkSigner()
+        handshake_jwt = signer.handshake_jwt(
             [
                 "__client_uat=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; SameSite=Lax",
                 "__client_uat=0; Path=/; Domain=scenesentry.com; Max-Age=315360000; Secure; SameSite=Lax",
@@ -154,11 +144,14 @@ class TestExpiredTokenHandshake:
             ]
         )
 
-        resp = client.get(
-            "/dashboard",
-            cookies={"__client_uat": "1716500000", "__clerk_handshake": handshake_jwt},
-            follow_redirects=False,
-        )
+        # Request the real production host: Clerk scopes these cookies to
+        # Domain=scenesentry.com, which only covers requests to that host.
+        with clerk_jwks(signer):
+            resp = client.get(
+                "https://scenesentry.com/dashboard",
+                cookies={"__client_uat": "1716500000", "__clerk_handshake": handshake_jwt},
+                follow_redirects=False,
+            )
 
         assert resp.status_code == 307
         # The redirect target must not still be carrying a handshake param —

@@ -8,12 +8,11 @@ the request.  User creation/update logic lives in
 Session tokens are verified with the official clerk-backend-api SDK (JWKS).
 """
 
-import base64
-import json
 import logging
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+import jwt
 from clerk_backend_api.security import TokenVerificationError, VerifyTokenOptions, verify_token_async
 from clerk_backend_api.security.types import TokenVerificationErrorReason
 from fastapi import Request
@@ -31,36 +30,63 @@ from app.services.identity_sync import (
 logger = logging.getLogger(__name__)
 
 
-def decode_handshake_jwt(handshake_token: str) -> list[str] | None:
+_HANDSHAKE_JWT_CATEGORIES = {"cl_B7d4PD111AAA", "cl_I7d4PD111III"}  # session token, "ignore" marker
+
+
+async def verify_handshake_token(handshake_token: str) -> list[str] | None:
+    """Verify a Clerk handshake JWT and return its cookie-setting instructions.
+
+    The token must be signed by this Clerk instance (the signing key is looked
+    up from the instance's JWKS using our secret key, so a token from another
+    instance or a forger fails) and must be unexpired. Anything else returns
+    None, so the caller applies no instructions at all.
+
+    ``authorized_parties`` is deliberately not passed: handshake tokens carry
+    no ``azp`` claim, and the SDK rejects a token without one when it is set.
     """
-    Decode the Clerk handshake JWT and extract cookie instructions.
-    The handshake JWT is NOT verified - it contains public cookie-setting instructions.
-    """
-    try:
-        # Split the JWT and decode the payload (second part)
-        parts = handshake_token.split(".")
-        if len(parts) != 3:
-            logger.warning("Invalid handshake JWT format")
-            return None
-
-        # Decode payload (add padding if needed)
-        payload_b64 = parts[1]
-        padding = 4 - len(payload_b64) % 4
-        if padding != 4:
-            payload_b64 += "=" * padding
-
-        payload_json = base64.urlsafe_b64decode(payload_b64)
-        payload = json.loads(payload_json)
-
-        # Extract handshake array (cookie instructions)
-        handshake_cookies = payload.get("handshake", [])
-        if handshake_cookies:
-            logger.debug(f"Extracted {len(handshake_cookies)} cookie instructions from handshake")
-        return handshake_cookies
-
-    except Exception as e:
-        logger.error(f"Failed to decode handshake JWT: {e}")
+    if not settings.clerk_secret_key:
         return None
+    try:
+        header = jwt.get_unverified_header(handshake_token)
+    except jwt.InvalidTokenError:
+        logger.warning("Rejected Clerk handshake token: malformed")
+        return None
+    # Clerk tags each JWT class it signs with the same instance key. Only the
+    # session-token class (or the "ignore" marker some instances stamp on every
+    # class) can be a handshake; a custom JWT-template token could carry an
+    # arbitrary `handshake` claim. Same rule as Clerk's own backend SDK.
+    cat = header.get("cat")
+    if cat is not None and cat not in _HANDSHAKE_JWT_CATEGORIES:
+        logger.warning("Rejected Clerk handshake token: wrong token category")
+        return None
+    try:
+        payload = await verify_token_async(
+            handshake_token,
+            VerifyTokenOptions(secret_key=settings.clerk_secret_key),
+        )
+    except TokenVerificationError as e:
+        logger.warning("Rejected Clerk handshake token: %s", e.reason.value[1])
+        return None
+    except Exception as e:
+        logger.error("Handshake token verification error: %s", type(e).__name__)
+        return None
+
+    instructions = payload.get("handshake")
+    if not isinstance(instructions, list):
+        logger.warning("Rejected Clerk handshake token: no handshake instructions")
+        return None
+    return [i for i in instructions if isinstance(i, str)]
+
+
+def _domain_covers_host(domain: str, host: str) -> bool:
+    """True if a cookie ``Domain`` attribute legitimately scopes to ``host``.
+
+    A cookie may be scoped to the request host itself or a parent of it (Clerk
+    sends the apex domain); never to an unrelated host.
+    """
+    domain = domain.lstrip(".").lower()
+    host = host.lower()
+    return bool(domain) and (host == domain or host.endswith("." + domain))
 
 
 def parse_set_cookie_header(cookie_str: str) -> dict[str, Any]:
@@ -165,7 +191,7 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         # CRITICAL: Handle Clerk handshake FIRST before any other processing
         # The __clerk_handshake query parameter contains cookie-setting instructions
         if clerk_configured:
-            handshake_response = self._handle_clerk_handshake(request)
+            handshake_response = await self._handle_clerk_handshake(request)
             if handshake_response:
                 return handshake_response
 
@@ -221,7 +247,7 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         return response
 
-    def _handle_clerk_handshake(self, request: Request) -> Response | None:
+    async def _handle_clerk_handshake(self, request: Request) -> Response | None:
         """
         Handle Clerk's handshake flow.
 
@@ -232,9 +258,14 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         the redirect's Location. The browser just sends that cookie back on
         the very next request like any other cookie.
 
-        We still check the query parameter too, for compatibility with any
-        flow that might append it there, but the cookie is the one that
-        actually arrives in practice. Missing it here means we never decode
+        Clerk *Development* instances cannot set cross-site cookies, so they
+        deliver the handshake as a query parameter instead; that form is
+        honoured outside production only. In production a link must never be
+        able to apply cookie instructions to someone else's browser.
+
+        The token is verified (signature + expiry) before any instruction is
+        applied; an unverifiable token is treated as no handshake at all.
+        Missing the cookie here means we never decode
         the handshake JWT, never apply its __client_uat=0 / __session-clear
         instructions, and the next request looks identical to the one that
         triggered the handshake in the first place — causing an infinite
@@ -244,16 +275,17 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
 
         Returns a redirect response if handshake is handled, None otherwise.
         """
-        handshake_token = request.query_params.get("__clerk_handshake") or request.cookies.get("__clerk_handshake")
+        handshake_token = request.cookies.get("__clerk_handshake")
+        if settings.env != "production":
+            handshake_token = request.query_params.get("__clerk_handshake") or handshake_token
         if not handshake_token:
             return None
 
         logger.info("Processing Clerk handshake...")
 
-        # Decode the handshake JWT to get cookie instructions
-        cookie_instructions = decode_handshake_jwt(handshake_token)
+        cookie_instructions = await verify_handshake_token(handshake_token)
         if not cookie_instructions:
-            logger.warning("Could not decode handshake JWT, continuing without setting cookies")
+            logger.warning("Handshake token rejected or empty, continuing without setting cookies")
             # Still redirect to remove the handshake parameter
             return self._redirect_without_handshake(request)
 
@@ -273,6 +305,11 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                 logger.warning(f"Handshake: rejecting unrecognized cookie {name}")
                 continue
             value = cookie_data.get("value", "")
+
+            cookie_domain = cookie_data.get("domain")
+            if cookie_domain and not _domain_covers_host(cookie_domain, request.url.hostname or ""):
+                logger.warning(f"Handshake: rejecting {name} scoped to a foreign domain")
+                continue
 
             # Check if this is a delete instruction (expires in past or empty value with past expiry)
             is_delete = "expires" in cookie_data and "1970" in str(cookie_data.get("expires", ""))
