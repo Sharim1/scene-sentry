@@ -50,6 +50,9 @@ class GossipScraperAgent:
         "denofgeek.com",
     ]
 
+    # Article pages sometimes redirect (canonical URL, http -> https); more hops than this is not a real page.
+    MAX_OG_REDIRECTS = 3
+
     def __init__(self, session_factory: SessionFactory | None = None):
         from app.database import db_session
 
@@ -73,7 +76,7 @@ class GossipScraperAgent:
 
     @staticmethod
     def _is_safe_url(url: str) -> bool:
-        """Reject private/internal URLs to prevent SSRF."""
+        """Only allow http(s) URLs whose host resolves exclusively to public addresses."""
         import ipaddress
         import socket
 
@@ -85,21 +88,18 @@ class GossipScraperAgent:
             return False
         try:
             addr = ipaddress.ip_address(hostname)
-            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            if not addr.is_global or addr.is_multicast:
                 return False
         except ValueError:
             try:
                 resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
                 for _, _, _, _, sockaddr in resolved:
                     addr = ipaddress.ip_address(sockaddr[0])
-                    if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                    if not addr.is_global or addr.is_multicast:
                         return False
             except socket.gaierror:
                 return False
         return True
-
-    # Article pages sometimes redirect (canonical URL, http -> https); more hops than this is not a real page.
-    MAX_OG_REDIRECTS = 3
 
     async def _fetch_og_image(self, url: str) -> str | None:
         """Fetch an article page and return its preview image URL, if any.

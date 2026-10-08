@@ -24,6 +24,7 @@ DNS = {
     "cdn.example-news.com": "93.184.216.35",
     "internal.corp.example": "10.0.0.5",
     "metadata.example": "169.254.169.254",
+    "cgnat.example": "100.64.0.10",
 }
 
 
@@ -106,6 +107,7 @@ class TestOgImageRedirects:
         moved = "https://variety.com/2026/tv/news/moved/"
         items, requested = await scrape(ARTICLE, {ARTICLE: redirect("/2026/tv/news/moved/"), moved: page()})
 
+        assert requested == [ARTICLE, moved]
         assert items[0]["image_url"] == "https://img.example.com/poster.jpg"
 
     @pytest.mark.parametrize(
@@ -116,6 +118,11 @@ class TestOgImageRedirects:
             "http://10.1.2.3/",  # private literal
             "http://internal.corp.example/",  # name that resolves to a private address
             "http://metadata.example/",  # name that resolves to link-local
+            "http://100.100.100.200/",  # carrier-grade NAT range (not public)
+            "http://cgnat.example/",  # name that resolves into that range
+            "http://224.0.0.1/",  # multicast
+            "http://[::1]/",  # IPv6 loopback
+            "http://[::ffff:10.0.0.1]/",  # IPv4-mapped private address
             "http://unresolvable.invalid/",  # does not resolve
             "file:///etc/passwd",  # not http(s)
             "gopher://variety.com/",  # not http(s)
