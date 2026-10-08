@@ -22,6 +22,7 @@ from starlette.responses import RedirectResponse, Response
 from app.config import settings
 from app.database import get_db
 from app.services.identity_sync import (
+    IdentityLinkRefused,
     get_or_create_user,
     is_placeholder_email,
     is_placeholder_username,
@@ -184,6 +185,7 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         request.state.session_user_id = None
         request.state.clerk_payload = None
         request.state.handshake_in_progress = False
+        request.state.identity_refused = None
 
         # Quick check: if Clerk isn't configured, skip Clerk auth entirely
         clerk_configured = settings.is_clerk_configured
@@ -225,6 +227,11 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                     if user:
                         request.state.clerk_user_id = user.id
                         request.state.clerk_payload = payload
+                except IdentityLinkRefused as e:
+                    # Signed in with Clerk but must not be attached to the matching
+                    # local account. Stay signed out; /login explains why (it must
+                    # not redirect, or Clerk would bounce the user straight back).
+                    request.state.identity_refused = e.reason
                 except Exception as e:
                     logger.error(f"Error processing Clerk user: {e}")
                 finally:

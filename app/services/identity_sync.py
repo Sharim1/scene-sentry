@@ -8,6 +8,7 @@ can call identity-sync logic without importing HTTP middleware.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,10 +21,31 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
-def fetch_clerk_user_email(clerk_user_id: str) -> str | None:
-    """Call the Clerk Backend API to get a user's primary email address.
+@dataclass(frozen=True)
+class ClerkEmail:
+    """A user's primary email as Clerk reports it, with Clerk's verification verdict."""
 
-    Returns the email string, or None on any failure.
+    address: str
+    verified: bool
+
+
+class IdentityLinkRefused(Exception):
+    """A Clerk sign-in must not be attached to the existing local account it matched.
+
+    ``reason`` is a stable code: ``unverified_email`` (Clerk has not verified the
+    address, or could not be asked) or ``already_linked`` (the local account
+    belongs to a different Clerk identity).
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def fetch_clerk_primary_email(clerk_user_id: str) -> ClerkEmail | None:
+    """Call the Clerk Backend API for a user's primary email and whether Clerk verified it.
+
+    Returns None on any failure; callers must treat "unknown" as "not verified".
     """
     if not settings.clerk_secret_key:
         return None
@@ -36,13 +58,26 @@ def fetch_clerk_user_email(clerk_user_id: str) -> str | None:
                 return None
 
             primary_id = clerk_user.primary_email_address_id
-            for ea in clerk_user.email_addresses:
-                if ea.id == primary_id:
-                    return ea.email_address
-            return clerk_user.email_addresses[0].email_address
+            chosen = next((ea for ea in clerk_user.email_addresses if ea.id == primary_id), None)
+            chosen = chosen or clerk_user.email_addresses[0]
+
+            status = getattr(chosen.verification, "status", None)
+            verified = getattr(status, "value", status) == "verified"
+            return ClerkEmail(address=chosen.email_address, verified=verified)
     except Exception as exc:
         logger.warning("Could not fetch email from Clerk API for %s: %s", clerk_user_id, exc)
         return None
+
+
+def fetch_clerk_user_email(clerk_user_id: str) -> str | None:
+    """Primary email address from the Clerk Backend API (ignores verification), or None."""
+    clerk_email = fetch_clerk_primary_email(clerk_user_id)
+    return clerk_email.address if clerk_email else None
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if domain else "***"
 
 
 def is_placeholder_email(email: str | None) -> bool:
@@ -110,13 +145,27 @@ async def get_or_create_user(db: Session, clerk_payload: dict[str, Any]) -> User
 
     # Resolve email: try JWT claims first, then Backend API
     email = clerk_payload.get("email") or clerk_payload.get("primary_email_address")
+    clerk_email: ClerkEmail | None = None
     if not email:
-        email = fetch_clerk_user_email(clerk_user_id)
+        clerk_email = fetch_clerk_primary_email(clerk_user_id)
+        email = clerk_email.address if clerk_email else None
 
-    # Try to find by email (for users who registered before Clerk integration)
+    # Link users who registered before the Clerk integration, by email. An email
+    # is only evidence of identity once Clerk has verified it, so ask Clerk
+    # (the token carries no verification status) and fail closed.
     if email:
         user = db.query(User).filter(User.email == email).first()
         if user:
+            if user.clerk_id and user.clerk_id != clerk_user_id:
+                logger.warning("Refusing to relink a local account already tied to another Clerk identity")
+                raise IdentityLinkRefused("already_linked")
+
+            if clerk_email is None:
+                clerk_email = fetch_clerk_primary_email(clerk_user_id)
+            if not (clerk_email and clerk_email.verified and clerk_email.address.lower() == email.lower()):
+                logger.warning("Refusing to link %s: Clerk has not verified this email", _mask_email(email))
+                raise IdentityLinkRefused("unverified_email")
+
             user.clerk_id = clerk_user_id
             user.last_login = datetime.now(UTC)
             if clerk_payload.get("image_url"):
