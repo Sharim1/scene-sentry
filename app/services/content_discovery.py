@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 SEED_PAGES = 5  # pages to fetch on first-ever run per provider
 
 
+def _ids_conflict(a: NormalizedContent, b: NormalizedContent) -> bool:
+    """True if both items carry the same kind of external id with different values.
+
+    Two entries with different ids from the same source are different titles, even
+    when their names and years match.
+    """
+    return any(
+        getattr(a, attr) is not None and getattr(b, attr) is not None and getattr(a, attr) != getattr(b, attr)
+        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+    )
+
+
 def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
     """Merge duplicates across providers using external IDs then title+year."""
     by_imdb: dict[str, NormalizedContent] = {}
@@ -47,8 +59,9 @@ def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
             existing = by_tvmaze[nc.tvmaze_id]
         else:
             key = nc.dedup_key
-            if key in by_key:
-                existing = by_key[key]
+            candidate = None if key.startswith("::") else by_key.get(key)
+            if candidate is not None and not _ids_conflict(candidate, nc):
+                existing = candidate
 
         if existing:
             existing.merge(nc)
@@ -62,7 +75,8 @@ def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
                 by_tvdb[nc.tvdb_id] = nc
             if nc.tvmaze_id:
                 by_tvmaze[nc.tvmaze_id] = nc
-            by_key[nc.dedup_key] = nc
+            if not nc.dedup_key.startswith("::"):
+                by_key.setdefault(nc.dedup_key, nc)
 
     logger.info("Dedup: %d raw items → %d unique", len(items), len(result))
     return result
