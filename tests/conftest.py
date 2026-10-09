@@ -8,7 +8,7 @@ os.environ.setdefault("ENV", "development")
 os.environ.setdefault("DEBUG", "false")
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,6 +23,17 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # pysqlite does not handle SAVEPOINT / transactions correctly by default, so rows written
+    # inside a savepoint would survive the per-test rollback. This is SQLAlchemy's documented recipe.
+    @event.listens_for(engine, "connect")
+    def _no_implicit_begin(dbapi_connection, connection_record):
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine, "begin")
+    def _explicit_begin(conn):
+        conn.exec_driver_sql("BEGIN")
+
     Base.metadata.create_all(bind=engine)
     yield engine
     Base.metadata.drop_all(bind=engine)

@@ -12,10 +12,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.models.content import Content
-from app.services.providers.base import NormalizedContent
+from app.services.providers.base import NormalizedContent, _year_from_date
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,116 @@ def _parse_datetime(date_str: str | None) -> datetime | None:
     return None
 
 
+_BULK_CHUNK = 500  # titles per lookup query / multi-row insert
+
+
+def _ids_conflict(row: Any, nc: NormalizedContent) -> bool:
+    """True if the row and the incoming item carry the same kind of external id with
+    different values: they are then different titles even if name and year match."""
+    return any(
+        getattr(row, attr) is not None and getattr(nc, attr) is not None and getattr(row, attr) != getattr(nc, attr)
+        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+    )
+
+
+class _ExistingIndex:
+    """Looks up the stored rows that incoming titles match, in a few batched queries."""
+
+    def __init__(self, db: Session, items: list[NormalizedContent]):
+        self.imdb: dict[str, Content] = {}
+        self.numeric: dict[tuple[str, str, int], Content] = {}
+        self.by_title: dict[tuple[str, str], list[Content]] = {}
+        self._load_ids(db, items)
+        self._load_titles(db, items)
+
+    def _rows(self, db: Session, *conditions: Any) -> list[Content]:
+        # the embedding vectors are large and never needed for matching
+        query = db.query(Content).options(defer(Content.embedding)).filter(*conditions)  # type: ignore[arg-type]
+        rows: list[Content] = query.order_by(Content.id).all()
+        return rows
+
+    def _load_ids(self, db: Session, items: list[NormalizedContent]) -> None:
+        imdb_ids = sorted({nc.imdb_id for nc in items if nc.imdb_id})
+        for row in self._rows(db, Content.imdb_id.in_(imdb_ids)) if imdb_ids else []:
+            self.imdb.setdefault(str(row.imdb_id), row)
+        for content_type in {nc.content_type for nc in items}:
+            for kind, column in (("tmdb", Content.tmdb_id), ("tvdb", Content.tvdb_id), ("tvmaze", Content.tvmaze_id)):
+                ids = sorted(
+                    {
+                        getattr(nc, f"{kind}_id")
+                        for nc in items
+                        if nc.content_type == content_type and getattr(nc, f"{kind}_id")
+                    }
+                )
+                for row in self._rows(db, Content.content_type == content_type, column.in_(ids)) if ids else []:
+                    self.numeric.setdefault((content_type, kind, getattr(row, f"{kind}_id")), row)
+
+    def _load_titles(self, db: Session, items: list[NormalizedContent]) -> None:
+        for content_type in {nc.content_type for nc in items}:
+            titles = sorted({nc.title for nc in items if nc.content_type == content_type and self._by_id(nc) is None})
+            for start in range(0, len(titles), _BULK_CHUNK):
+                for row in self._rows(
+                    db, Content.content_type == content_type, Content.title.in_(titles[start : start + _BULK_CHUNK])
+                ):
+                    self.by_title.setdefault((content_type, str(row.title)), []).append(row)
+
+    def _by_id(self, nc: NormalizedContent) -> Content | None:
+        if nc.imdb_id and nc.imdb_id in self.imdb:
+            return self.imdb[nc.imdb_id]
+        for kind in ("tmdb", "tvdb", "tvmaze"):
+            value = getattr(nc, f"{kind}_id")
+            if value and (nc.content_type, kind, value) in self.numeric:
+                return self.numeric[(nc.content_type, kind, value)]
+        return None
+
+    def match(self, nc: NormalizedContent) -> Content | None:
+        hit = self._by_id(nc)
+        if hit is not None:
+            return hit
+        for row in self.by_title.get((nc.content_type, nc.title), []):
+            if nc.year and not (row.release_date or "").startswith(str(nc.year)):
+                continue
+            if not _ids_conflict(row, nc):
+                return row
+        return None
+
+
+class _PendingIndex:
+    """Titles in the current batch that are about to be inserted, so later items can merge into them."""
+
+    def __init__(self) -> None:
+        self.items: list[NormalizedContent] = []
+        self._ids: dict[tuple[Any, ...], NormalizedContent] = {}
+        self._titles: dict[tuple[str, str], list[NormalizedContent]] = {}
+
+    @staticmethod
+    def _id_keys(nc: NormalizedContent) -> list[tuple[Any, ...]]:
+        keys: list[tuple[Any, ...]] = [("imdb", nc.imdb_id)] if nc.imdb_id else []
+        for kind in ("tmdb", "tvdb", "tvmaze"):
+            value = getattr(nc, f"{kind}_id")
+            if value:
+                keys.append((nc.content_type, kind, value))
+        return keys
+
+    def add(self, nc: NormalizedContent) -> None:
+        self.items.append(nc)
+        for key in self._id_keys(nc):
+            self._ids.setdefault(key, nc)
+        self._titles.setdefault((nc.content_type, nc.title), []).append(nc)
+
+    def match(self, nc: NormalizedContent) -> NormalizedContent | None:
+        for key in self._id_keys(nc):
+            if key in self._ids:
+                return self._ids[key]
+        for other in self._titles.get((nc.content_type, nc.title), []):
+            other_year = other.year or _year_from_date(other.release_date)
+            if nc.year and other_year != nc.year:
+                continue
+            if not _ids_conflict(other, nc):
+                return other
+        return None
+
+
 class ContentRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -49,23 +159,35 @@ class ContentRepository:
     def get_by_imdb_id(self, imdb_id: str) -> Content | None:
         return self.db.query(Content).filter(Content.imdb_id == imdb_id).first()
 
-    def get_by_tmdb_id(self, tmdb_id: int) -> Content | None:
-        return self.db.query(Content).filter(Content.tmdb_id == tmdb_id).first()
+    def get_by_tmdb_id(self, tmdb_id: int, content_type: str | None = None) -> Content | None:
+        return self._first_by_numeric_id(Content.tmdb_id, tmdb_id, content_type)
 
-    def get_by_tvdb_id(self, tvdb_id: int) -> Content | None:
-        return self.db.query(Content).filter(Content.tvdb_id == tvdb_id).first()
+    def get_by_tvdb_id(self, tvdb_id: int, content_type: str | None = None) -> Content | None:
+        return self._first_by_numeric_id(Content.tvdb_id, tvdb_id, content_type)
 
-    def get_by_tvmaze_id(self, tvmaze_id: int) -> Content | None:
-        return self.db.query(Content).filter(Content.tvmaze_id == tvmaze_id).first()
+    def get_by_tvmaze_id(self, tvmaze_id: int, content_type: str | None = None) -> Content | None:
+        return self._first_by_numeric_id(Content.tvmaze_id, tvmaze_id, content_type)
+
+    def _first_by_numeric_id(self, column: Any, value: int, content_type: str | None) -> Content | None:
+        """Movies and series are numbered separately by TVDB and TMDb, so a numeric id
+        only identifies a title within its own type; pass ``content_type`` to say which."""
+        query = self.db.query(Content).filter(column == value)
+        if content_type:
+            query = query.filter(Content.content_type == content_type)
+        return query.first()
 
     def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
+        return next(iter(self._all_by_title_year_type(title, year, content_type)), None)
+
+    def _all_by_title_year_type(self, title: str, year: int | None, content_type: str) -> list[Content]:
         q = self.db.query(Content).filter(
             Content.title == title,
             Content.content_type == content_type,
         )
         if year:
             q = q.filter(Content.release_date.like(f"{year}%"))
-        return q.first()
+        matches: list[Content] = q.all()
+        return matches
 
     # ---- list queries ---- #
 
@@ -210,18 +332,21 @@ class ContentRepository:
             if hit:
                 return hit
         if nc.tmdb_id:
-            hit = self.get_by_tmdb_id(nc.tmdb_id)
+            hit = self.get_by_tmdb_id(nc.tmdb_id, nc.content_type)
             if hit:
                 return hit
         if nc.tvdb_id:
-            hit = self.get_by_tvdb_id(nc.tvdb_id)
+            hit = self.get_by_tvdb_id(nc.tvdb_id, nc.content_type)
             if hit:
                 return hit
         if nc.tvmaze_id:
-            hit = self.get_by_tvmaze_id(nc.tvmaze_id)
+            hit = self.get_by_tvmaze_id(nc.tvmaze_id, nc.content_type)
             if hit:
                 return hit
-        return self.get_by_title_year_type(nc.title, nc.year, nc.content_type)
+        for candidate in self._all_by_title_year_type(nc.title, nc.year, nc.content_type):
+            if not _ids_conflict(candidate, nc):
+                return candidate
+        return None
 
     def upsert_normalized(self, nc: NormalizedContent) -> Content:
         """Insert or merge a NormalizedContent into the DB, deduplicating."""
@@ -230,50 +355,107 @@ class ContentRepository:
             self._merge_into(existing, nc)
             return existing
 
-        content = Content(
-            title=nc.title[:200],
-            content_type=nc.content_type,
-            description=(nc.description or "")[:500] or None,
-            genres=json.dumps(nc.genres) if nc.genres else None,
-            imdb_id=nc.imdb_id,
-            tmdb_id=nc.tmdb_id,
-            tvdb_id=nc.tvdb_id,
-            tvmaze_id=nc.tvmaze_id,
-            poster_url=nc.poster_url,
-            backdrop_url=nc.backdrop_url,
-            release_date=nc.release_date,
-            runtime=nc.runtime,
-            rating=nc.rating,
-            director=nc.director,
-            seasons=nc.seasons,
-            episodes=nc.episodes,
-            status=nc.status,
-            network=nc.network,
-            provider=nc.provider,
-            language=nc.language,
-            country=nc.country,
-            premiere_date=_parse_datetime(nc.premiered),
-            next_episode_date=_parse_datetime(nc.next_episode_date),
-        )
+        content = Content(**self._new_row(nc))
         self.db.add(content)
         self.db.flush()
         return content
 
+    @staticmethod
+    def _new_row(nc: NormalizedContent) -> dict[str, Any]:
+        """Column values for a new Content row (without timestamps)."""
+        return {
+            "title": nc.title[:200],
+            "content_type": nc.content_type,
+            "description": (nc.description or "")[:500] or None,
+            "genres": json.dumps(nc.genres) if nc.genres else None,
+            "imdb_id": nc.imdb_id,
+            "tmdb_id": nc.tmdb_id,
+            "tvdb_id": nc.tvdb_id,
+            "tvmaze_id": nc.tvmaze_id,
+            "poster_url": nc.poster_url,
+            "backdrop_url": nc.backdrop_url,
+            "release_date": nc.release_date,
+            "runtime": nc.runtime,
+            "rating": nc.rating,
+            "director": nc.director,
+            "seasons": nc.seasons,
+            "episodes": nc.episodes,
+            "status": nc.status,
+            "network": nc.network,
+            "provider": nc.provider,
+            "language": nc.language,
+            "country": nc.country,
+            "premiere_date": _parse_datetime(nc.premiered),
+            "next_episode_date": _parse_datetime(nc.next_episode_date),
+        }
+
     def bulk_upsert_normalized(self, items: list[NormalizedContent]) -> int:
-        """Upsert a list of NormalizedContent items. Returns count saved."""
-        count = 0
+        """Upsert many NormalizedContent items; returns the count saved.
+
+        Matching and inserting are done in batches (a few statements per ``_BULK_CHUNK``
+        titles, not several per title): a database round trip can cost hundreds of
+        milliseconds from a remote worker. Matching follows ``find_existing``: imdb id,
+        then tmdb / tvdb / tvmaze id within the same type, then name and year.
+        """
+        saved = 0
+        for start in range(0, len(items), _BULK_CHUNK):
+            saved += self._bulk_upsert_chunk(items[start : start + _BULK_CHUNK])
+        return saved
+
+    def _bulk_upsert_chunk(self, items: list[NormalizedContent]) -> int:
+        valid: list[NormalizedContent] = []
         for nc in items:
             try:
-                self.upsert_normalized(nc)
-                count += 1
+                self._new_row(nc)  # fails early for an item that could never be saved
+                valid.append(nc)
             except Exception as e:
-                logger.warning("Failed to upsert %r: %s", nc.title, e)
-        return count
+                logger.warning("Failed to upsert %r: %s", getattr(nc, "title", None), e)
+
+        existing = _ExistingIndex(self.db, valid)
+        pending = _PendingIndex()
+        for nc in valid:
+            row = existing.match(nc)
+            if row is not None:
+                self._merge_into(row, nc)
+                continue
+            twin = pending.match(nc)
+            if twin is not None:
+                twin.merge(nc)
+            else:
+                pending.add(nc)
+
+        now = datetime.now(UTC)
+        rows = []
+        for nc in pending.items:
+            values = self._new_row(nc)
+            values.update(is_adaptation=False, created_at=now, updated_at=now)
+            rows.append(values)
+        failed = self._insert_rows(rows)
+        return len(valid) - failed
+
+    def _insert_rows(self, rows: list[dict[str, Any]]) -> int:
+        """Insert rows with one multi-row INSERT per chunk; returns how many could not be saved."""
+        failed = 0
+        for start in range(0, len(rows), _BULK_CHUNK):
+            chunk = rows[start : start + _BULK_CHUNK]
+            try:
+                with self.db.begin_nested():
+                    self.db.execute(Content.__table__.insert().values(chunk))
+            except Exception as e:
+                logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(chunk), e)
+                for row in chunk:
+                    try:
+                        with self.db.begin_nested():
+                            self.db.execute(Content.__table__.insert().values([row]))
+                    except Exception as e2:
+                        failed += 1
+                        logger.warning("Failed to save %r: %s", row.get("title"), e2)
+        return failed
 
     # Legacy method kept for backward compat with old TMDB-dict ingestion
     def upsert_from_api(self, data: dict[str, Any], content_type: str) -> Content:
         tmdb_id = data.get("id")
-        existing = self.get_by_tmdb_id(tmdb_id) if tmdb_id else None
+        existing = self.get_by_tmdb_id(tmdb_id, content_type) if tmdb_id else None
         title = data.get("title") or data.get("name", "")
         if not existing:
             existing = self.get_by_title_year_type(title, None, content_type)

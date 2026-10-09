@@ -108,10 +108,20 @@ class NormalizedEpisode:
 
 
 def _normalise_title(t: str) -> str:
-    t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
-    t = re.sub(r"[^\w\s]", "", t).lower().strip()
-    t = re.sub(r"\s+", " ", t)
-    return t
+    """Case-, accent- and punctuation-insensitive form of a title, in any script.
+
+    Accents on Latin letters are folded (é -> e). Marks that change a letter in
+    other scripts (kana dakuten, Devanagari vowel signs) are kept, and letters of
+    every script survive, so titles in different scripts never collapse to "".
+    """
+    kept: list[str] = []
+    for ch in unicodedata.normalize("NFKD", t):
+        if unicodedata.category(ch) == "Mn" and kept and kept[-1].isascii():
+            continue
+        kept.append(ch)
+    t = unicodedata.normalize("NFKC", "".join(kept))
+    t = "".join(ch for ch in t if unicodedata.category(ch)[0] in "LNM" or ch.isspace())
+    return re.sub(r"\s+", " ", t.casefold()).strip()
 
 
 def _year_from_date(d: str | None) -> int | None:
