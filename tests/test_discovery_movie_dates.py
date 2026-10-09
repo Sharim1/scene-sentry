@@ -20,7 +20,7 @@ class FakeRepo:
     def __init__(self, existing_tvdb_ids=()):
         self.existing = set(existing_tvdb_ids)
 
-    def get_by_tvdb_id(self, tvdb_id):
+    def get_by_tvdb_id(self, tvdb_id, content_type=None):
         return object() if tvdb_id in self.existing else None
 
 

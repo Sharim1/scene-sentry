@@ -8,43 +8,7 @@ dropped. Titles that really are the same across providers must still merge.
 
 import pytest
 
-from app.models.content import Content
-from app.services.content_discovery import ContentDiscoveryService
-from app.services.providers.base import NormalizedContent
-
-
-class FakeProvider:
-    """One page of titles per content type, then empty."""
-
-    def __init__(self, name, movies=(), shows=()):
-        self.name = name
-        self._movies = list(movies)
-        self._shows = list(shows)
-
-    def discover_movies(self, page=1):
-        return list(self._movies) if page == 1 else []
-
-    def discover_tv_shows(self, page=1):
-        return list(self._shows) if page == 1 else []
-
-
-def item(title, content_type, provider="tvdb", year=2015, **ids):
-    return NormalizedContent(title=title, content_type=content_type, provider=provider, year=year, **ids)
-
-
-def sync(db_session, *providers):
-    svc = ContentDiscoveryService(db_session)
-    svc.providers = list(providers)
-    svc.run_scheduled_sync()
-
-
-def stored(db_session, content_type):
-    db_session.expire_all()
-    return db_session.query(Content).filter(Content.content_type == content_type).all()
-
-
-def provider_with(content_type, name, items):
-    return FakeProvider(name, movies=items) if content_type == "movie" else FakeProvider(name, shows=items)
+from tests.discovery_helpers import item, provider_with, stored, sync
 
 
 @pytest.mark.parametrize("content_type", ["movie", "tv_show"])

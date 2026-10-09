@@ -37,6 +37,15 @@ def _parse_datetime(date_str: str | None) -> datetime | None:
     return None
 
 
+def _ids_conflict(row: Content, nc: NormalizedContent) -> bool:
+    """True if the row and the incoming item carry the same kind of external id with
+    different values: they are then different titles even if name and year match."""
+    return any(
+        getattr(row, attr) is not None and getattr(nc, attr) is not None and getattr(row, attr) != getattr(nc, attr)
+        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+    )
+
+
 class ContentRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -49,23 +58,34 @@ class ContentRepository:
     def get_by_imdb_id(self, imdb_id: str) -> Content | None:
         return self.db.query(Content).filter(Content.imdb_id == imdb_id).first()
 
-    def get_by_tmdb_id(self, tmdb_id: int) -> Content | None:
-        return self.db.query(Content).filter(Content.tmdb_id == tmdb_id).first()
+    def get_by_tmdb_id(self, tmdb_id: int, content_type: str | None = None) -> Content | None:
+        return self._first_by_numeric_id(Content.tmdb_id, tmdb_id, content_type)
 
-    def get_by_tvdb_id(self, tvdb_id: int) -> Content | None:
-        return self.db.query(Content).filter(Content.tvdb_id == tvdb_id).first()
+    def get_by_tvdb_id(self, tvdb_id: int, content_type: str | None = None) -> Content | None:
+        return self._first_by_numeric_id(Content.tvdb_id, tvdb_id, content_type)
 
-    def get_by_tvmaze_id(self, tvmaze_id: int) -> Content | None:
-        return self.db.query(Content).filter(Content.tvmaze_id == tvmaze_id).first()
+    def get_by_tvmaze_id(self, tvmaze_id: int, content_type: str | None = None) -> Content | None:
+        return self._first_by_numeric_id(Content.tvmaze_id, tvmaze_id, content_type)
+
+    def _first_by_numeric_id(self, column: Any, value: int, content_type: str | None) -> Content | None:
+        """Movies and series are numbered separately by TVDB and TMDb, so a numeric id
+        only identifies a title within its own type; pass ``content_type`` to say which."""
+        query = self.db.query(Content).filter(column == value)
+        if content_type:
+            query = query.filter(Content.content_type == content_type)
+        return query.first()
 
     def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
+        return next(iter(self._all_by_title_year_type(title, year, content_type)), None)
+
+    def _all_by_title_year_type(self, title: str, year: int | None, content_type: str) -> list[Content]:
         q = self.db.query(Content).filter(
             Content.title == title,
             Content.content_type == content_type,
         )
         if year:
             q = q.filter(Content.release_date.like(f"{year}%"))
-        return q.first()
+        return q.all()
 
     # ---- list queries ---- #
 
@@ -210,18 +230,21 @@ class ContentRepository:
             if hit:
                 return hit
         if nc.tmdb_id:
-            hit = self.get_by_tmdb_id(nc.tmdb_id)
+            hit = self.get_by_tmdb_id(nc.tmdb_id, nc.content_type)
             if hit:
                 return hit
         if nc.tvdb_id:
-            hit = self.get_by_tvdb_id(nc.tvdb_id)
+            hit = self.get_by_tvdb_id(nc.tvdb_id, nc.content_type)
             if hit:
                 return hit
         if nc.tvmaze_id:
-            hit = self.get_by_tvmaze_id(nc.tvmaze_id)
+            hit = self.get_by_tvmaze_id(nc.tvmaze_id, nc.content_type)
             if hit:
                 return hit
-        return self.get_by_title_year_type(nc.title, nc.year, nc.content_type)
+        for candidate in self._all_by_title_year_type(nc.title, nc.year, nc.content_type):
+            if not _ids_conflict(candidate, nc):
+                return candidate
+        return None
 
     def upsert_normalized(self, nc: NormalizedContent) -> Content:
         """Insert or merge a NormalizedContent into the DB, deduplicating."""
@@ -273,7 +296,7 @@ class ContentRepository:
     # Legacy method kept for backward compat with old TMDB-dict ingestion
     def upsert_from_api(self, data: dict[str, Any], content_type: str) -> Content:
         tmdb_id = data.get("id")
-        existing = self.get_by_tmdb_id(tmdb_id) if tmdb_id else None
+        existing = self.get_by_tmdb_id(tmdb_id, content_type) if tmdb_id else None
         title = data.get("title") or data.get("name", "")
         if not existing:
             existing = self.get_by_title_year_type(title, None, content_type)

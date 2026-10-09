@@ -276,7 +276,7 @@ class ContentDiscoveryService:
         for nc in items:
             if nc.content_type != "movie" or nc.release_date or not nc.tvdb_id:
                 continue
-            if self.repo.get_by_tvdb_id(nc.tvdb_id):
+            if self.repo.get_by_tvdb_id(nc.tvdb_id, content_type="movie"):
                 continue
             date, poster = tvdb.get_movie_release(nc.tvdb_id)
             if date:
