@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     discovery_interval_hours: int = 6
     discovery_batch_size: int = 10  # pages per provider per scheduled run
     enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
+    enrichment_time_budget_seconds: int = 480  # stop starting new titles after this; keeps a run inside its interval
     reminder_check_interval_minutes: int = 1  # how often to check for due reminders
 
     # Embeddings (SCE-33)

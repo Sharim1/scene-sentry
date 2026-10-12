@@ -3,6 +3,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from app.celery_app import celery_app
+from app.config import settings
 from app.database import db_session
 from app.models import Gossip, Notification, Reminder, User
 from app.repositories.library_repo import LibraryRepository
@@ -38,7 +39,9 @@ def content_enrichment_task(self):
     try:
         with db_session() as db:
             svc = ContentDiscoveryService(db)
-            enriched = svc.enrich_sparse_content(batch_size=50)
+            enriched = svc.enrich_sparse_content(
+                batch_size=50, time_budget_seconds=settings.enrichment_time_budget_seconds
+            )
             logger.info("Enrichment: %d records", enriched)
     except Exception as exc:
         logger.error("content_enrichment_task failed: %s", exc)
