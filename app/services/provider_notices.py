@@ -93,14 +93,9 @@ def _merge_titles(db: Session, source: Content, target: Content) -> None:
     still sends under an old id lands on the survivor instead of recreating the duplicate.
     """
     sid, tid = source.id, target.id
-    before = {c.id: ids for c, ids in _ids_of(db, [source, target])}
     db.query(ContentExternalId).filter_by(content_id=sid).update(
         {ContentExternalId.content_id: tid}, synchronize_session=False
     )
-    for kind in ID_KINDS:
-        if kind not in before[tid] and kind in before[sid]:
-            value = before[sid][kind]
-            setattr(target, f"{kind}_id", value if kind == "imdb" else int(value))  # old column, written until #89
 
     # A user who tracks both keeps the survivor's item; the other item's reminders move over.
     survivor_items = {i.user_id: i.id for i in db.query(LibraryItem).filter_by(content_id=tid)}
@@ -145,8 +140,6 @@ def _ids_of(db: Session, titles: list[Content]) -> list[tuple[Content, dict[str,
 
 def _flag_deleted(title: Content, notice: Notice) -> None:
     """Keep the title for the users who track it; the dead id is dropped and refresh stops."""
-    if notice.provider in ID_KINDS:
-        setattr(title, f"{notice.provider}_id", None)  # old column, written until #89
     title.next_refresh_at = None
     title.last_error = f"deleted by {notice.provider} (id {notice.external_id})"
 

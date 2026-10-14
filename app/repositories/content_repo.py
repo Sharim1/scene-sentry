@@ -251,7 +251,7 @@ class ContentRepository:
 
         ``titles`` is (content id, content type, {kind: id value}). Rows already there are left
         alone, so this is safe to repeat. ``known_new`` says the titles were just created, so there is
-        nothing to look up first. The old id columns are written by the caller.
+        nothing to look up first.
         """
         wanted: dict[tuple[str, str, str], int] = {}
         for content_id, content_type, ids in titles:
@@ -515,10 +515,6 @@ class ContentRepository:
             "content_type": nc.content_type,
             "description": (nc.description or "")[:500] or None,
             "genres": json.dumps(nc.genres) if nc.genres else None,
-            "imdb_id": nc.imdb_id,
-            "tmdb_id": nc.tmdb_id,
-            "tvdb_id": nc.tvdb_id,
-            "tvmaze_id": nc.tvmaze_id,
             "poster_url": nc.poster_url,
             "backdrop_url": nc.backdrop_url,
             "release_date": nc.release_date,
@@ -578,7 +574,7 @@ class ContentRepository:
         for nc in pending.items:
             values = self._new_row(nc)
             values.update(is_adaptation=False, created_at=now, updated_at=now)
-            rows.append(values)
+            rows.append((values, _nc_ids(nc)))
         failed, inserted = self._insert_rows(rows)
         self.record_external_ids(
             [(int(row.id), str(row.content_type), existing.ids[row.id]) for row in merged.values()]
@@ -586,8 +582,10 @@ class ContentRepository:
         self.record_external_ids(inserted, known_new=True)
         return len(valid) - failed
 
-    def _insert_rows(self, rows: list[dict[str, Any]]) -> tuple[int, list[tuple[int, str, dict[str, Any]]]]:
-        """Insert rows with one multi-row INSERT per chunk.
+    def _insert_rows(
+        self, rows: list[tuple[dict[str, Any], dict[str, str]]]
+    ) -> tuple[int, list[tuple[int, str, dict[str, Any]]]]:
+        """Insert rows (column values, provider ids) with one multi-row INSERT per chunk.
 
         Returns how many could not be saved, and (id, type, provider ids) of each saved row so
         the caller can record its external ids.
@@ -597,31 +595,29 @@ class ContentRepository:
         failed = 0
         inserted: list[tuple[int, str, dict[str, Any]]] = []
 
-        def keep(chunk: list[dict[str, Any]], result: Any) -> None:
+        def keep(chunk: list[tuple[dict[str, Any], dict[str, str]]], result: Any) -> None:
             # The ids recorded are the ones we just sent, matched to the new rows by type and title
             # (ids from a sequence rise in the order of the rows).
-            waiting: dict[tuple[str, str], list[dict[str, Any]]] = {}
-            for values in chunk:
-                waiting.setdefault((values["content_type"], values["title"]), []).append(values)
+            waiting: dict[tuple[str, str], list[dict[str, str]]] = {}
+            for values, ids in chunk:
+                waiting.setdefault((values["content_type"], values["title"]), []).append(ids)
             for r in sorted(result, key=lambda r: r.id):
-                values = waiting[(r.content_type, r.title)].pop(0)
-                ids = {kind: values[f"{kind}_id"] for kind in ID_KINDS if values.get(f"{kind}_id")}
-                inserted.append((r.id, r.content_type, {k: str(v) for k, v in ids.items()}))
+                inserted.append((r.id, r.content_type, waiting[(r.content_type, r.title)].pop(0)))
 
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
             try:
                 with self.db.begin_nested():
-                    keep(chunk, self.db.execute(table.insert().values(chunk).returning(*returned)))
+                    keep(chunk, self.db.execute(table.insert().values([v for v, _ in chunk]).returning(*returned)))
             except Exception as e:
                 logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(chunk), e)
                 for row in chunk:
                     try:
                         with self.db.begin_nested():
-                            keep([row], self.db.execute(table.insert().values([row]).returning(*returned)))
+                            keep([row], self.db.execute(table.insert().values([row[0]]).returning(*returned)))
                     except Exception as e2:
                         failed += 1
-                        logger.warning("Failed to save %r: %s", row.get("title"), e2)
+                        logger.warning("Failed to save %r: %s", row[0].get("title"), e2)
         return failed, inserted
 
     # Legacy method kept for backward compat with old TMDB-dict ingestion
@@ -708,7 +704,6 @@ class ContentRepository:
         for kind in ID_KINDS:
             if kind in incoming and kind not in known:
                 known[kind] = incoming[kind]
-                setattr(content, f"{kind}_id", getattr(nc, f"{kind}_id"))  # old column, still written until #89
         if nc.language and not content.language:
             content.language = nc.language
         if nc.country and not content.country:
@@ -749,7 +744,6 @@ class ContentRepository:
             title=title[:200],
             content_type=content_type,
             description=(data.get("overview") or "")[:500],
-            tmdb_id=data.get("id"),
             poster_url=f"{img_base}{poster_path}"
             if poster_path and not poster_path.startswith("http")
             else poster_path,
@@ -778,6 +772,5 @@ class ContentRepository:
             content.rating = data["vote_average"]
         if data.get("id") and "tmdb" not in known:
             known["tmdb"] = str(data["id"])
-            content.tmdb_id = data["id"]  # old column, still written until #89
         content.updated_at = datetime.now(UTC)
         return known

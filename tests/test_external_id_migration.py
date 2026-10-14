@@ -10,6 +10,7 @@ import app.database as database
 import app.models  # noqa: F401
 from alembic import command
 
+AFTER = "8d4f2b6a1c07"  # this migration; later ones drop the columns it reads
 BEFORE = "5c1e7a9d3b24"  # content refresh state: the head before this migration
 
 
@@ -36,7 +37,7 @@ def seed(engine, rows):
 
 
 def upgrade_to_head():
-    command.upgrade(database._alembic_config(), "head")
+    command.upgrade(database._alembic_config(), AFTER)
 
 
 def external_rows(engine):

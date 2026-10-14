@@ -2,6 +2,7 @@
 
 from app.models.content import Content
 from app.services.catalog_audit import audit_catalog
+from tests.id_helpers import add_title
 
 
 def add(db_session, title, content_type="movie", **kw):
@@ -11,35 +12,10 @@ def add(db_session, title, content_type="movie", **kw):
     return row
 
 
-class TestSameProviderIdOnSeveralTitles:
-    def test_reports_count_and_sample_rows(self, db_session):
-        a = add(db_session, "Alpha", tvdb_id=7)
-        b = add(db_session, "Beta", tvdb_id=7)
-        add(db_session, "Gamma", tvdb_id=8)
-
-        report = audit_catalog(db_session)
-
-        assert report.duplicate_provider_ids.count == 1
-        sample = report.duplicate_provider_ids.samples[0]
-        assert (sample["provider"], sample["kind"], sample["external_id"]) == ("tvdb", "movie", "7")
-        assert sorted(sample["content_ids"]) == sorted([a.id, b.id])
-        assert sorted(sample["titles"]) == ["Alpha", "Beta"]
-
-    def test_clean_catalog_reports_nothing(self, db_session):
-        add(db_session, "Alpha", tvdb_id=7)
-        add(db_session, "Beta", tvdb_id=8)
-
-        report = audit_catalog(db_session)
-
-        assert report.duplicate_provider_ids.count == 0
-        assert report.cross_type_ids.count == 0
-        assert report.likely_duplicates.count == 0
-
-
 class TestSameNumberForMovieAndShow:
     def test_reports_the_shared_number(self, db_session):
-        add(db_session, "A Movie", "movie", tmdb_id=300)
-        add(db_session, "A Show", "tv_show", tmdb_id=300)
+        add_title(db_session, "A Movie", "movie", ids={"tmdb": 300})
+        add_title(db_session, "A Show", "tv_show", ids={"tmdb": 300})
 
         report = audit_catalog(db_session)
 
@@ -47,8 +23,28 @@ class TestSameNumberForMovieAndShow:
         sample = report.cross_type_ids.samples[0]
         assert (sample["provider"], sample["external_id"]) == ("tmdb", "300")
         assert sorted(sample["titles"]) == ["A Movie", "A Show"]
-        # different kinds do not collide on the unique rule
-        assert report.duplicate_provider_ids.count == 0
+
+    def test_distinct_numbers_report_nothing(self, db_session):
+        add_title(db_session, "Alpha", ids={"tvdb": 7})
+        add_title(db_session, "Beta", ids={"tvdb": 8})
+        add_title(db_session, "A Show", "tv_show", ids={"tvdb": 7, "tmdb": 9})
+
+        report = audit_catalog(db_session)
+
+        assert report.cross_type_ids.count == 1  # tvdb 7 on a movie and a show
+        assert report.likely_duplicates.count == 0
+
+    def test_a_clean_catalog_reports_nothing(self, db_session):
+        add_title(db_session, "Alpha", ids={"tvdb": 7})
+        add_title(db_session, "Beta", ids={"tvdb": 8})
+
+        assert audit_catalog(db_session).cross_type_ids.count == 0
+
+    def test_books_are_not_screened(self, db_session):
+        add_title(db_session, "A Book", "book", ids={"isbn": "9780"})
+        add_title(db_session, "A Movie", "movie", ids={"isbn": "9780"})
+
+        assert audit_catalog(db_session).cross_type_ids.count == 0
 
 
 class TestLikelyDuplicates:
@@ -81,26 +77,26 @@ class TestLikelyDuplicates:
 
 class TestReadOnly:
     def test_audit_changes_nothing(self, db_session):
-        add(db_session, "Alpha", tvdb_id=7)
-        add(db_session, "Beta", tvdb_id=7)
-        before = db_session.query(Content.id, Content.title, Content.tvdb_id).order_by(Content.id).all()
+        add_title(db_session, "A Movie", "movie", ids={"tmdb": 300})
+        add_title(db_session, "A Show", "tv_show", ids={"tmdb": 300})
+        before = db_session.query(Content.id, Content.title).order_by(Content.id).all()
 
         audit_catalog(db_session)
 
         assert not db_session.new and not db_session.dirty and not db_session.deleted
-        assert db_session.query(Content.id, Content.title, Content.tvdb_id).order_by(Content.id).all() == before
+        assert db_session.query(Content.id, Content.title).order_by(Content.id).all() == before
 
 
 class TestRunReadOnly:
     def test_run_leaves_no_changes_and_formats_counts(self, db_session):
         from app.services.catalog_audit import format_report, run_read_only
 
-        add(db_session, "Alpha", tvdb_id=7)
-        add(db_session, "Beta", tvdb_id=7)
+        add_title(db_session, "A Movie", "movie", ids={"tmdb": 300})
+        add_title(db_session, "A Show", "tv_show", ids={"tmdb": 300})
 
         report = run_read_only(db_session)
         text = format_report(report)
 
-        assert report.duplicate_provider_ids.count == 1
-        assert "duplicate_provider_ids: 1" in text
-        assert "Alpha" in text and "Beta" in text
+        assert report.cross_type_ids.count == 1
+        assert "cross_type_ids: 1" in text
+        assert "A Movie" in text and "A Show" in text

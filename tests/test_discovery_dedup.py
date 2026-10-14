@@ -9,6 +9,7 @@ dropped. Titles that really are the same across providers must still merge.
 import pytest
 
 from tests.discovery_helpers import item, provider_with, stored, sync
+from tests.id_helpers import id_of
 
 
 @pytest.mark.parametrize("content_type", ["movie", "tv_show"])
@@ -26,7 +27,7 @@ class TestDistinctTitlesAreKept:
 
         sync(db_session, provider_with(content_type, "tvdb", items))
 
-        assert {r.tvdb_id for r in stored(db_session, content_type)} == {1, 2}
+        assert {id_of(db_session, r, "tvdb") for r in stored(db_session, content_type)} == {1, 2}
 
 
 @pytest.mark.parametrize("content_type", ["movie", "tv_show"])
@@ -41,7 +42,7 @@ class TestSameTitleAcrossProvidersStillMerges:
 
         rows = stored(db_session, content_type)
         assert len(rows) == 1
-        assert (rows[0].tvdb_id, rows[0].tmdb_id) == (5, 99)
+        assert (id_of(db_session, rows[0], "tvdb"), id_of(db_session, rows[0], "tmdb")) == (5, 99)
 
     def test_accents_do_not_stop_a_match(self, db_session, content_type):
         tvdb = provider_with(content_type, "tvdb", [item("Café Society", content_type, tvdb_id=7, year=2016)])

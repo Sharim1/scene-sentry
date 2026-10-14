@@ -55,14 +55,13 @@ def test_same_number_under_another_kind_or_provider_is_allowed(db_session):
 # ---- writes through the repository ---- #
 
 
-def test_bulk_save_writes_the_table_and_the_old_columns(db_session):
+def test_bulk_save_writes_the_table(db_session):
     ContentRepository(db_session).bulk_upsert_normalized(
         [nc("Alpha", tvdb_id=7, imdb_id="tt1"), nc("Beta", "tv_show", tmdb_id=9, tvmaze_id=4)]
     )
 
     alpha = db_session.query(Content).filter_by(title="Alpha").one()
     beta = db_session.query(Content).filter_by(title="Beta").one()
-    assert (alpha.tvdb_id, alpha.imdb_id) == (7, "tt1")
     assert triples(db_session) == {
         ("tvdb", "movie", "7", alpha.id),
         ("imdb", "movie", "tt1", alpha.id),
@@ -107,11 +106,9 @@ def test_saving_the_same_batch_twice_does_not_duplicate_rows(db_session):
 # ---- reads through the table ---- #
 
 
-def test_matching_by_id_reads_the_table_not_the_old_column(db_session):
+def test_matching_by_id_reads_the_table(db_session):
     repo = ContentRepository(db_session)
     row = repo.upsert_normalized(nc("Alpha", tvdb_id=7))
-    row.tvdb_id = None  # the copy is gone; the table still knows
-    db_session.flush()
 
     assert repo.find_existing(nc("Different name", tvdb_id=7)).id == row.id
     repo.bulk_upsert_normalized([nc("Other name", tvdb_id=7)])
@@ -125,3 +122,10 @@ def test_a_numeric_id_only_matches_within_its_type(db_session):
     show = repo.upsert_normalized(nc("A Show", "tv_show", tmdb_id=300))
 
     assert show.id != movie.id
+
+
+def test_content_has_no_provider_id_columns_ids_live_only_in_the_table(db_session):
+    from app.models.content import Content
+
+    for old in ("tmdb_id", "imdb_id", "tvdb_id", "tvmaze_id", "isbn"):
+        assert not hasattr(Content, old)

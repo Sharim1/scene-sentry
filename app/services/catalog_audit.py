@@ -1,11 +1,11 @@
-"""Read-only audit of catalog identity problems (ADR-0006, issue #73).
+"""Read-only audit of catalog identity problems (ADR-0006, issues #73 and #89).
 
-Finds titles that would break a unique rule on (provider, kind, external id) before that
-rule is added. Only SELECT statements are issued; nothing is written.
+Provider ids live in ``content_external_id``, whose primary key (provider, kind, external id)
+already makes "one id on several titles of the same kind" impossible, so that check is gone.
+Only SELECT statements are issued; nothing is written.
 
-Three problem kinds are reported, each with a full count and a few sample rows:
+Two problem kinds are reported, each with a full count and a few sample rows:
 
-* duplicate_provider_ids: one provider id used by several titles of the same kind.
 * cross_type_ids: one provider id used by both a movie and a TV show.
 * likely_duplicates: same normalised title, year and type (no shared provider id needed).
 """
@@ -16,15 +16,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.content import Content
-
-# Provider id columns on content; the column name stands for the provider.
-PROVIDER_ID_COLUMNS = {
-    "tmdb": Content.tmdb_id,
-    "imdb": Content.imdb_id,
-    "tvdb": Content.tvdb_id,
-    "tvmaze": Content.tvmaze_id,
-    "isbn": Content.isbn,
-}
+from app.models.external_id import ContentExternalId
 
 _MEMBER_LIMIT = 20
 
@@ -37,7 +29,6 @@ class Finding:
 
 @dataclass
 class AuditReport:
-    duplicate_provider_ids: Finding = field(default_factory=Finding)
     cross_type_ids: Finding = field(default_factory=Finding)
     likely_duplicates: Finding = field(default_factory=Finding)
 
@@ -55,57 +46,33 @@ def _members(db: Session, filters: list):
 
 
 def _audit_provider_ids(db: Session, sample_limit: int, report: AuditReport) -> None:
-    screen_kinds = ["movie", "tv_show"]
-    for provider, col in PROVIDER_ID_COLUMNS.items():
-        # Same id, same kind, several titles.
-        groups = db.execute(
-            select(Content.content_type, col)
-            .where(col.is_not(None))
-            .group_by(Content.content_type, col)
-            .having(func.count(Content.id) > 1)
-            .order_by(Content.content_type, col)
+    ext = ContentExternalId
+    # Same provider id used for both a movie and a TV show.
+    shared = db.execute(
+        select(ext.provider, ext.external_id)
+        .where(ext.kind.in_(["movie", "tv_show"]))
+        .group_by(ext.provider, ext.external_id)
+        .having(func.count(func.distinct(ext.kind)) > 1)
+        .order_by(ext.provider, ext.external_id)
+    ).all()
+    report.cross_type_ids.count = len(shared)
+    for provider, value in shared[:sample_limit]:
+        rows = db.execute(
+            select(Content.id, Content.title, Content.content_type)
+            .join(ext, ext.content_id == Content.id)
+            .where(ext.provider == provider, ext.external_id == value, ext.kind.in_(["movie", "tv_show"]))
+            .order_by(Content.id)
+            .limit(_MEMBER_LIMIT)
         ).all()
-        report.duplicate_provider_ids.count += len(groups)
-        for kind, value in groups:
-            if len(report.duplicate_provider_ids.samples) >= sample_limit:
-                break
-            rows = _members(db, [Content.content_type == kind, col == value])
-            report.duplicate_provider_ids.samples.append(
-                {
-                    "provider": provider,
-                    "kind": kind,
-                    "external_id": str(value),
-                    "content_ids": [r.id for r in rows],
-                    "titles": [r.title for r in rows],
-                }
-            )
-
-        # Same id used for both a movie and a TV show.
-        shared = (
-            db.execute(
-                select(col)
-                .where(col.is_not(None), Content.content_type.in_(screen_kinds))
-                .group_by(col)
-                .having(func.count(func.distinct(Content.content_type)) > 1)
-                .order_by(col)
-            )
-            .scalars()
-            .all()
+        report.cross_type_ids.samples.append(
+            {
+                "provider": provider,
+                "external_id": str(value),
+                "content_ids": [r.id for r in rows],
+                "kinds": [r.content_type for r in rows],
+                "titles": [r.title for r in rows],
+            }
         )
-        report.cross_type_ids.count += len(shared)
-        for value in shared:
-            if len(report.cross_type_ids.samples) >= sample_limit:
-                break
-            rows = _members(db, [col == value, Content.content_type.in_(screen_kinds)])
-            report.cross_type_ids.samples.append(
-                {
-                    "provider": provider,
-                    "external_id": str(value),
-                    "content_ids": [r.id for r in rows],
-                    "kinds": [r.content_type for r in rows],
-                    "titles": [r.title for r in rows],
-                }
-            )
 
 
 def _audit_likely_duplicates(db: Session, sample_limit: int, report: AuditReport) -> None:
