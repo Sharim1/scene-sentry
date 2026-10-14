@@ -6,3 +6,4 @@ and the full test suite passes.
 
 - [x] 1. TVDB updates feed: queue known titles by id (`app/services/tvdb_updates.py`)
 - [x] 2. Enrichment/refresh: which provider id to ask for each title (`ContentDiscoveryService._external_id_for`, via new `ContentRepository.external_ids_for`)
+- [x] 3. Title page: IMDb link (`app/routes/content.py`, `templates/content_detail.html`)
