@@ -29,6 +29,10 @@ PERIODIC_TASKS = {
         "app.tasks.periodic.embedding_refresh_task",
         timedelta(minutes=settings.embedding_interval_minutes),
     ),
+    "tvdb-updates": (
+        "app.tasks.periodic.tvdb_updates_task",
+        timedelta(minutes=settings.tvdb_updates_interval_minutes),
+    ),
     "cleanup": ("app.tasks.periodic.cleanup_task", timedelta(hours=24)),
 }
 

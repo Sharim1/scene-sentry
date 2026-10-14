@@ -47,3 +47,8 @@ def get_active_providers() -> list[ContentProvider]:
         logger.warning("No content providers are active — content pages will be empty")
 
     return providers
+
+
+def get_tvdb_provider() -> ContentProvider | None:
+    """The TVDB provider if it is enabled and usable, else None."""
+    return next((p for p in get_active_providers() if p.name == "tvdb"), None)
