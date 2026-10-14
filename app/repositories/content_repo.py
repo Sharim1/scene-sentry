@@ -439,6 +439,33 @@ class ContentRepository:
                 return candidate
         return None
 
+    def stored_sharing_ids(self, items: list[NormalizedContent]) -> list[list[Content]]:
+        """For each item, the distinct stored titles that share any of its provider ids (lowest id first).
+
+        Same scoping as matching: IMDb ids are global, the others only count within the item's type.
+        """
+        found: dict[tuple[str, str | None, str], list[Content]] = {}
+        wanted: dict[tuple[str, str | None], set[str]] = {}
+        for nc in items:
+            for kind in ID_KINDS:
+                value = getattr(nc, f"{kind}_id")
+                if value:
+                    wanted.setdefault((kind, None if kind == "imdb" else nc.content_type), set()).add(str(value))
+        for (kind, content_type), values in wanted.items():
+            for value, row in _rows_by_external_id(self.db, kind, content_type, sorted(values)):
+                found.setdefault((kind, content_type, value), []).append(row)
+        result: list[list[Content]] = []
+        for nc in items:
+            rows: dict[int, Content] = {}
+            for kind in ID_KINDS:
+                value = getattr(nc, f"{kind}_id")
+                if value:
+                    key = (kind, None if kind == "imdb" else nc.content_type, str(value))
+                    for row in found.get(key, []):
+                        rows.setdefault(row.id, row)
+            result.append(sorted(rows.values(), key=lambda r: r.id))
+        return result
+
     def upsert_normalized(self, nc: NormalizedContent) -> Content:
         """Insert or merge a NormalizedContent into the DB, deduplicating."""
         existing = self.find_existing(nc)
