@@ -690,7 +690,7 @@ class ContentRepository:
         """Fill blanks on an existing row from a NormalizedContent.
 
         With ``overwrite`` the provider-owned fields (status, rating, season and episode
-        counts) also take the provider's newer value; a title with ``refresh_locked`` set
+        counts, release date) also take the provider's newer value; a title with ``refresh_locked`` set
         is never overwritten.
 
         ``known_ids`` are the title's ids in the external-id table (looked up when not given).
@@ -699,7 +699,7 @@ class ContentRepository:
         known = dict(known_ids if known_ids is not None else self.external_ids_for([content.id])[content.id])
         embedding_input_changed = False
         if overwrite and not content.refresh_locked:
-            for field in ("status", "rating", "seasons", "episodes"):
+            for field in ("status", "rating", "seasons", "episodes", "release_date"):
                 value = getattr(nc, field)
                 if value is not None:
                     setattr(content, field, value)
@@ -739,7 +739,7 @@ class ContentRepository:
             content.country = nc.country
         if nc.premiered and not content.premiere_date:
             content.premiere_date = _parse_datetime(nc.premiered)
-        if nc.next_episode_date:
+        if nc.next_episode_date and not content.refresh_locked:
             content.next_episode_date = _parse_datetime(nc.next_episode_date)
         content.updated_at = datetime.now(UTC)
         if embedding_input_changed:

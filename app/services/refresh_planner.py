@@ -66,7 +66,7 @@ def success_delay(db: Session, content_id: int, now: datetime) -> timedelta:
         return timedelta(hours=settings.refresh_hot_hours)
     if rank == WARM:
         return timedelta(hours=settings.refresh_warm_hours)
-    return timedelta(days=settings.refresh_cold_days)
+    return timedelta(days=min(settings.refresh_cold_days, settings.refresh_cold_days_max))
 
 
 def failure_delay(attempts: int) -> timedelta:

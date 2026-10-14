@@ -146,3 +146,15 @@ def test_report_lists_titles_with_three_or_more_failures(db_session):
     assert [r.title for r in report] == ["t1"]
     assert report[0].refresh_attempts == 3
     assert "down" in report[0].last_error
+
+
+def test_cold_delay_is_a_setting_capped_at_the_adr_ceiling(db_session, monkeypatch):
+    from app.services.refresh_planner import success_delay
+
+    row = add(db_session, 1, status="Ended")
+    monkeypatch.setattr(settings, "refresh_cold_days", 90)
+    assert success_delay(db_session, row.id, NOW) == timedelta(days=90)
+
+    monkeypatch.setattr(settings, "refresh_cold_days", 365)
+    assert success_delay(db_session, row.id, NOW) == timedelta(days=settings.refresh_cold_days_max)
+    assert settings.refresh_cold_days_max == 180
