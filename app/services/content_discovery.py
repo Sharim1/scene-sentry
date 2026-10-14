@@ -11,13 +11,15 @@ seen, to pick up newly-registered content on the source platform.
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
-from app.services.providers.base import ContentProvider, NormalizedContent
+from app.services.identity import ID_KINDS, Identity, Match, _id_keys, resolve
+from app.services.providers.base import ContentProvider, NormalizedContent, _normalise_title, _year_from_date
 from app.services.providers.registry import get_active_providers
 
 logger = logging.getLogger(__name__)
@@ -25,58 +27,40 @@ logger = logging.getLogger(__name__)
 SEED_PAGES = 5  # pages to fetch on first-ever run per provider
 
 
-def _ids_conflict(a: NormalizedContent, b: NormalizedContent) -> bool:
-    """True if both items carry the same kind of external id with different values.
-
-    Two entries with different ids from the same source are different titles, even
-    when their names and years match.
-    """
-    return any(
-        getattr(a, attr) is not None and getattr(b, attr) is not None and getattr(a, attr) != getattr(b, attr)
-        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+def _identity(nc: NormalizedContent) -> Identity:
+    return Identity(
+        title=nc.title,
+        content_type=nc.content_type,
+        year=nc.year or _year_from_date(nc.release_date),
+        ids={kind: getattr(nc, f"{kind}_id") for kind in ID_KINDS},
+        ref=nc,
     )
 
 
 def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
-    """Merge duplicates across providers using external IDs then title+year."""
-    by_imdb: dict[str, NormalizedContent] = {}
-    by_tmdb: dict[int, NormalizedContent] = {}
-    by_tvdb: dict[int, NormalizedContent] = {}
-    by_tvmaze: dict[int, NormalizedContent] = {}
-    by_key: dict[str, NormalizedContent] = {}
+    """Merge duplicates across providers; the identity resolver decides what is the same title.
+
+    Only the kept items that share an id or a title with the incoming one are shown to the
+    resolver, so the pass stays linear. A conflict is never merged.
+    """
+    by_key: dict[tuple[Any, ...], list[Identity]] = {}
     result: list[NormalizedContent] = []
 
     for nc in items:
-        existing: NormalizedContent | None = None
+        incoming = _identity(nc)
+        keys = [("id", *k) for k in _id_keys(incoming)]
+        title = _normalise_title(nc.title)
+        if title:
+            keys.append(("title", nc.content_type, title))
+        candidates = [c for key in keys for c in by_key.get(key, [])]
 
-        if nc.imdb_id and nc.imdb_id in by_imdb:
-            existing = by_imdb[nc.imdb_id]
-        elif nc.tmdb_id and nc.tmdb_id in by_tmdb:
-            existing = by_tmdb[nc.tmdb_id]
-        elif nc.tvdb_id and nc.tvdb_id in by_tvdb:
-            existing = by_tvdb[nc.tvdb_id]
-        elif nc.tvmaze_id and nc.tvmaze_id in by_tvmaze:
-            existing = by_tvmaze[nc.tvmaze_id]
-        else:
-            key = nc.dedup_key
-            candidate = None if key.startswith("::") else by_key.get(key)
-            if candidate is not None and not _ids_conflict(candidate, nc):
-                existing = candidate
-
-        if existing:
-            existing.merge(nc)
-        else:
-            result.append(nc)
-            if nc.imdb_id:
-                by_imdb[nc.imdb_id] = nc
-            if nc.tmdb_id:
-                by_tmdb[nc.tmdb_id] = nc
-            if nc.tvdb_id:
-                by_tvdb[nc.tvdb_id] = nc
-            if nc.tvmaze_id:
-                by_tvmaze[nc.tvmaze_id] = nc
-            if not nc.dedup_key.startswith("::"):
-                by_key.setdefault(nc.dedup_key, nc)
+        decision = resolve(incoming, candidates)
+        if isinstance(decision, Match):
+            decision.candidate.ref.merge(nc)
+            continue
+        result.append(nc)
+        for key in keys:
+            by_key.setdefault(key, []).append(incoming)
 
     logger.info("Dedup: %d raw items → %d unique", len(items), len(result))
     return result
