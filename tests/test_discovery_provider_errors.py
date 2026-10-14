@@ -202,3 +202,28 @@ class TestPageThatFiltersToNothingIsNotTheEnd:
     def test_tvmaze_empty_source_page_is_the_end(self):
         page = TestProvidersRaiseInsteadOfReturningEmpty()._tvmaze(200, json=[]).discover_tv_shows(page=5)
         assert is_end_of_stream(page) is True
+
+
+class TestEmptyFirstPageOfAFreshWalk:
+    """Fully synced needs an empty page after non-empty ones, or an explicit end marker from the provider."""
+
+    def test_a_plain_empty_first_page_does_not_finish_a_fresh_stream(self, db_session):
+        state = run(db_session, FlakyProvider([]))
+        assert state.last_page == 0
+        assert state.fully_synced is False
+
+    def test_an_explicit_end_marker_on_the_first_page_does_finish_it(self, db_session):
+        from app.services.providers.base import Page
+
+        class Marked(FlakyProvider):
+            def _page(self, page):
+                return Page([], exhausted=True)
+
+        state = run(db_session, Marked([]))
+        assert state.fully_synced is True
+
+    def test_an_empty_page_past_a_resumed_cursor_finishes_the_stream(self, db_session):
+        seed(db_session, last_page=2, fully_synced=False)
+        state = run(db_session, FlakyProvider([titles(1), titles(2)]))
+        assert state.last_page == 2
+        assert state.fully_synced is True

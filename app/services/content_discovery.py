@@ -27,6 +27,7 @@ from app.services.providers.base import (
     _normalise_title,
     _year_from_date,
     is_end_of_stream,
+    is_explicit_end,
 )
 from app.services.providers.registry import get_active_providers
 from app.services.refresh_planner import due_titles, failure_delay, success_delay
@@ -175,8 +176,10 @@ class ContentDiscoveryService:
     ) -> tuple[list[NormalizedContent], bool]:
         """Read consecutive pages after ``state.last_page``; returns (items, reached_end).
 
-        ``reached_end`` is True when an empty page was hit, i.e. there is nothing
-        further on the source right now.
+        ``reached_end`` is True when an empty page was confirmed as the end: it came after
+        pages with titles (in this walk or earlier ones, via the saved cursor), or the provider
+        marked it as the end itself. An empty first page of a fresh walk is not enough, since
+        a source that lists nothing usable would otherwise be called finished.
         """
         all_items: list[NormalizedContent] = []
 
@@ -202,7 +205,8 @@ class ContentDiscoveryService:
 
             if is_end_of_stream(items):
                 logger.info("%s: empty page %d for %s", provider.name, next_page, content_type)
-                return all_items, True
+                followed_pages = bool(all_items) or state.last_page > 0
+                return all_items, followed_pages or is_explicit_end(items)
             if not items:
                 logger.info("%s: page %d for %s had nothing usable, moving on", provider.name, next_page, content_type)
                 self._advance_state(state, 0)
