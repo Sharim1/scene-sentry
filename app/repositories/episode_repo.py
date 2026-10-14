@@ -38,6 +38,7 @@ class EpisodeRepository:
         self,
         content_id: int,
         ne: NormalizedEpisode,
+        overwrite: bool = False,
     ) -> Episode:
         existing = (
             self.db.query(Episode)
@@ -50,6 +51,16 @@ class EpisodeRepository:
         )
 
         if existing:
+            if overwrite:
+                # provider-owned fields take the newer value; a missing value keeps the old one
+                for field in ("air_date", "runtime", "rating"):
+                    value = getattr(ne, field)
+                    if value is not None:
+                        setattr(existing, field, value)
+                if ne.title:
+                    existing.title = ne.title[:300]
+                if ne.description:
+                    existing.description = ne.description
             if ne.title and not existing.title:
                 existing.title = ne.title[:300]
             if ne.description and not existing.description:
@@ -90,11 +101,12 @@ class EpisodeRepository:
         self,
         content_id: int,
         episodes: list[NormalizedEpisode],
+        overwrite: bool = False,
     ) -> int:
         count = 0
         for ne in episodes:
             try:
-                self.upsert_episode(content_id, ne)
+                self.upsert_episode(content_id, ne, overwrite=overwrite)
                 count += 1
             except Exception as e:
                 logger.warning(

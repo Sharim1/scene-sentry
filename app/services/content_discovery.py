@@ -403,12 +403,12 @@ class ContentDiscoveryService:
             try:
                 detail, detail_error = self._get_detail_with_error(content, providers)
                 if detail:
-                    self.repo._merge_into(content, detail)
+                    self.repo._merge_into(content, detail, overwrite=True)
 
                 if content.content_type == "tv_show":
                     episodes = self._get_episodes_for_content(content, providers)
                     if episodes:
-                        count = ep_repo.bulk_upsert(content.id, episodes)
+                        count = ep_repo.bulk_upsert(content.id, episodes, overwrite=not content.refresh_locked)
                         if not content.episodes:
                             content.episodes = count
                         if not content.seasons:
