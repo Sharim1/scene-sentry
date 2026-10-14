@@ -24,6 +24,7 @@ from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
     NormalizedEpisode,
+    Page,
     ProviderError,
 )
 
@@ -274,7 +275,8 @@ class TVMazeProvider(ContentProvider):
                     continue
                 filtered.append(s)
             filtered.sort(key=lambda x: int(x.get("weight") or 0), reverse=True)
-            return [self._normalize_show(s) for s in filtered]
+            # exhausted only when the source page itself was empty, not when the filter emptied it
+            return Page([self._normalize_show(s) for s in filtered], exhausted=not data)
         except Exception as e:
             raise ProviderError(self.name, f"/shows page {page}: could not read response: {e}") from e
 
