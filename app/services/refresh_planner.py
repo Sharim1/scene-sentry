@@ -85,3 +85,13 @@ def failing_titles(db: Session, min_failures: int | None = None) -> list[Content
         .order_by(Content.refresh_attempts.desc(), Content.id)
         .all()
     )
+
+
+def set_refresh_lock(db: Session, content_id: int, locked: bool) -> Content | None:
+    """Lock or unlock a title against refresh overwrites; None if there is no such title. Commits."""
+    row = db.get(Content, content_id)
+    if row is None:
+        return None
+    row.refresh_locked = locked
+    db.commit()
+    return row
