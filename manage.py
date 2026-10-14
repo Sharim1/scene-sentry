@@ -21,6 +21,7 @@ Usage:
 
     python manage.py audit-ids             # Read-only duplicate / conflicting provider id report
     python manage.py audit-ids --samples 25
+    python manage.py review-list           # Read-only: titles parked because their ids conflict
     python manage.py failing-titles        # Titles whose refresh keeps failing (3+ by default)
 
     python manage.py recheck-sync          # Read-only: is each 'fully synced' end genuine?
@@ -287,6 +288,20 @@ def cmd_audit_ids(args: argparse.Namespace) -> None:
         db.close()
 
 
+def cmd_review_list(args: argparse.Namespace) -> None:
+    """Read-only list of titles the sync parked instead of guessing."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.review_list import format_review, list_review
+
+    db = SessionLocal()
+    try:
+        print(format_review(list_review(db)))
+    finally:
+        db.close()
+
+
 def cmd_failing_titles(args: argparse.Namespace) -> None:
     """Read-only report of titles whose refresh keeps failing."""
     _init_app()
@@ -429,6 +444,9 @@ def main():
     audit = sub.add_parser("audit-ids", help="Read-only report of duplicate/conflicting provider ids")
     audit.add_argument("--samples", type=int, default=10, help="Sample rows per problem kind (default 10)")
     audit.set_defaults(func=cmd_audit_ids)
+
+    review = sub.add_parser("review-list", help="Read-only list of titles parked because their ids conflict")
+    review.set_defaults(func=cmd_review_list)
 
     failing = sub.add_parser("failing-titles", help="Read-only report of titles whose refresh keeps failing")
     failing.add_argument("--min-failures", type=int, default=None, help="Minimum failures (default: setting, 3)")
