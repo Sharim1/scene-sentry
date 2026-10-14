@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     discovery_interval_hours: int = 6
     discovery_batch_size: int = 10  # pages per provider per scheduled run
     enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
+    # Refresh tiers (ADR-0006 starting values; tune with data)
+    refresh_hot_hours: int = 6  # tracked by a user, or airing soon
+    refresh_warm_hours: int = 12  # running shows, announced movies
+    refresh_cold_days: int = 30  # ended / released
+    refresh_airing_window_days: int = 14  # "airing soon" for the hot tier
+    refresh_failure_threshold: int = 3  # attempts before a title counts as failing
+    refresh_failure_backoff_base_hours: int = 1  # first retry delay; doubles each failure
+    refresh_failure_backoff_cap_days: int = 7
     reminder_check_interval_minutes: int = 1  # how often to check for due reminders
 
     # Embeddings (SCE-33)
