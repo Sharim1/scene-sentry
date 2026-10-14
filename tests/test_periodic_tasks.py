@@ -3,6 +3,8 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.config import settings
+
 
 def _mock_db_session():
     """Return a (mock_db_session_callable, mock_db) pair."""
@@ -80,7 +82,11 @@ class TestContentEnrichmentTask:
         ):
             content_enrichment_task.run()
 
-        mock_svc.enrich_sparse_content.assert_called_once_with(batch_size=50)
+        mock_svc.enrich_sparse_content.assert_called_once()
+        kwargs = mock_svc.enrich_sparse_content.call_args.kwargs
+        assert kwargs["batch_size"] == 50
+        # a run must finish inside its schedule so it cannot hold the worker
+        assert 0 < kwargs["time_budget_seconds"] < settings.enrichment_interval_minutes * 60
 
 
 # ── gossip_scraping_task ────────────────────────────────────────────────

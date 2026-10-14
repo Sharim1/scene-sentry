@@ -10,6 +10,8 @@ seen, to pick up newly-registered content on the source platform.
 """
 
 import logging
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -357,6 +359,8 @@ class ContentDiscoveryService:
         content_type: str | None = None,
         content_id: int | None = None,
         provider_filter: str | None = None,
+        time_budget_seconds: float | None = None,
+        now: Callable[[], float] = time.monotonic,
     ) -> int:
         """Backfill missing detail data (runtime, episodes, language, etc.)
         on content records that have sparse information.
@@ -366,6 +370,8 @@ class ContentDiscoveryService:
             content_type: Limit to ``"movie"`` or ``"tv_show"``.
             content_id: Enrich a single record by primary key.
             provider_filter: Only use this provider for detail/episode lookups.
+            time_budget_seconds: Stop starting new titles once this many seconds have passed,
+                so one run cannot outlast its schedule and hold the worker.
 
         Returns the number of records enriched.
         """
@@ -394,8 +400,12 @@ class ContentDiscoveryService:
 
         ep_repo = EpisodeRepository(self.db)
         enriched = 0
+        started = now()
 
         for content in sparse:
+            if time_budget_seconds is not None and now() - started >= time_budget_seconds:
+                logger.info("Enrichment time budget of %ss spent; stopping early", time_budget_seconds)
+                break
             try:
                 detail = self._get_detail_for_content(content, providers)
                 if detail:
