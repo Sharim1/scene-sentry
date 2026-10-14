@@ -93,9 +93,7 @@ def _dated_detail(**fields):
 
 
 def test_refresh_replaces_a_moved_release_date_and_next_episode_date(db_session):
-    show = add_show(
-        db_session, release_date="2026-11-01", next_episode_date=datetime(2026, 11, 2, tzinfo=UTC)
-    )
+    show = add_show(db_session, release_date="2026-11-01", next_episode_date=datetime(2026, 11, 2, tzinfo=UTC))
     detail = _dated_detail(release_date="2026-12-01", next_episode_date="2026-12-02")
 
     refresh(db_session, FakeShowProvider(detail))

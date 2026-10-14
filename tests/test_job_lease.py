@@ -46,10 +46,12 @@ def test_lease_is_released_after_a_run_so_the_next_run_proceeds(store):
 def test_lease_is_released_when_the_run_fails(store):
     from app.tasks.periodic import cleanup_task
 
-    with patch("app.tasks.periodic.db_session", side_effect=RuntimeError("boom")):
-        with patch.object(cleanup_task, "retry", side_effect=RuntimeError("retry")):
-            with pytest.raises(RuntimeError):
-                cleanup_task.run()
+    with (
+        patch("app.tasks.periodic.db_session", side_effect=RuntimeError("boom")),
+        patch.object(cleanup_task, "retry", side_effect=RuntimeError("retry")),
+        pytest.raises(RuntimeError),
+    ):
+        cleanup_task.run()
 
     assert store.acquire("cleanup_task", 10)
 

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, defer
 
 from app.models.content import Content
 from app.models.external_id import ContentExternalId
-from app.services.identity import ID_KINDS, ids_disagree
+from app.services.identity import ID_KINDS, ids_disagree, item_ids
 from app.services.providers.base import NormalizedContent, _year_from_date
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class ExternalIdError(RuntimeError):
 
 def _nc_ids(nc: NormalizedContent) -> dict[str, str]:
     """The provider ids an incoming item carries, as text (the external-id table keeps text)."""
-    return {kind: str(getattr(nc, f"{kind}_id")) for kind in ID_KINDS if getattr(nc, f"{kind}_id")}
+    return item_ids(nc)
 
 
 def _ids_conflict(known: Mapping[str, Any], nc: NormalizedContent) -> bool:
@@ -499,22 +499,18 @@ class ContentRepository:
         found: dict[tuple[str, str | None, str], list[Content]] = {}
         wanted: dict[tuple[str, str | None], set[str]] = {}
         for nc in items:
-            for kind in ID_KINDS:
-                value = getattr(nc, f"{kind}_id")
-                if value:
-                    wanted.setdefault((kind, None if kind == "imdb" else nc.content_type), set()).add(str(value))
+            for kind, value in item_ids(nc).items():
+                wanted.setdefault((kind, None if kind == "imdb" else nc.content_type), set()).add(value)
         for (kind, content_type), values in wanted.items():
             for value, row in _rows_by_external_id(self.db, kind, content_type, sorted(values)):
                 found.setdefault((kind, content_type, value), []).append(row)
         result: list[list[Content]] = []
         for nc in items:
             rows: dict[int, Content] = {}
-            for kind in ID_KINDS:
-                value = getattr(nc, f"{kind}_id")
-                if value:
-                    key = (kind, None if kind == "imdb" else nc.content_type, str(value))
-                    for row in found.get(key, []):
-                        rows.setdefault(row.id, row)
+            for kind, value in item_ids(nc).items():
+                key = (kind, None if kind == "imdb" else nc.content_type, value)
+                for row in found.get(key, []):
+                    rows.setdefault(row.id, row)
             result.append(sorted(rows.values(), key=lambda r: r.id))
         return result
 

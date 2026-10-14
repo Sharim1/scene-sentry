@@ -24,7 +24,6 @@ from app.services.provider_notices import Notice, apply_notices
 logger = logging.getLogger(__name__)
 
 
-
 def utc_now() -> datetime:
     return datetime.now(UTC)
 

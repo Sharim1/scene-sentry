@@ -15,7 +15,14 @@ from typing import Any
 from app.services.providers.base import _normalise_title
 
 ID_KINDS = ("imdb", "tmdb", "tvdb", "tvmaze")
-_GLOBAL_KINDS = frozenset({"imdb"})
+_GLOBAL_KINDS = frozenset({"imdb"})  # one IMDb id names one title whatever its type (also in stored ids)
+# Which id kind each provider's detail and episode calls take (OMDb is looked up by IMDb id).
+PROVIDER_ID_KIND = {"tvmaze": "tvmaze", "tvdb": "tvdb", "omdb": "imdb"}
+
+
+def item_ids(item: Any) -> dict[str, str]:
+    """The provider ids an item (anything with ``imdb_id``, ``tmdb_id``... attributes) carries, as text."""
+    return {kind: str(value) for kind in ID_KINDS if (value := getattr(item, f"{kind}_id", None))}
 
 
 @dataclass(frozen=True, eq=False)

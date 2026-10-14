@@ -19,9 +19,10 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.content import Content
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
-from app.services.identity import ID_KINDS, Conflict, Identity, Match, id_keys, resolve
+from app.services.identity import PROVIDER_ID_KIND, Conflict, Identity, Match, id_keys, item_ids, resolve
 from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
@@ -44,7 +45,7 @@ def _identity(nc: NormalizedContent) -> Identity:
         title=nc.title,
         content_type=nc.content_type,
         year=nc.year or _year_from_date(nc.release_date),
-        ids={kind: str(value) for kind in ID_KINDS if (value := getattr(nc, f"{kind}_id"))},
+        ids=item_ids(nc),
         ref=nc,
     )
 
@@ -91,7 +92,7 @@ def _row_identity(row: Any, ids: dict[str, str]) -> Identity:
         title=row.title,
         content_type=row.content_type,
         year=_year_from_date(row.release_date),
-        ids={kind: ids[kind] for kind in ID_KINDS if kind in ids},
+        ids=dict(ids),
         ref=row,
     )
 
@@ -254,8 +255,6 @@ class ContentDiscoveryService:
     # ---- public API ------------------------------------------------------- #
 
     def is_catalog_empty(self) -> bool:
-        from app.models.content import Content
-
         return self.db.query(Content.id).first() is None
 
     def seed_catalog(self) -> int:
@@ -421,7 +420,6 @@ class ContentDiscoveryService:
 
         Returns the number of records enriched.
         """
-        from app.models.content import Content
         from app.repositories.episode_repo import EpisodeRepository
 
         now = now or datetime.now(UTC)
@@ -482,7 +480,7 @@ class ContentDiscoveryService:
         logger.info("Enriched %d content records", enriched)
         return enriched
 
-    def _record_refresh_success(self, content, now: datetime) -> None:
+    def _record_refresh_success(self, content: Content, now: datetime) -> None:
         content.last_refreshed_at = now
         content.refresh_attempts = 0
         content.last_error = None
@@ -490,8 +488,6 @@ class ContentDiscoveryService:
 
     def _record_refresh_failure(self, content_id: int, error: Exception, now: datetime) -> None:
         """Keep the error and raise the attempt count; never let bookkeeping stop the run."""
-        from app.models.content import Content
-
         try:
             row = self.db.get(Content, content_id)
             row.refresh_attempts = (row.refresh_attempts or 0) + 1
@@ -504,8 +500,6 @@ class ContentDiscoveryService:
 
     def count_sparse(self, content_type: str | None = None) -> dict:
         """Return counts of records that still need enrichment."""
-        from app.models.content import Content
-
         q_tv = self.db.query(Content).filter(
             Content.content_type == "tv_show",
             Content.episodes.is_(None),
@@ -521,14 +515,10 @@ class ContentDiscoveryService:
             "missing_runtime": q_runtime.count(),
         }
 
-    def _get_detail_for_content(self, content, providers: list | None = None) -> NormalizedContent | None:
-        """Try each provider's get_details() using the matching external ID."""
-        return self._get_detail_with_error(content, providers)[0]
-
     def _get_detail_with_error(
-        self, content, providers: list | None = None
+        self, content: Content, providers: list[ContentProvider] | None = None
     ) -> tuple[NormalizedContent | None, Exception | None]:
-        """Like _get_detail_for_content, but also returns the last provider error seen."""
+        """Try each provider's get_details() using the matching external ID; also returns the last error seen."""
         last_error: Exception | None = None
         for provider in providers or self.providers:
             try:
@@ -549,7 +539,7 @@ class ContentDiscoveryService:
                 )
         return None, last_error
 
-    def _get_episodes_for_content(self, content, providers: list | None = None) -> list:
+    def _get_episodes_for_content(self, content: Content, providers: list[ContentProvider] | None = None) -> list:
         """Try each provider's get_episodes() using the matching external ID."""
         for provider in providers or self.providers:
             try:
@@ -571,7 +561,7 @@ class ContentDiscoveryService:
 
     def _external_id_for(self, content, provider) -> str | None:
         """Return the appropriate external ID string for a given provider, from the external-id table."""
-        wanted = {"tvmaze": "tvmaze", "tvdb": "tvdb", "omdb": "imdb"}.get(provider.name)
+        wanted = PROVIDER_ID_KIND.get(provider.name)
         if wanted is None:
             return None
         ids = self._known_ids.get(content.id)
