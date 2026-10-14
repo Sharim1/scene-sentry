@@ -21,6 +21,7 @@ Usage:
 
     python manage.py audit-ids             # Read-only duplicate / conflicting provider id report
     python manage.py audit-ids --samples 25
+    python manage.py failing-titles        # Titles whose refresh keeps failing (3+ by default)
 
     python manage.py fix-emails            # Backfill real emails from Clerk for placeholder users
     python manage.py fix-emails --dry-run  # Preview what would be updated
@@ -283,6 +284,23 @@ def cmd_audit_ids(args: argparse.Namespace) -> None:
         db.close()
 
 
+def cmd_failing_titles(args: argparse.Namespace) -> None:
+    """Read-only report of titles whose refresh keeps failing."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.refresh_planner import failing_titles
+
+    db = SessionLocal()
+    try:
+        rows = failing_titles(db, args.min_failures)
+        print(f"{len(rows)} titles with repeated refresh failures")
+        for r in rows:
+            print(f"  [{r.id}] {r.title} ({r.content_type}) attempts={r.refresh_attempts} error={r.last_error}")
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -378,6 +396,10 @@ def main():
     audit = sub.add_parser("audit-ids", help="Read-only report of duplicate/conflicting provider ids")
     audit.add_argument("--samples", type=int, default=10, help="Sample rows per problem kind (default 10)")
     audit.set_defaults(func=cmd_audit_ids)
+
+    failing = sub.add_parser("failing-titles", help="Read-only report of titles whose refresh keeps failing")
+    failing.add_argument("--min-failures", type=int, default=None, help="Minimum failures (default: setting, 3)")
+    failing.set_defaults(func=cmd_failing_titles)
 
     args = parser.parse_args()
     if not args.command:

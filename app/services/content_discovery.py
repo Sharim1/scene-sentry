@@ -22,6 +22,7 @@ from app.repositories.content_repo import ContentRepository
 from app.services.identity import ID_KINDS, Identity, Match, id_keys, resolve
 from app.services.providers.base import ContentProvider, NormalizedContent, _normalise_title, _year_from_date
 from app.services.providers.registry import get_active_providers
+from app.services.refresh_planner import due_titles, failure_delay, success_delay
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,7 @@ class ContentDiscoveryService:
         content_type: str | None = None,
         content_id: int | None = None,
         provider_filter: str | None = None,
+        now: datetime | None = None,
     ) -> int:
         """Backfill missing detail data (runtime, episodes, language, etc.)
         on content records that have sparse information.
@@ -373,6 +375,7 @@ class ContentDiscoveryService:
         from app.models.content import Content
         from app.repositories.episode_repo import EpisodeRepository
 
+        now = now or datetime.now(UTC)
         if content_id:
             target = self.db.query(Content).get(content_id)
             if not target:
@@ -380,7 +383,7 @@ class ContentDiscoveryService:
                 return 0
             sparse = [target]
         else:
-            sparse = self._find_sparse(batch_size, content_type)
+            sparse = due_titles(self.db, batch_size, now, content_type)
 
         if not sparse:
             logger.info("No sparse content records to enrich")
@@ -413,24 +416,24 @@ class ContentDiscoveryService:
 
                 if detail_error and not detail:
                     raise detail_error
-                self._record_refresh_success(content)
+                self._record_refresh_success(content, now)
                 enriched += 1
                 self.db.commit()
             except Exception as e:
                 self.db.rollback()
                 logger.warning("Enrichment failed for %r: %s", content.title, e)
-                self._record_refresh_failure(content.id, e)
+                self._record_refresh_failure(content.id, e, now)
 
         logger.info("Enriched %d content records", enriched)
         return enriched
 
-    @staticmethod
-    def _record_refresh_success(content) -> None:
-        content.last_refreshed_at = datetime.now(UTC)
+    def _record_refresh_success(self, content, now: datetime) -> None:
+        content.last_refreshed_at = now
         content.refresh_attempts = 0
         content.last_error = None
+        content.next_refresh_at = now + success_delay(self.db, content.id, now)
 
-    def _record_refresh_failure(self, content_id: int, error: Exception) -> None:
+    def _record_refresh_failure(self, content_id: int, error: Exception, now: datetime) -> None:
         """Keep the error and raise the attempt count; never let bookkeeping stop the run."""
         from app.models.content import Content
 
@@ -438,32 +441,11 @@ class ContentDiscoveryService:
             row = self.db.get(Content, content_id)
             row.refresh_attempts = (row.refresh_attempts or 0) + 1
             row.last_error = f"{type(error).__name__}: {error}"[:2000]
+            row.next_refresh_at = now + failure_delay(row.refresh_attempts)
             self.db.commit()
         except Exception:
             self.db.rollback()
             logger.exception("Could not record refresh failure for content %s", content_id)
-
-    def _find_sparse(self, batch_size: int, content_type: str | None = None) -> list:
-        """Return content records that need enrichment."""
-        from app.models.content import Content
-
-        # Priority 1: TV shows missing episode counts
-        q = self.db.query(Content).filter(
-            Content.content_type == "tv_show",
-            Content.episodes.is_(None),
-        )
-        if content_type and content_type != "tv_show":
-            q = q.filter(False)  # skip this tier if caller wants movies only
-        sparse = q.order_by(Content.id).limit(batch_size).all()
-        if sparse:
-            return sparse
-
-        # Priority 2: anything missing runtime
-        q = self.db.query(Content).filter(Content.runtime.is_(None))
-        if content_type:
-            q = q.filter(Content.content_type == content_type)
-        sparse = q.order_by(Content.id).limit(batch_size).all()
-        return sparse
 
     def count_sparse(self, content_type: str | None = None) -> dict:
         """Return counts of records that still need enrichment."""

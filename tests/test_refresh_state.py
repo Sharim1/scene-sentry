@@ -4,6 +4,8 @@ Driven through ContentDiscoveryService.enrich_sparse_content with a fake provide
 the in-memory test database: no network.
 """
 
+from datetime import UTC, datetime, timedelta
+
 from app.models.content import Content
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.providers.base import NormalizedContent
@@ -31,10 +33,15 @@ def add_movie(db_session, title, tvdb_id):
     return row
 
 
+_clock = [datetime(2026, 10, 1, tzinfo=UTC)]
+
+
 def enrich(db_session, provider):
+    # each run happens a day later, so backoff never hides a title from the next run
+    _clock[0] += timedelta(days=10)
     svc = ContentDiscoveryService(db_session)
     svc.providers = [provider]
-    svc.enrich_sparse_content(batch_size=10)
+    svc.enrich_sparse_content(batch_size=10, now=_clock[0])
     db_session.expire_all()
 
 
