@@ -1,20 +1,20 @@
-# Issue tracker: Linear
+# Issue tracker: GitHub Issues
 
-Issues and PRDs for this repo live as Linear issues under the **Scene Sentry** team. Use the Linear MCP server (`plugin-linear-linear`) for all operations.
+Issues and PRDs for this repo live as GitHub Issues in the `Sharim1/scene-sentry` repository. Use the `gh` CLI for all operations.
 
 ## Conventions
 
-- **Create an issue**: Use `save_issue` with `team: "Scene Sentry"`, `title`, and `description` (Markdown).
-- **Read an issue**: Use `get_issue` with the issue identifier (e.g. `SCE-123`).
-- **List issues**: Use `list_issues` with filters like `team`, `state`, `label`, `assignee`.
-- **Comment on an issue**: Use `save_comment` with `issueId` and `body` (Markdown).
-- **Apply labels**: Use `save_issue` with `id` and `labels: ["label-name"]`.
-- **Close an issue**: Use `save_issue` with `id` and `state: "Done"` or `state: "Cancelled"`.
+- **Create an issue**: `gh issue create --title "..." --body "..."` (Markdown body).
+- **Read an issue**: `gh issue view <number>`.
+- **List issues**: `gh issue list` with filters like `--state`, `--label`, `--assignee`.
+- **Comment on an issue**: `gh issue comment <number> --body "..."`.
+- **Apply labels**: `gh issue edit <number> --add-label "label-name"`.
+- **Close an issue**: `gh issue close <number>` (add `--reason "not planned"` to cancel).
 
 ## When a skill says "publish to the issue tracker"
 
-Create a Linear issue via `save_issue` on the Scene Sentry team.
+Create a GitHub issue with `gh issue create`.
 
 ## When a skill says "fetch the relevant ticket"
 
-Use `get_issue` with the issue identifier.
+Run `gh issue view <number>`.
