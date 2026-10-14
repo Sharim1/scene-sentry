@@ -11,7 +11,7 @@ import pytest
 
 from app.models.discovery_state import DiscoveryState
 from app.services.content_discovery import ContentDiscoveryService
-from app.services.providers.base import NormalizedContent, ProviderError
+from app.services.providers.base import NormalizedContent, ProviderError, is_end_of_stream
 
 
 class FlakyProvider:
@@ -175,3 +175,30 @@ class TestProvidersRaiseInsteadOfReturningEmpty:
 
     def test_tvmaze_404_past_the_last_page_is_the_end_of_the_catalog(self):
         assert self._tvmaze(404).discover_tv_shows(page=999) == []
+
+
+class TestPageThatFiltersToNothingIsNotTheEnd:
+    def test_walker_goes_past_a_non_final_page_with_no_usable_items(self, db_session):
+        from app.services.providers.base import Page
+
+        class Filtering(FlakyProvider):
+            def _page(self, page):
+                if page == 2:
+                    return Page([], exhausted=False)  # source had rows, all filtered out
+                return super()._page(page)
+
+        seed(db_session, last_page=0, fully_synced=False)
+        state = run(db_session, Filtering([titles(1), [], titles(3)]), batch=5)
+        assert state.last_page == 3
+        assert state.fully_synced is True  # page 4 is genuinely empty
+        assert state.total_items_fetched == 2
+
+    def test_tvmaze_page_of_unpopular_shows_is_filtered_but_not_the_end(self):
+        shows = [{"id": 1, "name": "Old", "weight": 10, "status": "Ended", "language": "English"}]
+        page = TestProvidersRaiseInsteadOfReturningEmpty()._tvmaze(200, json=shows).discover_tv_shows(page=5)
+        assert list(page) == []
+        assert is_end_of_stream(page) is False
+
+    def test_tvmaze_empty_source_page_is_the_end(self):
+        page = TestProvidersRaiseInsteadOfReturningEmpty()._tvmaze(200, json=[]).discover_tv_shows(page=5)
+        assert is_end_of_stream(page) is True

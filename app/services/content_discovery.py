@@ -20,7 +20,13 @@ from app.config import settings
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
 from app.services.identity import ID_KINDS, Identity, Match, id_keys, resolve
-from app.services.providers.base import ContentProvider, NormalizedContent, _normalise_title, _year_from_date
+from app.services.providers.base import (
+    ContentProvider,
+    NormalizedContent,
+    _normalise_title,
+    _year_from_date,
+    is_end_of_stream,
+)
 from app.services.providers.registry import get_active_providers
 from app.services.refresh_planner import due_titles, failure_delay, success_delay
 
@@ -173,9 +179,13 @@ class ContentDiscoveryService:
                 )
                 return all_items, False
 
-            if not items:
+            if is_end_of_stream(items):
                 logger.info("%s: empty page %d for %s", provider.name, next_page, content_type)
                 return all_items, True
+            if not items:
+                logger.info("%s: page %d for %s had nothing usable, moving on", provider.name, next_page, content_type)
+                self._advance_state(state, 0)
+                continue
 
             logger.info(
                 "%s: fetched %d %s items from page %d",
@@ -403,12 +413,12 @@ class ContentDiscoveryService:
             try:
                 detail, detail_error = self._get_detail_with_error(content, providers)
                 if detail:
-                    self.repo._merge_into(content, detail)
+                    self.repo._merge_into(content, detail, overwrite=True)
 
                 if content.content_type == "tv_show":
                     episodes = self._get_episodes_for_content(content, providers)
                     if episodes:
-                        count = ep_repo.bulk_upsert(content.id, episodes)
+                        count = ep_repo.bulk_upsert(content.id, episodes, overwrite=not content.refresh_locked)
                         if not content.episodes:
                             content.episodes = count
                         if not content.seasons:

@@ -11,10 +11,11 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, defer
 
 from app.models.content import Content
+from app.models.external_id import ContentExternalId
 from app.services.identity import ID_KINDS, ids_disagree
 from app.services.providers.base import NormalizedContent, _year_from_date
 
@@ -50,6 +51,36 @@ def _ids_conflict(row: Any, nc: NormalizedContent) -> bool:
     )
 
 
+def _rows_by_external_id(
+    db: Session, provider: str, content_type: str | None, values: list[str]
+) -> list[tuple[str, Content]]:
+    """(external id, title) pairs for the given ids, read from the external-id table, lowest title id first.
+
+    ``content_type`` None means the id is global (IMDb ids number titles of every type).
+    """
+    pairs: list[tuple[str, Content]] = []
+    for start in range(0, len(values), _BULK_CHUNK):
+        chunk = values[start : start + _BULK_CHUNK]
+        conditions = [ContentExternalId.provider == provider, ContentExternalId.external_id.in_(chunk)]
+        if content_type:
+            conditions.append(ContentExternalId.kind == content_type)
+        query = (
+            db.query(ContentExternalId.external_id, Content)
+            .join(Content, Content.id == ContentExternalId.content_id)
+            # the embedding vectors are large and never needed for matching
+            .options(defer(Content.embedding))
+            .filter(*conditions)
+            .order_by(Content.id)
+        )
+        pairs.extend((str(ext), row) for ext, row in query.all())
+    return pairs
+
+
+def _id_triples(content_type: str, ids: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """(provider, kind, external id) for every id present; kind is the content type the id numbers."""
+    return [(kind, content_type, str(ids[kind])) for kind in ID_KINDS if ids.get(kind)]
+
+
 class _ExistingIndex:
     """Looks up the stored rows that incoming titles match, in a few batched queries."""
 
@@ -68,19 +99,19 @@ class _ExistingIndex:
 
     def _load_ids(self, db: Session, items: list[NormalizedContent]) -> None:
         imdb_ids = sorted({nc.imdb_id for nc in items if nc.imdb_id})
-        for row in self._rows(db, Content.imdb_id.in_(imdb_ids)) if imdb_ids else []:
-            self.imdb.setdefault(str(row.imdb_id), row)
+        for value, row in _rows_by_external_id(db, "imdb", None, imdb_ids):
+            self.imdb.setdefault(value, row)
         for content_type in {nc.content_type for nc in items}:
-            for kind, column in (("tmdb", Content.tmdb_id), ("tvdb", Content.tvdb_id), ("tvmaze", Content.tvmaze_id)):
+            for kind in ("tmdb", "tvdb", "tvmaze"):
                 ids = sorted(
                     {
-                        getattr(nc, f"{kind}_id")
+                        str(getattr(nc, f"{kind}_id"))
                         for nc in items
                         if nc.content_type == content_type and getattr(nc, f"{kind}_id")
                     }
                 )
-                for row in self._rows(db, Content.content_type == content_type, column.in_(ids)) if ids else []:
-                    self.numeric.setdefault((content_type, kind, getattr(row, f"{kind}_id")), row)
+                for value, row in _rows_by_external_id(db, kind, content_type, ids):
+                    self.numeric.setdefault((content_type, kind, int(value)), row)
 
     def _load_titles(self, db: Session, items: list[NormalizedContent]) -> None:
         for content_type in {nc.content_type for nc in items}:
@@ -158,24 +189,83 @@ class ContentRepository:
         return self.db.query(Content).filter(Content.id == content_id).first()
 
     def get_by_imdb_id(self, imdb_id: str) -> Content | None:
-        return self.db.query(Content).filter(Content.imdb_id == imdb_id).first()
+        return self._first_by_external_id("imdb", imdb_id, None)
 
     def get_by_tmdb_id(self, tmdb_id: int, content_type: str | None = None) -> Content | None:
-        return self._first_by_numeric_id(Content.tmdb_id, tmdb_id, content_type)
+        return self._first_by_external_id("tmdb", tmdb_id, content_type)
 
     def get_by_tvdb_id(self, tvdb_id: int, content_type: str | None = None) -> Content | None:
-        return self._first_by_numeric_id(Content.tvdb_id, tvdb_id, content_type)
+        return self._first_by_external_id("tvdb", tvdb_id, content_type)
 
     def get_by_tvmaze_id(self, tvmaze_id: int, content_type: str | None = None) -> Content | None:
-        return self._first_by_numeric_id(Content.tvmaze_id, tvmaze_id, content_type)
+        return self._first_by_external_id("tvmaze", tvmaze_id, content_type)
 
-    def _first_by_numeric_id(self, column: Any, value: int, content_type: str | None) -> Content | None:
-        """Movies and series are numbered separately by TVDB and TMDb, so a numeric id
-        only identifies a title within its own type; pass ``content_type`` to say which."""
-        query = self.db.query(Content).filter(column == value)
+    def _first_by_external_id(self, provider: str, value: Any, content_type: str | None) -> Content | None:
+        """Read the external-id table. Movies and series are numbered separately by TVDB and
+        TMDb, so a numeric id only identifies a title within its own type; pass ``content_type``
+        to say which."""
+        query = (
+            self.db.query(Content)
+            .join(ContentExternalId, ContentExternalId.content_id == Content.id)
+            .filter(ContentExternalId.provider == provider, ContentExternalId.external_id == str(value))
+        )
         if content_type:
-            query = query.filter(Content.content_type == content_type)
-        return query.first()
+            query = query.filter(ContentExternalId.kind == content_type)
+        return query.order_by(Content.id).first()
+
+    def record_external_ids(self, titles: list[tuple[int, str, dict[str, Any]]], known_new: bool = False) -> None:
+        """Make sure the external-id table has a row for every id of the given titles.
+
+        ``titles`` is (content id, content type, {kind: id value}). Rows already there are left
+        alone, so this is safe to repeat. ``known_new`` says the titles were just created, so there is
+        nothing to look up first. The old id columns are written by the caller.
+        """
+        wanted: dict[tuple[str, str, str], int] = {}
+        for content_id, content_type, ids in titles:
+            for triple in _id_triples(content_type, ids):
+                wanted.setdefault(triple, content_id)
+        if not wanted:
+            return
+        by_group: dict[tuple[str, str], list[str]] = {}
+        for provider, kind, value in wanted:
+            by_group.setdefault((provider, kind), []).append(value)
+        present: set[tuple[str, str, str]] = set()
+        for (provider, kind), values in {} if known_new else by_group.items():
+            for start in range(0, len(values), _BULK_CHUNK):
+                found = self.db.execute(
+                    select(ContentExternalId.external_id).where(
+                        ContentExternalId.provider == provider,
+                        ContentExternalId.kind == kind,
+                        ContentExternalId.external_id.in_(values[start : start + _BULK_CHUNK]),
+                    )
+                )
+                present.update((provider, kind, v) for v in found.scalars())
+        rows = [
+            {"provider": p, "kind": k, "external_id": v, "content_id": cid}
+            for (p, k, v), cid in wanted.items()
+            if (p, k, v) not in present
+        ]
+        for start in range(0, len(rows), _BULK_CHUNK):
+            chunk = rows[start : start + _BULK_CHUNK]
+            try:
+                with self.db.begin_nested():
+                    self.db.execute(ContentExternalId.__table__.insert().values(chunk))
+            except Exception as e:
+                logger.warning("Bulk insert of %d external ids failed (%s); saving them one by one", len(chunk), e)
+                for row in chunk:
+                    try:
+                        with self.db.begin_nested():
+                            self.db.execute(ContentExternalId.__table__.insert().values([row]))
+                    except Exception as e2:
+                        logger.warning("Could not record %s id %s: %s", row["provider"], row["external_id"], e2)
+
+    @staticmethod
+    def _row_ids(content: Content) -> tuple[int, str, dict[str, Any]]:
+        return (
+            int(content.id),
+            str(content.content_type),
+            {kind: getattr(content, f"{kind}_id") for kind in ID_KINDS},
+        )
 
     def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
         return next(iter(self._all_by_title_year_type(title, year, content_type)), None)
@@ -354,11 +444,13 @@ class ContentRepository:
         existing = self.find_existing(nc)
         if existing:
             self._merge_into(existing, nc)
+            self.record_external_ids([self._row_ids(existing)])
             return existing
 
         content = Content(**self._new_row(nc))
         self.db.add(content)
         self.db.flush()
+        self.record_external_ids([self._row_ids(content)], known_new=True)
         return content
 
     @staticmethod
@@ -414,10 +506,12 @@ class ContentRepository:
 
         existing = _ExistingIndex(self.db, valid)
         pending = _PendingIndex()
+        merged: dict[int, Content] = {}
         for nc in valid:
             row = existing.match(nc)
             if row is not None:
                 self._merge_into(row, nc)
+                merged[row.id] = row
                 continue
             twin = pending.match(nc)
             if twin is not None:
@@ -431,27 +525,41 @@ class ContentRepository:
             values = self._new_row(nc)
             values.update(is_adaptation=False, created_at=now, updated_at=now)
             rows.append(values)
-        failed = self._insert_rows(rows)
+        failed, inserted = self._insert_rows(rows)
+        self.record_external_ids([self._row_ids(row) for row in merged.values()])
+        self.record_external_ids(inserted, known_new=True)
         return len(valid) - failed
 
-    def _insert_rows(self, rows: list[dict[str, Any]]) -> int:
-        """Insert rows with one multi-row INSERT per chunk; returns how many could not be saved."""
+    def _insert_rows(self, rows: list[dict[str, Any]]) -> tuple[int, list[tuple[int, str, dict[str, Any]]]]:
+        """Insert rows with one multi-row INSERT per chunk.
+
+        Returns how many could not be saved, and (id, type, provider ids) of each saved row so
+        the caller can record its external ids.
+        """
+        table = Content.__table__
+        returned = [table.c.id, table.c.content_type] + [table.c[f"{kind}_id"] for kind in ID_KINDS]
         failed = 0
+        inserted: list[tuple[int, str, dict[str, Any]]] = []
+
+        def keep(result: Any) -> None:
+            for r in result:
+                inserted.append((r.id, r.content_type, {kind: getattr(r, f"{kind}_id") for kind in ID_KINDS}))
+
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
             try:
                 with self.db.begin_nested():
-                    self.db.execute(Content.__table__.insert().values(chunk))
+                    keep(self.db.execute(table.insert().values(chunk).returning(*returned)))
             except Exception as e:
                 logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(chunk), e)
                 for row in chunk:
                     try:
                         with self.db.begin_nested():
-                            self.db.execute(Content.__table__.insert().values([row]))
+                            keep(self.db.execute(table.insert().values([row]).returning(*returned)))
                     except Exception as e2:
                         failed += 1
                         logger.warning("Failed to save %r: %s", row.get("title"), e2)
-        return failed
+        return failed, inserted
 
     # Legacy method kept for backward compat with old TMDB-dict ingestion
     def upsert_from_api(self, data: dict[str, Any], content_type: str) -> Content:
@@ -462,10 +570,12 @@ class ContentRepository:
             existing = self.get_by_title_year_type(title, None, content_type)
         if existing:
             self._update_from_api(existing, data, content_type)
+            self.record_external_ids([self._row_ids(existing)])
             return existing
         content = self._create_from_api(data, content_type)
         self.db.add(content)
         self.db.flush()
+        self.record_external_ids([self._row_ids(content)])
         return content
 
     def bulk_upsert(self, items: list[dict[str, Any]], content_type: str) -> int:
@@ -481,9 +591,19 @@ class ContentRepository:
 
     # ---- internal helpers ---- #
 
-    def _merge_into(self, content: Content, nc: NormalizedContent) -> None:
-        """Fill blanks on an existing row from a NormalizedContent."""
+    def _merge_into(self, content: Content, nc: NormalizedContent, overwrite: bool = False) -> None:
+        """Fill blanks on an existing row from a NormalizedContent.
+
+        With ``overwrite`` the provider-owned fields (status, rating, season and episode
+        counts) also take the provider's newer value; a title with ``refresh_locked`` set
+        is never overwritten.
+        """
         embedding_input_changed = False
+        if overwrite and not content.refresh_locked:
+            for field in ("status", "rating", "seasons", "episodes"):
+                value = getattr(nc, field)
+                if value is not None:
+                    setattr(content, field, value)
         if nc.description and not content.description:
             content.description = nc.description[:500]
             embedding_input_changed = True
