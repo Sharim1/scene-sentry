@@ -5,3 +5,4 @@ A batch is done when nothing in it reads `content.tmdb_id / imdb_id / tvdb_id / 
 and the full test suite passes.
 
 - [x] 1. TVDB updates feed: queue known titles by id (`app/services/tvdb_updates.py`)
+- [x] 2. Enrichment/refresh: which provider id to ask for each title (`ContentDiscoveryService._external_id_for`, via new `ContentRepository.external_ids_for`)

@@ -213,6 +213,23 @@ class ContentRepository:
             query = query.filter(ContentExternalId.kind == content_type)
         return query.order_by(Content.id).first()
 
+    def external_ids_for(self, content_ids: list[int]) -> dict[int, dict[str, str]]:
+        """{content id: {provider: external id}} read from the external-id table, in batches.
+
+        A title with several ids of one provider (kept apart by kind) gets the first one found.
+        """
+        found: dict[int, dict[str, str]] = {cid: {} for cid in content_ids}
+        for start in range(0, len(content_ids), _BULK_CHUNK):
+            chunk = content_ids[start : start + _BULK_CHUNK]
+            rows = self.db.execute(
+                select(ContentExternalId.content_id, ContentExternalId.provider, ContentExternalId.external_id)
+                .where(ContentExternalId.content_id.in_(chunk))
+                .order_by(ContentExternalId.provider, ContentExternalId.kind, ContentExternalId.external_id)
+            )
+            for cid, provider, value in rows:
+                found[cid].setdefault(provider, value)
+        return found
+
     def record_external_ids(self, titles: list[tuple[int, str, dict[str, Any]]], known_new: bool = False) -> None:
         """Make sure the external-id table has a row for every id of the given titles.
 

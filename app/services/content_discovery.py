@@ -81,6 +81,7 @@ class ContentDiscoveryService:
         self.providers = get_active_providers()
         self._clock = time.monotonic
         self._deadline: float | None = None
+        self._known_ids: dict[int, dict[str, str]] = {}  # content id -> {provider: id}, from the external-id table
 
     def _out_of_time(self) -> bool:
         return self._deadline is not None and self._clock() >= self._deadline
@@ -408,6 +409,7 @@ class ContentDiscoveryService:
 
         ep_repo = EpisodeRepository(self.db)
         enriched = 0
+        self._known_ids = self.repo.external_ids_for([c.id for c in sparse])
 
         for content in sparse:
             try:
@@ -520,13 +522,12 @@ class ContentDiscoveryService:
                 )
         return []
 
-    @staticmethod
-    def _external_id_for(content, provider) -> str | None:
-        """Return the appropriate external ID string for a given provider."""
-        if provider.name == "tvmaze" and content.tvmaze_id:
-            return str(content.tvmaze_id)
-        if provider.name == "tvdb" and content.tvdb_id:
-            return str(content.tvdb_id)
-        if provider.name == "omdb" and content.imdb_id:
-            return content.imdb_id
-        return None
+    def _external_id_for(self, content, provider) -> str | None:
+        """Return the appropriate external ID string for a given provider, from the external-id table."""
+        wanted = {"tvmaze": "tvmaze", "tvdb": "tvdb", "omdb": "imdb"}.get(provider.name)
+        if wanted is None:
+            return None
+        ids = self._known_ids.get(content.id)
+        if ids is None:
+            ids = self._known_ids[content.id] = self.repo.external_ids_for([content.id])[content.id]
+        return ids.get(wanted)
