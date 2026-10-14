@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     tvdb_updates_interval_minutes: int = 60  # how often to follow the TVDB updates feed
     tvdb_updates_overlap_minutes: int = 60  # each run starts this far before the bookmark
     tvdb_updates_window_days: int = 28  # older bookmarks fall back to the tier planner
+    tvmaze_updates_interval_minutes: int = 60  # how often to follow the TVmaze updates feed
+    tvmaze_updates_overlap_minutes: int = 60  # each run starts this far before the bookmark
+    tvmaze_updates_window_days: int = 29  # TVmaze's widest window is a month; older bookmarks fall back to the planner
     embedding_batch_size: int = 100
 
     # Public contact form (override CONTACT_TO_EMAIL in .env)

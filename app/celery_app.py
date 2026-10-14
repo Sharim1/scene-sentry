@@ -33,6 +33,10 @@ PERIODIC_TASKS = {
         "app.tasks.periodic.tvdb_updates_task",
         timedelta(minutes=settings.tvdb_updates_interval_minutes),
     ),
+    "tvmaze-updates": (
+        "app.tasks.periodic.tvmaze_updates_task",
+        timedelta(minutes=settings.tvmaze_updates_interval_minutes),
+    ),
     "cleanup": ("app.tasks.periodic.cleanup_task", timedelta(hours=24)),
 }
 
