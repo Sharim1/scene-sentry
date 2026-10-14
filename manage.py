@@ -19,6 +19,9 @@ Usage:
     python manage.py enrich --all                        # Loop until nothing left
     python manage.py enrich --status                     # Show how many records need enrichment
 
+    python manage.py audit-ids             # Read-only duplicate / conflicting provider id report
+    python manage.py audit-ids --samples 25
+
     python manage.py fix-emails            # Backfill real emails from Clerk for placeholder users
     python manage.py fix-emails --dry-run  # Preview what would be updated
 """
@@ -262,6 +265,25 @@ def cmd_fix_emails(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# audit-ids
+# ---------------------------------------------------------------------------
+
+
+def cmd_audit_ids(args: argparse.Namespace) -> None:
+    """Read-only report of titles that would break a unique rule on provider ids."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.catalog_audit import format_report, run_read_only
+
+    db = SessionLocal()
+    try:
+        print(format_report(run_read_only(db, sample_limit=args.samples)))
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -351,6 +373,11 @@ def main():
         help="Preview changes without applying them",
     )
     fe.set_defaults(func=cmd_fix_emails)
+
+    # -- audit-ids --
+    audit = sub.add_parser("audit-ids", help="Read-only report of duplicate/conflicting provider ids")
+    audit.add_argument("--samples", type=int, default=10, help="Sample rows per problem kind (default 10)")
+    audit.set_defaults(func=cmd_audit_ids)
 
     args = parser.parse_args()
     if not args.command:
