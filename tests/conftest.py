@@ -15,6 +15,18 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 
 
+@pytest.fixture(autouse=True)
+def _in_memory_job_lease():
+    """Periodic tasks take a lease; tests never reach Redis."""
+    from unittest.mock import patch
+
+    from app.tasks import lease
+    from tests.lease_helpers import FakeLeaseStore
+
+    with patch.object(lease, "_store", FakeLeaseStore()):
+        yield
+
+
 @pytest.fixture(scope="session")
 def engine():
     """In-memory SQLite engine for the entire test session."""
