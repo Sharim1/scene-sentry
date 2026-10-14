@@ -19,7 +19,7 @@ Scene Sentry is a server-side-rendered web app for tracking and discovering movi
 | Auth | Clerk (JWT middleware + webhooks) |
 | AI / LLM | LangChain + LangGraph + Gemini |
 | Web search | Tavily |
-| Background jobs | APScheduler (async) |
+| Background jobs | Celery (Beat + Worker) on Redis |
 | Email | Resend (primary) + Mailgun (fallback) |
 | Rate limiting | slowapi |
 | Config | Pydantic Settings (`.env`) |
@@ -141,9 +141,6 @@ scene-sentry/
 │   ├── middleware/
 │   │   └── clerk.py            # ClerkAuthMiddleware (JWT validation, user sync)
 │   │
-│   ├── tasks/
-│   │   └── scheduler.py        # APScheduler job definitions
-│   │
 │   ├── celery_app.py                   # Celery instance + Beat schedule
 │   │
 │   └── tasks/
@@ -227,9 +224,7 @@ RequireAuthDep = Annotated[User, Depends(...)]  # 401 if not authenticated
 
 ## Background tasks
 
-APScheduler runs in the same process as the web server. Jobs call the same services that routes use.
-
-Periodic jobs run via **Celery Beat + Celery Worker**, backed by **Redis** as both broker and result backend. This replaces the previous in-process APScheduler — jobs now execute in a separate worker process, avoiding duplicate execution when running multiple web workers.
+Periodic jobs run via **Celery Beat + Celery Worker**, backed by **Redis** as both broker and result backend. Jobs execute in a separate worker process, so they are not duplicated when running multiple web workers. Tasks call the same services that routes use.
 
 On-demand tasks (manual gossip scrape, manual re-ranking) use a **Redis-backed TaskManager** for state persistence and Redis Pub/Sub for real-time SSE progress updates across workers.
 

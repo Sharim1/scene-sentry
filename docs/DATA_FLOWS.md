@@ -131,10 +131,10 @@ Step-by-step traces for the most common operations. Use these to orient yourself
 
 ## Scheduled content discovery (background)
 
-Triggered by APScheduler every 6 hours:
+Triggered by Celery Beat every 6 hours:
 
 ```
-1. scheduler.py → content_discovery_task()
+1. app/tasks/periodic.py → content_discovery_task() (Celery task)
 2. ContentDiscoveryService(db).run_scheduled_sync()
 3. providers = get_active_providers()  # from registry.py
 4. For each provider:

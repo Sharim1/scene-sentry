@@ -127,9 +127,9 @@ A pre-existing database created before Alembic (tables present, no `alembic_vers
 
 ## Adding a background task
 
-1. Write the business logic in a service (not in the scheduler).
-2. Add the APScheduler job to `app/tasks/scheduler.py`.
-3. Make the scheduler function call the service — keep the scheduler thin.
+1. Write the business logic in a service (not in the task).
+2. Add a Celery task to `app/tasks/periodic.py` and register its schedule in the Beat schedule in `app/celery_app.py`.
+3. Make the task call the service — keep the task thin.
 4. If the task should also be triggerable on-demand from the UI, wire it through `TaskManager` (see `task_manager.py` and `routes/api.py`).
 
 ---
