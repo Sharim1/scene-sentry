@@ -86,11 +86,11 @@ class TVDBUpdatesSync:
 
         since = watermark - timedelta(minutes=self.overlap_minutes)
         try:
-            ids, notices = self.provider.read_updates(stream, since)
+            ids, notices = self._read_updates(stream, since)
             applied = apply_notices(self.db, notices)
             queued = self._queue_known(stream, ids, started)
             if notices:
-                logger.info("tvdb/%s notices applied: %s", stream, applied)
+                logger.info("%s/%s notices applied: %s", self.provider_name, stream, applied)
         except Exception as exc:
             self.db.rollback()
             state = self._get_state(stream)
@@ -105,6 +105,13 @@ class TVDBUpdatesSync:
         state.watermark, state.status, state.last_error = started, "ok", None
         self.db.commit()
         return {"status": "ok", "queued": queued}
+
+    def _read_updates(self, stream: str, since: datetime):
+        """(changed ids, delete/merge notices). Providers whose feed has no notices only list ids."""
+        read = getattr(self.provider, "read_updates", None)
+        if read is None:
+            return self.provider.get_updated_ids(stream, since), []
+        return read(stream, since)
 
     def _queue_known(self, stream: str, ids: list[int], now: datetime) -> int:
         queued = 0
