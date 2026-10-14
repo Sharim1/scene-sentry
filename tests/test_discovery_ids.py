@@ -8,15 +8,12 @@ database.
 
 import pytest
 
-from app.models.content import Content
 from tests.discovery_helpers import FakeProvider, FakeTVDBWithDates, item, provider_with, stored, sync
+from tests.id_helpers import add_row_with_ids
 
 
 def add_row(db_session, **kw):
-    row = Content(**kw)
-    db_session.add(row)
-    db_session.commit()
-    return row
+    return add_row_with_ids(db_session, **kw)
 
 
 class TestSameNumberDifferentType:

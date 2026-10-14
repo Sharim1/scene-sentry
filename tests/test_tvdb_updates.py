@@ -80,7 +80,7 @@ def due_ids(db, now=NOW):
 
 def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
     later = NOW + timedelta(days=30)
-    changed = add_title(db_session, "Changed", 1, next_refresh_at=later)
+    add_title(db_session, "Changed", 1, next_refresh_at=later)
     add_title(db_session, "Quiet", 2, next_refresh_at=later)
     set_bookmark(db_session, NOW - timedelta(hours=2))
     feed = FakeFeed()

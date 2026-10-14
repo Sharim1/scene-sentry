@@ -12,8 +12,8 @@ from app.models.library import LibraryItem
 from app.models.user import User
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.providers.base import NormalizedContent
-from tests.id_helpers import add_title
 from app.services.refresh_planner import failing_titles
+from tests.id_helpers import add_title
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 

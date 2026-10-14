@@ -17,3 +17,16 @@ def add_title(db, title, content_type="movie", ids=None, **fields):
         db.add(ContentExternalId(provider=provider, kind=content_type, external_id=str(value), content_id=row.id))
     db.commit()
     return row
+
+
+def add_row_with_ids(db, **fields):
+    """Add a title the way production has it after the backfill: ids on the old columns and in the table."""
+    row = Content(**fields)
+    db.add(row)
+    db.flush()
+    for kind in ("tmdb", "imdb", "tvdb", "tvmaze"):
+        value = fields.get(f"{kind}_id")
+        if value:
+            db.add(ContentExternalId(provider=kind, kind=row.content_type, external_id=str(value), content_id=row.id))
+    db.commit()
+    return row
