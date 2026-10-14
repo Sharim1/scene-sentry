@@ -15,6 +15,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -468,6 +469,11 @@ class ContentDiscoveryService:
                 self._record_refresh_success(content, now)
                 enriched += 1
                 self.db.commit()
+            except SoftTimeLimitExceeded:
+                # Out of time, not the title's fault: what was finished is already committed.
+                self.db.rollback()
+                logger.warning("Enrichment out of time after %d record(s); the rest are due next run", enriched)
+                break
             except Exception as e:
                 self.db.rollback()
                 logger.warning("Enrichment failed for %r: %s", content.title, e)
@@ -531,6 +537,8 @@ class ContentDiscoveryService:
                     detail = provider.get_details(ext_id)
                     if detail:
                         return detail, None
+            except SoftTimeLimitExceeded:
+                raise
             except Exception as e:
                 last_error = e
                 logger.debug(
@@ -550,6 +558,8 @@ class ContentDiscoveryService:
                     episodes = provider.get_episodes(ext_id)
                     if episodes:
                         return episodes
+            except SoftTimeLimitExceeded:
+                raise
             except Exception as e:
                 logger.debug(
                     "%s get_episodes for %r failed: %s",

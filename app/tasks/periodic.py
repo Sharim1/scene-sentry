@@ -2,6 +2,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.celery_app import celery_app
 from app.database import db_session
 from app.models import Gossip, Notification, Reminder, User
@@ -37,6 +39,8 @@ def content_discovery_task(self):
             enriched = svc.enrich_sparse_content(batch_size=30)
             if enriched:
                 logger.info("Enrichment: %d records", enriched)
+    except SoftTimeLimitExceeded:
+        logger.warning("content_discovery_task ran out of time; the next run continues")
     except Exception as exc:
         logger.error("content_discovery_task failed: %s", exc)
         raise self.retry(exc=exc)
@@ -50,6 +54,8 @@ def content_enrichment_task(self):
             svc = ContentDiscoveryService(db)
             enriched = svc.enrich_sparse_content(batch_size=50)
             logger.info("Enrichment: %d records", enriched)
+    except SoftTimeLimitExceeded:
+        logger.warning("content_enrichment_task ran out of time; the next run continues")
     except Exception as exc:
         logger.error("content_enrichment_task failed: %s", exc)
         raise self.retry(exc=exc)

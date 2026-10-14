@@ -12,6 +12,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.config import settings
 from app.services.provider_notices import Notice, NoticeAction
 from app.services.providers.base import (
@@ -308,6 +310,8 @@ class TVDBProvider(ContentProvider):
                         )
                     else:
                         notices.append(Notice(NoticeAction.DELETE, self.name, content_type, str(r["recordId"])))
+        except SoftTimeLimitExceeded:
+            raise
         except Exception as e:
             raise ProviderError(self.name, f"updates {api_type} since {since.isoformat()}: {e}") from e
         raise ProviderError(self.name, f"updates {api_type}: more than {self._MAX_UPDATE_PAGES} pages")
