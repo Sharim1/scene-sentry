@@ -73,6 +73,20 @@ def test_delete_keeps_a_title_that_is_in_a_library_and_stops_refreshing_it(db_se
     assert kept.tvdb_id is None
 
 
+def test_merge_gives_the_survivor_the_ids_it_lacked_going_by_the_external_id_table(db_session):
+    from tests.id_helpers import add_title as add_table_only_title
+
+    add_table_only_title(db_session, "Old Entry", "tv_show", ids={"tvdb": 300, "imdb": "tt9"})
+    survivor = add_table_only_title(db_session, "Survivor", "tv_show", ids={"tvdb": 301})
+
+    apply_notices(db_session, [merge_notice(300, 301)])
+
+    db_session.expire_all()
+    assert db_session.get(Content, survivor.id).imdb_id == "tt9"  # old column, still written until #89
+    ids = {(r.provider, r.external_id) for r in db_session.query(ContentExternalId).filter_by(content_id=survivor.id)}
+    assert ids == {("tvdb", "300"), ("tvdb", "301"), ("imdb", "tt9")}
+
+
 def test_merge_moves_the_id_to_the_surviving_title_and_library_items_follow(db_session):
     old = add_title(db_session, "Old Entry", 200)
     survivor = add_title(db_session, "Survivor", 201)

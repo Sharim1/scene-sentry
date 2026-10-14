@@ -19,6 +19,7 @@ from app.models.gossip import Gossip
 from app.models.library import LibraryItem
 from app.models.ranking import UserContentRank
 from app.models.reminder import Reminder
+from app.repositories.content_repo import ContentRepository
 from app.services.identity import ID_KINDS
 
 logger = logging.getLogger(__name__)
@@ -92,12 +93,14 @@ def _merge_titles(db: Session, source: Content, target: Content) -> None:
     still sends under an old id lands on the survivor instead of recreating the duplicate.
     """
     sid, tid = source.id, target.id
+    before = {c.id: ids for c, ids in _ids_of(db, [source, target])}
     db.query(ContentExternalId).filter_by(content_id=sid).update(
         {ContentExternalId.content_id: tid}, synchronize_session=False
     )
     for kind in ID_KINDS:
-        if getattr(target, f"{kind}_id") is None:
-            setattr(target, f"{kind}_id", getattr(source, f"{kind}_id"))
+        if kind not in before[tid] and kind in before[sid]:
+            value = before[sid][kind]
+            setattr(target, f"{kind}_id", value if kind == "imdb" else int(value))  # old column, written until #89
 
     # A user who tracks both keeps the survivor's item; the other item's reminders move over.
     survivor_items = {i.user_id: i.id for i in db.query(LibraryItem).filter_by(content_id=tid)}
@@ -134,10 +137,16 @@ def _merge_titles(db: Session, source: Content, target: Content) -> None:
     db.flush()
 
 
+def _ids_of(db: Session, titles: list[Content]) -> list[tuple[Content, dict[str, str]]]:
+    """Each title with its ids ({provider: external id}) from the external-id table."""
+    found = ContentRepository(db).external_ids_for([t.id for t in titles])
+    return [(t, found[t.id]) for t in titles]
+
+
 def _flag_deleted(title: Content, notice: Notice) -> None:
     """Keep the title for the users who track it; the dead id is dropped and refresh stops."""
-    if getattr(title, f"{notice.provider}_id", None) is not None and notice.provider in ID_KINDS:
-        setattr(title, f"{notice.provider}_id", None)
+    if notice.provider in ID_KINDS:
+        setattr(title, f"{notice.provider}_id", None)  # old column, written until #89
     title.next_refresh_at = None
     title.last_error = f"deleted by {notice.provider} (id {notice.external_id})"
 

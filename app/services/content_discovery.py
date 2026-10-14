@@ -42,7 +42,7 @@ def _identity(nc: NormalizedContent) -> Identity:
         title=nc.title,
         content_type=nc.content_type,
         year=nc.year or _year_from_date(nc.release_date),
-        ids={kind: getattr(nc, f"{kind}_id") for kind in ID_KINDS},
+        ids={kind: str(value) for kind in ID_KINDS if (value := getattr(nc, f"{kind}_id"))},
         ref=nc,
     )
 
@@ -83,12 +83,13 @@ def _deduplicate(
     return result
 
 
-def _row_identity(row: Any) -> Identity:
+def _row_identity(row: Any, ids: dict[str, str]) -> Identity:
+    """A stored title's identity; ``ids`` are its provider ids from the external-id table."""
     return Identity(
         title=row.title,
         content_type=row.content_type,
         year=_year_from_date(row.release_date),
-        ids={kind: getattr(row, f"{kind}_id") for kind in ID_KINDS},
+        ids={kind: ids[kind] for kind in ID_KINDS if kind in ids},
         ref=row,
     )
 
@@ -100,6 +101,7 @@ class ContentDiscoveryService:
         self.providers = get_active_providers()
         self._clock = time.monotonic
         self._deadline: float | None = None
+        self._known_ids: dict[int, dict[str, str]] = {}  # content id -> {provider: id}, from the external-id table
 
     def _out_of_time(self) -> bool:
         return self._deadline is not None and self._clock() >= self._deadline
@@ -297,8 +299,10 @@ class ContentDiscoveryService:
     def _screen_stored(self, items: list[NormalizedContent]) -> list[NormalizedContent]:
         """Park titles whose ids point at several stored titles, or contradict the one they match."""
         kept: list[NormalizedContent] = []
-        for nc, rows in zip(items, self.repo.stored_sharing_ids(items), strict=True):
-            decision = resolve(_identity(nc), [_row_identity(r) for r in rows]) if rows else None
+        sharing = self.repo.stored_sharing_ids(items)
+        known = self.repo.external_ids_for([row.id for rows in sharing for row in rows])
+        for nc, rows in zip(items, sharing, strict=True):
+            decision = resolve(_identity(nc), [_row_identity(r, known[r.id]) for r in rows]) if rows else None
             if isinstance(decision, Conflict):
                 park(self.db, _identity(nc), decision)
             else:
@@ -438,6 +442,7 @@ class ContentDiscoveryService:
 
         ep_repo = EpisodeRepository(self.db)
         enriched = 0
+        self._known_ids = self.repo.external_ids_for([c.id for c in sparse])
 
         for content in sparse:
             try:
@@ -550,13 +555,12 @@ class ContentDiscoveryService:
                 )
         return []
 
-    @staticmethod
-    def _external_id_for(content, provider) -> str | None:
-        """Return the appropriate external ID string for a given provider."""
-        if provider.name == "tvmaze" and content.tvmaze_id:
-            return str(content.tvmaze_id)
-        if provider.name == "tvdb" and content.tvdb_id:
-            return str(content.tvdb_id)
-        if provider.name == "omdb" and content.imdb_id:
-            return content.imdb_id
-        return None
+    def _external_id_for(self, content, provider) -> str | None:
+        """Return the appropriate external ID string for a given provider, from the external-id table."""
+        wanted = {"tvmaze": "tvmaze", "tvdb": "tvdb", "omdb": "imdb"}.get(provider.name)
+        if wanted is None:
+            return None
+        ids = self._known_ids.get(content.id)
+        if ids is None:
+            ids = self._known_ids[content.id] = self.repo.external_ids_for([content.id])[content.id]
+        return ids.get(wanted)

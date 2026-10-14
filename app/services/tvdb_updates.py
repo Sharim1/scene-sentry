@@ -10,10 +10,12 @@ the gap instead.
 import logging
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.content import Content
+from app.models.external_id import ContentExternalId
 from app.models.sync_state import SyncState
 from app.services.provider_notices import apply_notices
 
@@ -36,7 +38,6 @@ class TVDBUpdatesSync:
 
     provider_name = PROVIDER
     streams = STREAMS
-    id_attr = "tvdb_id"
 
     def __init__(self, db: Session, provider):
         self.db = db
@@ -118,9 +119,14 @@ class TVDBUpdatesSync:
         ids = list(set(ids))
         for start in range(0, len(ids), 500):
             chunk = ids[start : start + 500]
+            content_ids = select(ContentExternalId.content_id).where(
+                ContentExternalId.provider == self.provider_name,
+                ContentExternalId.kind == stream,
+                ContentExternalId.external_id.in_([str(i) for i in chunk]),
+            )
             queued += (
                 self.db.query(Content)
-                .filter(Content.content_type == stream, getattr(Content, self.id_attr).in_(chunk))
+                .filter(Content.id.in_(content_ids))
                 .update({Content.next_refresh_at: now}, synchronize_session=False)
             )
         return queued

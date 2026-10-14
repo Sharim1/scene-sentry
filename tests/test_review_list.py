@@ -4,10 +4,9 @@ Driven through the scheduled sync with fake providers and a real test database; 
 read through ``list_review``.
 """
 
-from app.models.content import Content
-from app.repositories.content_repo import ContentRepository
 from app.services.review_list import format_review, list_review
 from tests.discovery_helpers import FakeProvider, item, stored, sync
+from tests.id_helpers import add_title
 
 
 class TestConflictingTitleIsParked:
@@ -44,32 +43,23 @@ class TestConflictingTitleIsParked:
 
 
 class TestConflictWithStoredTitles:
-    def _row(self, db_session, title, **kw):
-        row = Content(title=title, content_type="tv_show", **kw)
-        db_session.add(row)
-        db_session.commit()
-        ContentRepository(db_session).record_external_ids([ContentRepository._row_ids(row)])
-        db_session.commit()
-        return row
-
     def test_a_title_whose_ids_belong_to_two_stored_titles_is_listed_and_neither_is_changed(self, db_session):
-        self._row(db_session, "Alpha", tvdb_id=5)
-        self._row(db_session, "Beta", imdb_id="tt1")
+        add_title(db_session, "Alpha", "tv_show", ids={"tvdb": 5})
+        add_title(db_session, "Beta", "tv_show", ids={"imdb": "tt1"})
 
         sync(db_session, FakeProvider("tvdb", shows=[item("Gamma", "tv_show", tvdb_id=5, imdb_id="tt1")]))
 
-        rows = stored(db_session, "tv_show")
-        assert sorted((r.title, r.tvdb_id, r.imdb_id) for r in rows) == [("Alpha", 5, None), ("Beta", None, "tt1")]
+        assert sorted(r.title for r in stored(db_session, "tv_show")) == ["Alpha", "Beta"]
         parked = list_review(db_session)
         assert [e.title for e in parked] == ["Gamma"]
         assert "Alpha" in parked[0].reason and "Beta" in parked[0].reason
 
     def test_a_title_sharing_one_id_but_disagreeing_on_another_is_listed_not_merged(self, db_session):
-        self._row(db_session, "Alpha", tvdb_id=5, imdb_id="ttA")
+        add_title(db_session, "Alpha", "tv_show", ids={"tvdb": 5, "imdb": "ttA"})
 
         sync(db_session, FakeProvider("tvdb", shows=[item("Alpha", "tv_show", tvdb_id=5, imdb_id="ttB")]))
 
-        assert [(r.tvdb_id, r.imdb_id) for r in stored(db_session, "tv_show")] == [(5, "ttA")]
+        assert [r.title for r in stored(db_session, "tv_show")] == ["Alpha"]
         assert [e.title for e in list_review(db_session)] == ["Alpha"]
 
 

@@ -8,10 +8,11 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from app.models.content import Content
+from app.models.external_id import ContentExternalId
 from app.models.sync_state import SyncState
 from app.services.providers.base import ProviderError
 from app.services.refresh_planner import due_titles
+from tests.id_helpers import add_title as id_add_title
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
@@ -35,10 +36,7 @@ class FakeFeed:
 
 
 def add_title(db, title, tvmaze_id, content_type="tv_show", next_refresh_at=None):
-    row = Content(title=title, content_type=content_type, tvmaze_id=tvmaze_id, next_refresh_at=next_refresh_at)
-    db.add(row)
-    db.commit()
-    return row
+    return id_add_title(db, title, content_type, ids={"tvmaze": tvmaze_id}, next_refresh_at=next_refresh_at)
 
 
 def set_bookmark(db, bookmark):
@@ -67,12 +65,14 @@ def run_job(db, feed, now=NOW):
 
 
 def due_ids(db, now=NOW):
-    return {t.tvmaze_id for t in due_titles(db, 100, now)}
+    due = {t.id for t in due_titles(db, 100, now)}
+    rows = db.query(ContentExternalId).filter(ContentExternalId.content_id.in_(due)).all()
+    return {int(r.external_id) for r in rows}
 
 
 def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
     later = NOW + timedelta(days=30)
-    changed = add_title(db_session, "Changed", 1, next_refresh_at=later)
+    add_title(db_session, "Changed", 1, next_refresh_at=later)
     add_title(db_session, "Quiet", 2, next_refresh_at=later)
     set_bookmark(db_session, NOW - timedelta(hours=2))
     feed = FakeFeed()
@@ -81,7 +81,7 @@ def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
 
     run_job(db_session, feed)
 
-    assert due_ids(db_session) == {changed.tvmaze_id}
+    assert due_ids(db_session) == {1}
 
 
 def test_bookmark_moves_forward_to_the_run_start_after_success(db_session):

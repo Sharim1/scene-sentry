@@ -8,6 +8,7 @@ title+year matching.
 import json
 import logging
 import re
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -42,13 +43,34 @@ def _parse_datetime(date_str: str | None) -> datetime | None:
 _BULK_CHUNK = 500  # titles per lookup query / multi-row insert
 
 
-def _ids_conflict(row: Any, nc: NormalizedContent) -> bool:
-    """True if the row and the incoming item carry the same kind of external id with
-    different values: they are then different titles even if name and year match."""
-    return ids_disagree(
-        {kind: getattr(row, f"{kind}_id") for kind in ID_KINDS},
-        {kind: getattr(nc, f"{kind}_id") for kind in ID_KINDS},
-    )
+def _nc_ids(nc: NormalizedContent) -> dict[str, str]:
+    """The provider ids an incoming item carries, as text (the external-id table keeps text)."""
+    return {kind: str(getattr(nc, f"{kind}_id")) for kind in ID_KINDS if getattr(nc, f"{kind}_id")}
+
+
+def _ids_conflict(known: Mapping[str, Any], nc: NormalizedContent) -> bool:
+    """True if a stored title's ids (``known``, from the external-id table) and the incoming item
+    carry the same kind of external id with different values: they are then different titles even
+    if name and year match."""
+    return ids_disagree({k: str(v) for k, v in known.items()}, _nc_ids(nc))
+
+
+def _external_ids_for(db: Session, content_ids: Iterable[int]) -> dict[int, dict[str, str]]:
+    """{content id: {provider: external id}} read from the external-id table, in batches.
+
+    A title with several ids of one provider (kept apart by kind) gets the first one found.
+    """
+    wanted = sorted(set(content_ids))
+    found: dict[int, dict[str, str]] = {cid: {} for cid in wanted}
+    for start in range(0, len(wanted), _BULK_CHUNK):
+        rows = db.execute(
+            select(ContentExternalId.content_id, ContentExternalId.provider, ContentExternalId.external_id)
+            .where(ContentExternalId.content_id.in_(wanted[start : start + _BULK_CHUNK]))
+            .order_by(ContentExternalId.provider, ContentExternalId.kind, ContentExternalId.external_id)
+        )
+        for cid, provider, value in rows:
+            found[cid].setdefault(provider, value)
+    return found
 
 
 def _rows_by_external_id(
@@ -90,6 +112,13 @@ class _ExistingIndex:
         self.by_title: dict[tuple[str, str], list[Content]] = {}
         self._load_ids(db, items)
         self._load_titles(db, items)
+        self.ids: dict[int, dict[str, str]] = _external_ids_for(db, (row.id for row in self._all_rows()))
+
+    def _all_rows(self) -> list[Content]:
+        rows = list(self.imdb.values()) + list(self.numeric.values())
+        for group in self.by_title.values():
+            rows.extend(group)
+        return rows
 
     def _rows(self, db: Session, *conditions: Any) -> list[Content]:
         # the embedding vectors are large and never needed for matching
@@ -138,7 +167,7 @@ class _ExistingIndex:
         for row in self.by_title.get((nc.content_type, nc.title), []):
             if nc.year and not (row.release_date or "").startswith(str(nc.year)):
                 continue
-            if not _ids_conflict(row, nc):
+            if not _ids_conflict(self.ids[row.id], nc):
                 return row
         return None
 
@@ -174,7 +203,7 @@ class _PendingIndex:
             other_year = other.year or _year_from_date(other.release_date)
             if nc.year and other_year != nc.year:
                 continue
-            if not _ids_conflict(other, nc):
+            if not _ids_conflict(_nc_ids(other), nc):
                 return other
         return None
 
@@ -212,6 +241,10 @@ class ContentRepository:
         if content_type:
             query = query.filter(ContentExternalId.kind == content_type)
         return query.order_by(Content.id).first()
+
+    def external_ids_for(self, content_ids: list[int]) -> dict[int, dict[str, str]]:
+        """{content id: {provider: external id}} for the given titles, from the external-id table."""
+        return _external_ids_for(self.db, content_ids)
 
     def record_external_ids(self, titles: list[tuple[int, str, dict[str, Any]]], known_new: bool = False) -> None:
         """Make sure the external-id table has a row for every id of the given titles.
@@ -258,14 +291,6 @@ class ContentRepository:
                             self.db.execute(ContentExternalId.__table__.insert().values([row]))
                     except Exception as e2:
                         logger.warning("Could not record %s id %s: %s", row["provider"], row["external_id"], e2)
-
-    @staticmethod
-    def _row_ids(content: Content) -> tuple[int, str, dict[str, Any]]:
-        return (
-            int(content.id),
-            str(content.content_type),
-            {kind: getattr(content, f"{kind}_id") for kind in ID_KINDS},
-        )
 
     def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
         return next(iter(self._all_by_title_year_type(title, year, content_type)), None)
@@ -434,8 +459,10 @@ class ContentRepository:
             hit = self.get_by_tvmaze_id(nc.tvmaze_id, nc.content_type)
             if hit:
                 return hit
-        for candidate in self._all_by_title_year_type(nc.title, nc.year, nc.content_type):
-            if not _ids_conflict(candidate, nc):
+        candidates = self._all_by_title_year_type(nc.title, nc.year, nc.content_type)
+        known = self.external_ids_for([c.id for c in candidates])
+        for candidate in candidates:
+            if not _ids_conflict(known[candidate.id], nc):
                 return candidate
         return None
 
@@ -470,14 +497,14 @@ class ContentRepository:
         """Insert or merge a NormalizedContent into the DB, deduplicating."""
         existing = self.find_existing(nc)
         if existing:
-            self._merge_into(existing, nc)
-            self.record_external_ids([self._row_ids(existing)])
+            ids = self._merge_into(existing, nc)
+            self.record_external_ids([(int(existing.id), str(existing.content_type), ids)])
             return existing
 
         content = Content(**self._new_row(nc))
         self.db.add(content)
         self.db.flush()
-        self.record_external_ids([self._row_ids(content)], known_new=True)
+        self.record_external_ids([(int(content.id), str(content.content_type), dict(_nc_ids(nc)))], known_new=True)
         return content
 
     @staticmethod
@@ -537,7 +564,7 @@ class ContentRepository:
         for nc in valid:
             row = existing.match(nc)
             if row is not None:
-                self._merge_into(row, nc)
+                existing.ids[row.id] = self._merge_into(row, nc, known_ids=existing.ids[row.id])
                 merged[row.id] = row
                 continue
             twin = pending.match(nc)
@@ -553,7 +580,9 @@ class ContentRepository:
             values.update(is_adaptation=False, created_at=now, updated_at=now)
             rows.append(values)
         failed, inserted = self._insert_rows(rows)
-        self.record_external_ids([self._row_ids(row) for row in merged.values()])
+        self.record_external_ids(
+            [(int(row.id), str(row.content_type), existing.ids[row.id]) for row in merged.values()]
+        )
         self.record_external_ids(inserted, known_new=True)
         return len(valid) - failed
 
@@ -564,25 +593,32 @@ class ContentRepository:
         the caller can record its external ids.
         """
         table = Content.__table__
-        returned = [table.c.id, table.c.content_type] + [table.c[f"{kind}_id"] for kind in ID_KINDS]
+        returned = [table.c.id, table.c.content_type, table.c.title]
         failed = 0
         inserted: list[tuple[int, str, dict[str, Any]]] = []
 
-        def keep(result: Any) -> None:
-            for r in result:
-                inserted.append((r.id, r.content_type, {kind: getattr(r, f"{kind}_id") for kind in ID_KINDS}))
+        def keep(chunk: list[dict[str, Any]], result: Any) -> None:
+            # The ids recorded are the ones we just sent, matched to the new rows by type and title
+            # (ids from a sequence rise in the order of the rows).
+            waiting: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            for values in chunk:
+                waiting.setdefault((values["content_type"], values["title"]), []).append(values)
+            for r in sorted(result, key=lambda r: r.id):
+                values = waiting[(r.content_type, r.title)].pop(0)
+                ids = {kind: values[f"{kind}_id"] for kind in ID_KINDS if values.get(f"{kind}_id")}
+                inserted.append((r.id, r.content_type, {k: str(v) for k, v in ids.items()}))
 
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
             try:
                 with self.db.begin_nested():
-                    keep(self.db.execute(table.insert().values(chunk).returning(*returned)))
+                    keep(chunk, self.db.execute(table.insert().values(chunk).returning(*returned)))
             except Exception as e:
                 logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(chunk), e)
                 for row in chunk:
                     try:
                         with self.db.begin_nested():
-                            keep(self.db.execute(table.insert().values([row]).returning(*returned)))
+                            keep([row], self.db.execute(table.insert().values([row]).returning(*returned)))
                     except Exception as e2:
                         failed += 1
                         logger.warning("Failed to save %r: %s", row.get("title"), e2)
@@ -596,13 +632,14 @@ class ContentRepository:
         if not existing:
             existing = self.get_by_title_year_type(title, None, content_type)
         if existing:
-            self._update_from_api(existing, data, content_type)
-            self.record_external_ids([self._row_ids(existing)])
+            ids = self._update_from_api(existing, data, content_type)
+            self.record_external_ids([(int(existing.id), str(existing.content_type), ids)])
             return existing
         content = self._create_from_api(data, content_type)
         self.db.add(content)
         self.db.flush()
-        self.record_external_ids([self._row_ids(content)])
+        new_ids = {"tmdb": str(data["id"])} if data.get("id") else {}
+        self.record_external_ids([(int(content.id), str(content.content_type), new_ids)])
         return content
 
     def bulk_upsert(self, items: list[dict[str, Any]], content_type: str) -> int:
@@ -618,13 +655,23 @@ class ContentRepository:
 
     # ---- internal helpers ---- #
 
-    def _merge_into(self, content: Content, nc: NormalizedContent, overwrite: bool = False) -> None:
+    def _merge_into(
+        self,
+        content: Content,
+        nc: NormalizedContent,
+        overwrite: bool = False,
+        known_ids: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
         """Fill blanks on an existing row from a NormalizedContent.
 
         With ``overwrite`` the provider-owned fields (status, rating, season and episode
         counts) also take the provider's newer value; a title with ``refresh_locked`` set
         is never overwritten.
+
+        ``known_ids`` are the title's ids in the external-id table (looked up when not given).
+        An id the title has none of yet is taken from ``nc``. Returns the title's ids after the merge.
         """
+        known = dict(known_ids if known_ids is not None else self.external_ids_for([content.id])[content.id])
         embedding_input_changed = False
         if overwrite and not content.refresh_locked:
             for field in ("status", "rating", "seasons", "episodes"):
@@ -657,14 +704,11 @@ class ContentRepository:
             content.episodes = nc.episodes
         if nc.release_date and not content.release_date:
             content.release_date = nc.release_date
-        if nc.imdb_id and not content.imdb_id:
-            content.imdb_id = nc.imdb_id
-        if nc.tmdb_id and not content.tmdb_id:
-            content.tmdb_id = nc.tmdb_id
-        if nc.tvdb_id and not content.tvdb_id:
-            content.tvdb_id = nc.tvdb_id
-        if nc.tvmaze_id and not content.tvmaze_id:
-            content.tvmaze_id = nc.tvmaze_id
+        incoming = _nc_ids(nc)
+        for kind in ID_KINDS:
+            if kind in incoming and kind not in known:
+                known[kind] = incoming[kind]
+                setattr(content, f"{kind}_id", getattr(nc, f"{kind}_id"))  # old column, still written until #89
         if nc.language and not content.language:
             content.language = nc.language
         if nc.country and not content.country:
@@ -676,6 +720,7 @@ class ContentRepository:
         content.updated_at = datetime.now(UTC)
         if embedding_input_changed:
             content.embedding_hash = None  # mark for re-embedding (SCE-33)
+        return known
 
     def _apply_filters(self, query, filter_by: str, search: str | None):
         if search:
@@ -717,7 +762,8 @@ class ContentRepository:
             provider="tmdb",
         )
 
-    def _update_from_api(self, content: Content, data: dict[str, Any], content_type: str):
+    def _update_from_api(self, content: Content, data: dict[str, Any], content_type: str) -> dict[str, str]:
+        known = self.external_ids_for([content.id])[content.id]
         img_base = "https://image.tmdb.org/t/p/w500"
         backdrop_base = "https://image.tmdb.org/t/p/original"
         if data.get("overview") and not content.description:
@@ -730,6 +776,8 @@ class ContentRepository:
             content.backdrop_url = f"{backdrop_base}{bp}" if not bp.startswith("http") else bp
         if data.get("vote_average") and not content.rating:
             content.rating = data["vote_average"]
-        if data.get("id") and not content.tmdb_id:
-            content.tmdb_id = data["id"]
+        if data.get("id") and "tmdb" not in known:
+            known["tmdb"] = str(data["id"])
+            content.tmdb_id = data["id"]  # old column, still written until #89
         content.updated_at = datetime.now(UTC)
+        return known

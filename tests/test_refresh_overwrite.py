@@ -10,6 +10,7 @@ from app.models.content import Content
 from app.models.episode import Episode
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.providers.base import NormalizedContent, NormalizedEpisode
+from tests.id_helpers import add_title
 
 
 class FakeShowProvider:
@@ -27,10 +28,7 @@ class FakeShowProvider:
 
 
 def add_show(db_session, **fields):
-    row = Content(title="Show", content_type="tv_show", tvmaze_id=7, **fields)
-    db_session.add(row)
-    db_session.commit()
-    return row
+    return add_title(db_session, "Show", "tv_show", ids={"tvmaze": 7}, **fields)
 
 
 def refresh(db_session, provider):

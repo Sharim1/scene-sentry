@@ -13,6 +13,7 @@ from app.models.user import User
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.providers.base import NormalizedContent
 from app.services.refresh_planner import failing_titles
+from tests.id_helpers import add_title
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
@@ -35,10 +36,7 @@ class RecordingProvider:
 
 
 def add(db, tvdb_id, content_type="movie", **kw):
-    row = Content(title=f"t{tvdb_id}", content_type=content_type, tvdb_id=tvdb_id, **kw)
-    db.add(row)
-    db.commit()
-    return row
+    return add_title(db, f"t{tvdb_id}", content_type, ids={"tvdb": tvdb_id}, **kw)
 
 
 def run(db, provider, batch=10, now=NOW):
@@ -145,6 +143,6 @@ def test_report_lists_titles_with_three_or_more_failures(db_session):
         run(db_session, p, now=now)
         now += timedelta(days=8)
     report = failing_titles(db_session)
-    assert [r.tvdb_id for r in report] == [1]
+    assert [r.title for r in report] == ["t1"]
     assert report[0].refresh_attempts == 3
     assert "down" in report[0].last_error

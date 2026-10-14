@@ -12,7 +12,6 @@ from app.services.tvdb_updates import TVDBUpdatesSync, utc_now
 class TVMazeUpdatesSync(TVDBUpdatesSync):
     provider_name = "tvmaze"
     streams = ("tv_show",)
-    id_attr = "tvmaze_id"
 
     @property
     def window_days(self) -> int:

@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from app.models.content import Content
+from app.models.external_id import ContentExternalId
 from app.models.sync_state import SyncState
 from app.services.provider_notices import Notice
 from app.services.providers.base import ProviderError
@@ -46,8 +47,11 @@ class FakeFeed:
 
 
 def add_title(db, title, tvdb_id, content_type="tv_show", next_refresh_at=None):
-    row = Content(title=title, content_type=content_type, tvdb_id=tvdb_id, next_refresh_at=next_refresh_at)
+    # The id lives only in the external-id table: the old column must not be what is read.
+    row = Content(title=title, content_type=content_type, next_refresh_at=next_refresh_at)
     db.add(row)
+    db.flush()
+    db.add(ContentExternalId(provider="tvdb", kind=content_type, external_id=str(tvdb_id), content_id=row.id))
     db.commit()
     return row
 
@@ -78,12 +82,14 @@ def run_job(db, feed, now=NOW):
 
 
 def due_ids(db, now=NOW):
-    return {t.tvdb_id for t in due_titles(db, 100, now)}
+    due = {t.id for t in due_titles(db, 100, now)}
+    rows = db.query(ContentExternalId).filter(ContentExternalId.content_id.in_(due)).all()
+    return {int(r.external_id) for r in rows}
 
 
 def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
     later = NOW + timedelta(days=30)
-    changed = add_title(db_session, "Changed", 1, next_refresh_at=later)
+    add_title(db_session, "Changed", 1, next_refresh_at=later)
     add_title(db_session, "Quiet", 2, next_refresh_at=later)
     set_bookmark(db_session, NOW - timedelta(hours=2))
     feed = FakeFeed()
@@ -92,7 +98,7 @@ def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
 
     run_job(db_session, feed)
 
-    assert due_ids(db_session) == {changed.tvdb_id}
+    assert due_ids(db_session) == {1}
 
 
 def test_bookmark_moves_forward_to_the_run_start_after_success(db_session):
@@ -195,17 +201,12 @@ def test_ids_are_matched_within_the_same_content_type(db_session):
 
 
 def test_delete_and_merge_notices_from_the_feed_are_applied_and_the_bookmark_moves(db_session):
-    from app.models.external_id import ContentExternalId
     from app.models.library import LibraryItem
     from app.models.user import User
 
     gone = add_title(db_session, "Gone", 1)
     old = add_title(db_session, "Old", 2)
     survivor = add_title(db_session, "Survivor", 3)
-    for row in (gone, old, survivor):
-        db_session.add(
-            ContentExternalId(provider="tvdb", kind="tv_show", external_id=str(row.tvdb_id), content_id=row.id)
-        )
     user = User(username="u", email="u@example.com")
     db_session.add(user)
     db_session.flush()

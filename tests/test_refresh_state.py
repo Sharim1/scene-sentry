@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from app.models.content import Content
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.providers.base import NormalizedContent
+from tests.id_helpers import add_title
 
 
 class FakeDetailProvider:
@@ -27,10 +28,7 @@ class FakeDetailProvider:
 
 
 def add_movie(db_session, title, tvdb_id):
-    row = Content(title=title, content_type="movie", tvdb_id=tvdb_id)
-    db_session.add(row)
-    db_session.commit()
-    return row
+    return add_title(db_session, title, "movie", ids={"tvdb": tvdb_id})
 
 
 _clock = [datetime(2026, 10, 1, tzinfo=UTC)]
