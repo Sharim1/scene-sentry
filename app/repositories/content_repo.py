@@ -277,12 +277,29 @@ class ContentRepository:
                     )
                 )
                 present.update((provider, kind, v) for v in found.scalars())
+        failures: list[str] = []
+        # An IMDb id is global (one id, one title, whatever its type), but the table keys it per type:
+        # an id already stored under any type for another title is a conflict, not a new row.
+        imdb = [(k, v) for (p, k, v) in wanted if p == "imdb"]
+        for start in range(0, len(imdb), _BULK_CHUNK):
+            owners = dict(
+                self.db.execute(
+                    select(ContentExternalId.external_id, ContentExternalId.content_id).where(
+                        ContentExternalId.provider == "imdb",
+                        ContentExternalId.external_id.in_([v for _, v in imdb[start : start + _BULK_CHUNK]]),
+                    )
+                ).all()
+            )
+            for kind, value in imdb[start : start + _BULK_CHUNK]:
+                if value in owners:
+                    present.add(("imdb", kind, value))
+                    if owners[value] != wanted[("imdb", kind, value)]:
+                        failures.append(f"imdb/{value}: already belongs to title {owners[value]}")
         rows = [
             {"provider": p, "kind": k, "external_id": v, "content_id": cid}
             for (p, k, v), cid in wanted.items()
             if (p, k, v) not in present
         ]
-        failures: list[str] = []
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
             try:

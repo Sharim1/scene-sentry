@@ -66,3 +66,30 @@ def test_a_failed_external_id_write_does_not_leave_a_title_saved_without_its_ids
         ContentRepository(db_session).bulk_upsert_normalized([movie("Racer", "2020-01-01", tvdb_id=7)])
 
     assert db_session.query(Content).filter_by(title="Racer").count() == 0
+
+
+def test_an_imdb_id_names_one_title_whatever_its_type(db_session):
+    """IMDb ids are global: the resolver and the stored ids both treat tt1 as one title, never two."""
+    repo = ContentRepository(db_session)
+    film = Content(title="Film", content_type="movie")
+    show = Content(title="Show", content_type="tv_show")
+    db_session.add_all([film, show])
+    db_session.flush()
+    repo.record_external_ids([(film.id, "movie", {"imdb": "tt1"})])
+
+    with pytest.raises(ExternalIdError):
+        repo.record_external_ids([(show.id, "tv_show", {"imdb": "tt1"})])
+
+    assert db_session.query(ContentExternalId).filter_by(provider="imdb", external_id="tt1").count() == 1
+
+
+def test_recording_the_same_imdb_id_again_for_its_own_title_is_harmless(db_session):
+    repo = ContentRepository(db_session)
+    film = Content(title="Film", content_type="movie")
+    db_session.add(film)
+    db_session.flush()
+
+    repo.record_external_ids([(film.id, "movie", {"imdb": "tt1"})])
+    repo.record_external_ids([(film.id, "movie", {"imdb": "tt1"})])
+
+    assert db_session.query(ContentExternalId).filter_by(provider="imdb").count() == 1
