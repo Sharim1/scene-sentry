@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     embedding_model: str = "models/text-embedding-004"
     embedding_dim: int = 768
     embedding_interval_minutes: int = 30
+    tvdb_updates_interval_minutes: int = 60  # how often to follow the TVDB updates feed
+    tvdb_updates_overlap_minutes: int = 60  # each run starts this far before the bookmark
+    tvdb_updates_window_days: int = 28  # older bookmarks fall back to the tier planner
     embedding_batch_size: int = 100
 
     # Public contact form (override CONTACT_TO_EMAIL in .env)

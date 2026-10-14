@@ -8,8 +8,10 @@ from app.models import Gossip, Notification, Reminder, User
 from app.repositories.library_repo import LibraryRepository
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.gossip_service import GossipService
+from app.services.providers.registry import get_tvdb_provider
 from app.services.ranking_service import RankingService
 from app.services.reminder_service import ReminderService
+from app.services.tvdb_updates import TVDBUpdatesSync
 from app.tasks.lease import leased
 
 logger = logging.getLogger(__name__)
@@ -111,6 +113,23 @@ def embedding_refresh_task(self):
             return embedded
     except Exception as exc:
         logger.exception("embedding_refresh_task failed")
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
+def tvdb_updates_task(self):
+    try:
+        provider = get_tvdb_provider()
+        if provider is None:
+            logger.info("TVDB updates skipped: TVDB provider not active")
+            return {"skipped": "provider_inactive"}
+        with db_session() as db:
+            result = TVDBUpdatesSync(db, provider).run()
+        logger.info("TVDB updates: %s", result)
+        return result
+    except Exception as exc:
+        logger.error("tvdb_updates_task failed: %s", exc)
         raise self.retry(exc=exc)
 
 
