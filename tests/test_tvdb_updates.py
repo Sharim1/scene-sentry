@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from app.models.content import Content
+from app.models.external_id import ContentExternalId
 from app.models.sync_state import SyncState
 from app.services.providers.base import ProviderError
 from app.services.refresh_planner import due_titles
@@ -37,8 +38,11 @@ class FakeFeed:
 
 
 def add_title(db, title, tvdb_id, content_type="tv_show", next_refresh_at=None):
-    row = Content(title=title, content_type=content_type, tvdb_id=tvdb_id, next_refresh_at=next_refresh_at)
+    # The id lives only in the external-id table: the old column must not be what is read.
+    row = Content(title=title, content_type=content_type, next_refresh_at=next_refresh_at)
     db.add(row)
+    db.flush()
+    db.add(ContentExternalId(provider="tvdb", kind=content_type, external_id=str(tvdb_id), content_id=row.id))
     db.commit()
     return row
 
@@ -69,7 +73,9 @@ def run_job(db, feed, now=NOW):
 
 
 def due_ids(db, now=NOW):
-    return {t.tvdb_id for t in due_titles(db, 100, now)}
+    due = {t.id for t in due_titles(db, 100, now)}
+    rows = db.query(ContentExternalId).filter(ContentExternalId.content_id.in_(due)).all()
+    return {int(r.external_id) for r in rows}
 
 
 def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
@@ -83,7 +89,7 @@ def test_only_changed_titles_we_already_know_are_queued_for_refresh(db_session):
 
     run_job(db_session, feed)
 
-    assert due_ids(db_session) == {changed.tvdb_id}
+    assert due_ids(db_session) == {1}
 
 
 def test_bookmark_moves_forward_to_the_run_start_after_success(db_session):
