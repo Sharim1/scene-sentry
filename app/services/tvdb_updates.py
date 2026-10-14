@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.content import Content
 from app.models.sync_state import SyncState
+from app.services.provider_notices import apply_notices
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +67,11 @@ class TVDBUpdatesSync:
 
         since = watermark - timedelta(minutes=settings.tvdb_updates_overlap_minutes)
         try:
-            ids = self.provider.get_updated_ids(stream, since)
+            ids, notices = self.provider.read_updates(stream, since)
+            applied = apply_notices(self.db, notices)
             queued = self._queue_known(stream, ids, started)
+            if notices:
+                logger.info("tvdb/%s notices applied: %s", stream, applied)
         except Exception as exc:
             self.db.rollback()
             state = self._get_state(stream)
