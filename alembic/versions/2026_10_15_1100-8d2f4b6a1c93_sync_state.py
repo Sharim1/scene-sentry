@@ -7,7 +7,7 @@ Safe on production: creates one new, empty table; no existing table is touched o
 BEFORE RUNNING IN PRODUCTION: take a snapshot/backup of the database first.
 
 Revision ID: 8d2f4b6a1c93
-Revises: 5c1e7a9d3b24
+Revises: 8d4f2b6a1c07
 Create Date: 2026-10-15 10:00:00.000000
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "8d2f4b6a1c93"
-down_revision: str | None = "5c1e7a9d3b24"
+down_revision: str | None = "8d4f2b6a1c07"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
