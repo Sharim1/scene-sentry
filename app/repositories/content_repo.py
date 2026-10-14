@@ -481,9 +481,19 @@ class ContentRepository:
 
     # ---- internal helpers ---- #
 
-    def _merge_into(self, content: Content, nc: NormalizedContent) -> None:
-        """Fill blanks on an existing row from a NormalizedContent."""
+    def _merge_into(self, content: Content, nc: NormalizedContent, overwrite: bool = False) -> None:
+        """Fill blanks on an existing row from a NormalizedContent.
+
+        With ``overwrite`` the provider-owned fields (status, rating, season and episode
+        counts) also take the provider's newer value; a title with ``refresh_locked`` set
+        is never overwritten.
+        """
         embedding_input_changed = False
+        if overwrite and not content.refresh_locked:
+            for field in ("status", "rating", "seasons", "episodes"):
+                value = getattr(nc, field)
+                if value is not None:
+                    setattr(content, field, value)
         if nc.description and not content.description:
             content.description = nc.description[:500]
             embedding_input_changed = True
