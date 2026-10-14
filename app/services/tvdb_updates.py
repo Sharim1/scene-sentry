@@ -92,6 +92,7 @@ class TVDBUpdatesSync:
             queued = self._queue_known(stream, ids, started)
             if notices:
                 logger.info("%s/%s notices applied: %s", self.provider_name, stream, applied)
+            failed_notices = applied.failed
         except Exception as exc:
             self.db.rollback()
             state = self._get_state(stream)
@@ -103,7 +104,8 @@ class TVDBUpdatesSync:
             return {"status": "failed", "queued": 0}
 
         state = self._get_state(stream)
-        state.watermark, state.status, state.last_error = started, "ok", None
+        state.watermark, state.status = started, "ok"
+        state.last_error = f"{failed_notices} notice(s) failed and were skipped" if failed_notices else None
         self.db.commit()
         return {"status": "ok", "queued": queued}
 
