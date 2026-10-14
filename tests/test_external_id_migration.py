@@ -30,8 +30,8 @@ def seed(engine, rows):
             cols = ", ".join(["title", "content_type", *ids])
             marks = ", ".join(f":{c}" for c in ["title", "content_type", *ids])
             conn.execute(
-                text(f"INSERT INTO content ({cols}) VALUES ({marks})"),
-                {"title": title, "content_type": kind, **ids},  # noqa: S608
+                text(f"INSERT INTO content ({cols}) VALUES ({marks})"),  # noqa: S608
+                {"title": title, "content_type": kind, **ids},
             )
 
 
