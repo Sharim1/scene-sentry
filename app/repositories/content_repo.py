@@ -43,6 +43,10 @@ def _parse_datetime(date_str: str | None) -> datetime | None:
 _BULK_CHUNK = 500  # titles per lookup query / multi-row insert
 
 
+class ExternalIdError(RuntimeError):
+    """Provider ids of saved titles could not be written; the save is rolled back so no title is left without them."""
+
+
 def _nc_ids(nc: NormalizedContent) -> dict[str, str]:
     """The provider ids an incoming item carries, as text (the external-id table keeps text)."""
     return {kind: str(getattr(nc, f"{kind}_id")) for kind in ID_KINDS if getattr(nc, f"{kind}_id")}
@@ -278,6 +282,7 @@ class ContentRepository:
             for (p, k, v), cid in wanted.items()
             if (p, k, v) not in present
         ]
+        failures: list[str] = []
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
             try:
@@ -290,7 +295,10 @@ class ContentRepository:
                         with self.db.begin_nested():
                             self.db.execute(ContentExternalId.__table__.insert().values([row]))
                     except Exception as e2:
-                        logger.warning("Could not record %s id %s: %s", row["provider"], row["external_id"], e2)
+                        failures.append(f"{row['provider']}/{row['kind']}/{row['external_id']}: {e2}")
+        if failures:
+            # A title saved without its ids would be saved again as a duplicate on the next run.
+            raise ExternalIdError(f"could not record {len(failures)} external id(s): {'; '.join(failures[:5])}")
 
     def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
         return next(iter(self._all_by_title_year_type(title, year, content_type)), None)
@@ -576,10 +584,16 @@ class ContentRepository:
             values.update(is_adaptation=False, created_at=now, updated_at=now)
             rows.append((values, _nc_ids(nc)))
         failed, inserted = self._insert_rows(rows)
-        self.record_external_ids(
-            [(int(row.id), str(row.content_type), existing.ids[row.id]) for row in merged.values()]
-        )
-        self.record_external_ids(inserted, known_new=True)
+        try:
+            self.record_external_ids(
+                [(int(row.id), str(row.content_type), existing.ids[row.id]) for row in merged.values()]
+            )
+            self.record_external_ids(inserted, known_new=True)
+        except ExternalIdError:
+            # Do not keep titles whose ids are missing: they would be saved again as duplicates next run.
+            if inserted:
+                self.db.execute(Content.__table__.delete().where(Content.id.in_([cid for cid, _, _ in inserted])))
+            raise
         return len(valid) - failed
 
     def _insert_rows(
@@ -591,33 +605,48 @@ class ContentRepository:
         the caller can record its external ids.
         """
         table = Content.__table__
-        returned = [table.c.id, table.c.content_type, table.c.title]
+        returned = [table.c.id, table.c.content_type, table.c.title, table.c.release_date]
         failed = 0
         inserted: list[tuple[int, str, dict[str, Any]]] = []
 
+        def key(values: dict[str, Any]) -> tuple[Any, ...]:
+            return (values["content_type"], values["title"], values.get("release_date"))
+
         def keep(chunk: list[tuple[dict[str, Any], dict[str, str]]], result: Any) -> None:
-            # The ids recorded are the ones we just sent, matched to the new rows by type and title
-            # (ids from a sequence rise in the order of the rows).
-            waiting: dict[tuple[str, str], list[dict[str, str]]] = {}
-            for values, ids in chunk:
-                waiting.setdefault((values["content_type"], values["title"]), []).append(ids)
-            for r in sorted(result, key=lambda r: r.id):
-                inserted.append((r.id, r.content_type, waiting[(r.content_type, r.title)].pop(0)))
+            # Rows come back in no promised order, so each is paired with the ids sent for it by
+            # (type, title, release date). The caller makes sure no key is shared within one statement.
+            sent = {key(values): ids for values, ids in chunk}
+            for r in result:
+                inserted.append((r.id, r.content_type, sent[(r.content_type, r.title, r.release_date)]))
+
+        def insert_one(row: tuple[dict[str, Any], dict[str, str]]) -> None:
+            nonlocal failed
+            try:
+                with self.db.begin_nested():
+                    keep([row], self.db.execute(table.insert().values([row[0]]).returning(*returned)))
+            except Exception as e2:
+                failed += 1
+                logger.warning("Failed to save %r: %s", row[0].get("title"), e2)
 
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
+            counts: dict[tuple[Any, ...], int] = {}
+            for values, _ in chunk:
+                counts[key(values)] = counts.get(key(values), 0) + 1
+            # Rows that share a key cannot be told apart in the result: they are inserted one at a time.
+            batch = [row for row in chunk if counts[key(row[0])] == 1]
+            for row in chunk:
+                if counts[key(row[0])] > 1:
+                    insert_one(row)
+            if not batch:
+                continue
             try:
                 with self.db.begin_nested():
-                    keep(chunk, self.db.execute(table.insert().values([v for v, _ in chunk]).returning(*returned)))
+                    keep(batch, self.db.execute(table.insert().values([v for v, _ in batch]).returning(*returned)))
             except Exception as e:
-                logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(chunk), e)
-                for row in chunk:
-                    try:
-                        with self.db.begin_nested():
-                            keep([row], self.db.execute(table.insert().values([row[0]]).returning(*returned)))
-                    except Exception as e2:
-                        failed += 1
-                        logger.warning("Failed to save %r: %s", row[0].get("title"), e2)
+                logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(batch), e)
+                for row in batch:
+                    insert_one(row)
         return failed, inserted
 
     # Legacy method kept for backward compat with old TMDB-dict ingestion
