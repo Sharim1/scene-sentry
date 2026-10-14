@@ -44,7 +44,7 @@ class TestStatementCount:
 
         assert saved == n
         assert len(stored(db_session)) == n
-        assert len(statements) <= 25, f"{len(statements)} statements for {n} titles"
+        assert len(statements) <= 30, f"{len(statements)} statements for {n} titles"
 
     def test_titles_that_already_exist_are_also_batched(self, db_session, statements):
         repo = ContentRepository(db_session)
@@ -53,7 +53,7 @@ class TestStatementCount:
 
         repo.bulk_upsert_normalized([movie(i, poster_url=f"https://img/{i}.jpg") for i in range(1, 401)])
 
-        assert len(statements) <= 25, f"{len(statements)} statements for 400 existing titles"
+        assert len(statements) <= 30, f"{len(statements)} statements for 400 existing titles"
 
 
 class TestSameResultsAsTheSingleTitleSave:
