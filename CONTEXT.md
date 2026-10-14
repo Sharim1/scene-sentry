@@ -42,6 +42,10 @@ _Avoid_: Source (when referring to a content provider — "source" is reserved f
 The process of pulling new **Content** from a **Provider** into the **Catalog**. Paginated, tracked via per-provider sync state. Runs on a schedule (default: every 6 hours).
 _Avoid_: Import, ingestion, sync (when specifically meaning first-time catalog population)
 
+**Updates feed sync**:
+The ongoing job that asks a **Provider**'s change feed (TVDB `/updates`, TVmaze `/updates/shows`) what changed since a stored bookmark and queues only the titles already in the **Catalog** for refresh; it also applies the provider's delete and merge notices. Distinct from **Discovery**, which pages through a provider's list to find titles we do not have yet.
+_Avoid_: Discovery (for the change feed), crawl
+
 **Enrichment**:
 The process of backfilling missing details (episodes, runtime, images) on **Content** that is already in the **Catalog** but has sparse data. Runs on a separate, more frequent schedule (default: every 15 minutes).
 _Avoid_: Backfill, update (when specifically meaning filling gaps on existing catalog entries)

@@ -71,3 +71,12 @@ Moving the sync worker to the database VM removes most of the round-trip cost, b
 **To revisit:** the Option C gate after Phase 3; tier lengths once real change-feed data exists; whether TMDb returns (it would add a third feed).
 
 **Not verified:** Sonarr's metadata proxy source is closed; memory per Celery process on the Oracle box and spare capacity on the database VM are unmeasured; whether TVmaze's `fully_synced` state is a false end.
+
+## Notes
+
+- **2026-10-15, sync_state lease:** the data model above lists a lease on `sync_state`. The lease lives in Redis (`app/tasks/lease.py`) by design, so `sync_state` has no lease or expiry column; do not add one.
+- **2026-10-15, IMDb ids are global:** one IMDb id names one title whatever its type. The resolver and the reads treat it that way, and `record_external_ids` now refuses to store an IMDb id under a second title even though the table key is (provider, kind, external_id) and would allow it. Other providers' ids stay scoped to the content type.
+- **2026-10-15, fully synced rule:** a stream is marked fully synced only by an empty page that follows pages with titles (this walk or an earlier one, via the saved cursor), or by an explicit end marker from the provider (`Page([], exhausted=True)`). An empty first page of a fresh walk is not enough.
+- **2026-10-15, cold tier:** the cold refresh delay is `refresh_cold_days` (default 30), capped by `refresh_cold_days_max` (180), so the ADR's 30 to 180 day range is reachable by setting alone.
+- **2026-10-15, hand-edited titles:** `python manage.py lock-title <id>` / `unlock-title <id>` set `refresh_locked`.
+
