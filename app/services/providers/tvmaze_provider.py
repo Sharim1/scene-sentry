@@ -24,6 +24,7 @@ from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
     NormalizedEpisode,
+    ProviderError,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,21 @@ class TVMazeProvider(ContentProvider):
         except ValueError as e:
             logger.warning("TVMaze invalid JSON for %s: %s", path, e)
             return None
+
+    def _get_show_page(self, page: int) -> list[Any]:
+        """One page of the show index. Failures raise; a 404 means the page is past the end."""
+        self._rate_limit()
+        try:
+            resp = self._client.get("/shows", params={**self._base_query(), "page": page})
+            if resp.status_code == 404:
+                return []
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise ProviderError(self.name, f"/shows page {page}: {type(e).__name__}: {e}") from e
+        if not isinstance(data, list):
+            raise ProviderError(self.name, f"/shows page {page}: unexpected response body")
+        return data
 
     # ---- normalisation helpers ---- #
 
@@ -238,10 +254,8 @@ class TVMazeProvider(ContentProvider):
         return []
 
     def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
+        data = self._get_show_page(page)
         try:
-            data = self._get_json("/shows", page=page)
-            if not isinstance(data, list):
-                return []
             allowed_status = {"Running", "To Be Determined"}
             filtered: list[dict[str, Any]] = []
             for s in data:
@@ -262,8 +276,7 @@ class TVMazeProvider(ContentProvider):
             filtered.sort(key=lambda x: int(x.get("weight") or 0), reverse=True)
             return [self._normalize_show(s) for s in filtered]
         except Exception as e:
-            logger.warning("discover_tv_shows failed: %s", e)
-            return []
+            raise ProviderError(self.name, f"/shows page {page}: could not read response: {e}") from e
 
     def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if content_type == "movie":

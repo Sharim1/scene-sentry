@@ -414,7 +414,7 @@ class ContentDiscoveryService:
 
         for content in sparse:
             try:
-                detail = self._get_detail_for_content(content, providers)
+                detail, detail_error = self._get_detail_with_error(content, providers)
                 if detail:
                     self.repo._merge_into(content, detail)
 
@@ -427,14 +427,37 @@ class ContentDiscoveryService:
                         if not content.seasons:
                             content.seasons = ep_repo.get_season_count(content.id)
 
+                if detail_error and not detail:
+                    raise detail_error
+                self._record_refresh_success(content)
                 enriched += 1
                 self.db.commit()
             except Exception as e:
                 self.db.rollback()
                 logger.warning("Enrichment failed for %r: %s", content.title, e)
+                self._record_refresh_failure(content.id, e)
 
         logger.info("Enriched %d content records", enriched)
         return enriched
+
+    @staticmethod
+    def _record_refresh_success(content) -> None:
+        content.last_refreshed_at = datetime.now(UTC)
+        content.refresh_attempts = 0
+        content.last_error = None
+
+    def _record_refresh_failure(self, content_id: int, error: Exception) -> None:
+        """Keep the error and raise the attempt count; never let bookkeeping stop the run."""
+        from app.models.content import Content
+
+        try:
+            row = self.db.get(Content, content_id)
+            row.refresh_attempts = (row.refresh_attempts or 0) + 1
+            row.last_error = f"{type(error).__name__}: {error}"[:2000]
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.exception("Could not record refresh failure for content %s", content_id)
 
     def _find_sparse(self, batch_size: int, content_type: str | None = None) -> list:
         """Return content records that need enrichment."""
@@ -479,21 +502,29 @@ class ContentDiscoveryService:
 
     def _get_detail_for_content(self, content, providers: list | None = None) -> NormalizedContent | None:
         """Try each provider's get_details() using the matching external ID."""
+        return self._get_detail_with_error(content, providers)[0]
+
+    def _get_detail_with_error(
+        self, content, providers: list | None = None
+    ) -> tuple[NormalizedContent | None, Exception | None]:
+        """Like _get_detail_for_content, but also returns the last provider error seen."""
+        last_error: Exception | None = None
         for provider in providers or self.providers:
             try:
                 ext_id = self._external_id_for(content, provider)
                 if ext_id:
                     detail = provider.get_details(ext_id)
                     if detail:
-                        return detail
+                        return detail, None
             except Exception as e:
+                last_error = e
                 logger.debug(
                     "%s get_details for %r failed: %s",
                     provider.name,
                     content.title,
                     e,
                 )
-        return None
+        return None, last_error
 
     def _get_episodes_for_content(self, content, providers: list | None = None) -> list:
         """Try each provider's get_episodes() using the matching external ID."""
