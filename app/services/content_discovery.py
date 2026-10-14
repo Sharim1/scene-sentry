@@ -10,6 +10,7 @@ seen, to pick up newly-registered content on the source platform.
 """
 
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -71,6 +72,11 @@ class ContentDiscoveryService:
         self.repo = ContentRepository(db)
         self.db = db
         self.providers = get_active_providers()
+        self._clock = time.monotonic
+        self._deadline: float | None = None
+
+    def _out_of_time(self) -> bool:
+        return self._deadline is not None and self._clock() >= self._deadline
 
     # ---- state management ------------------------------------------------ #
 
@@ -147,6 +153,9 @@ class ContentDiscoveryService:
         all_items: list[NormalizedContent] = []
 
         for _ in range(pages):
+            if self._out_of_time():
+                logger.info("%s: time budget reached for %s, resuming next run", provider.name, content_type)
+                return all_items, False
             next_page = state.last_page + 1
             try:
                 if content_type == "movie":
@@ -220,11 +229,19 @@ class ContentDiscoveryService:
         total += self._discover("tv_show", pages=SEED_PAGES)
         return total
 
-    def run_scheduled_sync(self) -> dict[str, int]:
-        """Called by the scheduler — uses configured batch_size."""
-        batch = settings.discovery_batch_size
-        movies = self._discover("movie", pages=batch)
-        shows = self._discover("tv_show", pages=batch)
+    def run_scheduled_sync(self, time_budget: float | None = None) -> dict[str, int]:
+        """Called by the scheduler — uses configured batch_size.
+
+        With *time_budget* (seconds), stops fetching pages once it is spent; what was
+        fetched is saved together with the page cursor, so the next run continues.
+        """
+        self._deadline = self._clock() + time_budget if time_budget is not None else None
+        try:
+            batch = settings.discovery_batch_size
+            movies = self._discover("movie", pages=batch)
+            shows = self._discover("tv_show", pages=batch)
+        finally:
+            self._deadline = None
         return {"movies": movies, "tv_shows": shows}
 
     def run_full_sync(
