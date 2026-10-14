@@ -11,6 +11,7 @@ seen, to pick up newly-registered content on the source platform.
 
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
-from app.services.identity import ID_KINDS, Identity, Match, id_keys, resolve
+from app.services.identity import ID_KINDS, Conflict, Identity, Match, id_keys, resolve
 from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
@@ -29,6 +30,7 @@ from app.services.providers.base import (
 )
 from app.services.providers.registry import get_active_providers
 from app.services.refresh_planner import due_titles, failure_delay, success_delay
+from app.services.review_list import park
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +42,20 @@ def _identity(nc: NormalizedContent) -> Identity:
         title=nc.title,
         content_type=nc.content_type,
         year=nc.year or _year_from_date(nc.release_date),
-        ids={kind: getattr(nc, f"{kind}_id") for kind in ID_KINDS},
+        ids={kind: str(value) for kind in ID_KINDS if (value := getattr(nc, f"{kind}_id"))},
         ref=nc,
     )
 
 
-def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
+def _deduplicate(
+    items: list[NormalizedContent],
+    on_conflict: Callable[[Identity, Conflict], None] | None = None,
+) -> list[NormalizedContent]:
     """Merge duplicates across providers; the identity resolver decides what is the same title.
 
     Only the kept items that share an id or a title with the incoming one are shown to the
-    resolver, so the pass stays linear. A conflict is never merged.
+    resolver, so the pass stays linear. A conflict is never merged; with ``on_conflict`` it
+    is also left out of the result and handed to that callback.
     """
     by_key: dict[tuple[Any, ...], list[Identity]] = {}
     result: list[NormalizedContent] = []
@@ -66,12 +72,26 @@ def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
         if isinstance(decision, Match):
             decision.candidate.ref.merge(nc)
             continue
+        if isinstance(decision, Conflict) and on_conflict is not None:
+            on_conflict(incoming, decision)
+            continue
         result.append(nc)
         for key in keys:
             by_key.setdefault(key, []).append(incoming)
 
     logger.info("Dedup: %d raw items → %d unique", len(items), len(result))
     return result
+
+
+def _row_identity(row: Any, ids: dict[str, str]) -> Identity:
+    """A stored title's identity; ``ids`` are its provider ids from the external-id table."""
+    return Identity(
+        title=row.title,
+        content_type=row.content_type,
+        year=_year_from_date(row.release_date),
+        ids={kind: ids[kind] for kind in ID_KINDS if kind in ids},
+        ref=row,
+    )
 
 
 class ContentDiscoveryService:
@@ -276,6 +296,19 @@ class ContentDiscoveryService:
         shows = self._discover("tv_show", pages=pages, provider_filter=provider_name)
         return {"movies": movies, "tv_shows": shows}
 
+    def _screen_stored(self, items: list[NormalizedContent]) -> list[NormalizedContent]:
+        """Park titles whose ids point at several stored titles, or contradict the one they match."""
+        kept: list[NormalizedContent] = []
+        sharing = self.repo.stored_sharing_ids(items)
+        known = self.repo.external_ids_for([row.id for rows in sharing for row in rows])
+        for nc, rows in zip(items, sharing, strict=True):
+            decision = resolve(_identity(nc), [_row_identity(r, known[r.id]) for r in rows]) if rows else None
+            if isinstance(decision, Conflict):
+                park(self.db, _identity(nc), decision)
+            else:
+                kept.append(nc)
+        return kept
+
     def _fill_new_movie_release_dates(self, items: list[NormalizedContent]) -> None:
         """Give new movies a release date and poster before they are saved.
 
@@ -321,7 +354,7 @@ class ContentDiscoveryService:
         if not all_items:
             return 0
 
-        deduped = _deduplicate(all_items)
+        deduped = self._screen_stored(_deduplicate(all_items, on_conflict=lambda i, c: park(self.db, i, c)))
         to_save = deduped[:limit] if limit > 0 else deduped
         self._fill_new_movie_release_dates(to_save)
         saved = self.repo.bulk_upsert_normalized(to_save)

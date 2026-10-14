@@ -33,23 +33,39 @@ def _aware(dt: datetime) -> datetime:
 
 
 class TVDBUpdatesSync:
+    """Follows one provider's updates feed per stream. Subclasses name the provider and its knobs."""
+
+    provider_name = PROVIDER
+    streams = STREAMS
+
     def __init__(self, db: Session, provider):
         self.db = db
         self.provider = provider
 
+    @property
+    def window_days(self) -> int:
+        return settings.tvdb_updates_window_days
+
+    @property
+    def overlap_minutes(self) -> int:
+        return settings.tvdb_updates_overlap_minutes
+
+    def _utc_now(self) -> datetime:
+        return utc_now()
+
     def run(self) -> dict[str, dict]:
-        return {stream: self._sync_stream(stream) for stream in STREAMS}
+        return {stream: self._sync_stream(stream) for stream in self.streams}
 
     def _get_state(self, stream: str) -> SyncState:
-        state = self.db.query(SyncState).filter_by(provider=PROVIDER, stream=stream).first()
+        state = self.db.query(SyncState).filter_by(provider=self.provider_name, stream=stream).first()
         if not state:
-            state = SyncState(provider=PROVIDER, stream=stream)
+            state = SyncState(provider=self.provider_name, stream=stream)
             self.db.add(state)
             self.db.flush()
         return state
 
     def _sync_stream(self, stream: str) -> dict:
-        started = utc_now()
+        started = self._utc_now()
         state = self._get_state(stream)
         state.last_run_at = started
 
@@ -60,13 +76,15 @@ class TVDBUpdatesSync:
             return {"status": "ok", "queued": 0}
 
         watermark = _aware(state.watermark)
-        if started - watermark > timedelta(days=settings.tvdb_updates_window_days):
+        if started - watermark > timedelta(days=self.window_days):
             state.watermark, state.status, state.last_error = started, "gap_fallback", None
             self.db.commit()
-            logger.warning("tvdb/%s bookmark older than the feed window; tier planner covers the gap", stream)
+            logger.warning(
+                "%s/%s bookmark older than the feed window; tier planner covers the gap", self.provider_name, stream
+            )
             return {"status": "gap_fallback", "queued": 0}
 
-        since = watermark - timedelta(minutes=settings.tvdb_updates_overlap_minutes)
+        since = watermark - timedelta(minutes=self.overlap_minutes)
         try:
             ids = self.provider.get_updated_ids(stream, since)
             queued = self._queue_known(stream, ids, started)
@@ -77,7 +95,7 @@ class TVDBUpdatesSync:
             state.last_error = f"{type(exc).__name__}: {exc}"[:2000]
             state.last_run_at = started
             self.db.commit()
-            logger.warning("tvdb/%s updates failed, bookmark unchanged: %s", stream, exc)
+            logger.warning("%s/%s updates failed, bookmark unchanged: %s", self.provider_name, stream, exc)
             return {"status": "failed", "queued": 0}
 
         state = self._get_state(stream)
@@ -91,7 +109,7 @@ class TVDBUpdatesSync:
         for start in range(0, len(ids), 500):
             chunk = ids[start : start + 500]
             content_ids = select(ContentExternalId.content_id).where(
-                ContentExternalId.provider == "tvdb",
+                ContentExternalId.provider == self.provider_name,
                 ContentExternalId.kind == stream,
                 ContentExternalId.external_id.in_([str(i) for i in chunk]),
             )
