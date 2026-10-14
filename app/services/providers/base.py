@@ -131,6 +131,18 @@ def _year_from_date(d: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+class ProviderError(Exception):
+    """A provider call failed (timeout, rate limit, bad response, auth failure).
+
+    Raised instead of returning an empty list, so callers can tell a failure
+    from a genuinely empty page.
+    """
+
+    def __init__(self, provider: str, message: str) -> None:
+        super().__init__(f"{provider}: {message}")
+        self.provider = provider
+
+
 class ContentProvider(ABC):
     """Interface that every content platform must implement."""
 

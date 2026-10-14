@@ -16,6 +16,7 @@ from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
     NormalizedEpisode,
+    ProviderError,
     _year_from_date,
 )
 
@@ -209,8 +210,7 @@ class TVDBProvider(ContentProvider):
             raw = self.client.get_all_movies(page=max(0, page - 1))
             return [_normalize_search_result(it, "movie") for it in _as_item_list(raw)]
         except Exception as e:
-            logger.warning("TVDB discover_movies failed: %s", e)
-            return []
+            raise ProviderError(self.name, f"discover_movies page {page}: {e}") from e
 
     def get_movie_release(self, tvdb_id: int) -> tuple[str | None, str | None]:
         """Release date and poster for a movie. The list endpoint omits the date, so ask the detail endpoint."""
@@ -235,8 +235,7 @@ class TVDBProvider(ContentProvider):
             raw = self.client.get_all_series(page=max(0, page - 1))
             return [_normalize_search_result(it, "tv_show") for it in _as_item_list(raw)]
         except Exception as e:
-            logger.warning("TVDB discover_tv_shows failed: %s", e)
-            return []
+            raise ProviderError(self.name, f"discover_tv_shows page {page}: {e}") from e
 
     def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if not self.client:
