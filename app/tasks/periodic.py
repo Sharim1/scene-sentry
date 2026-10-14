@@ -8,10 +8,11 @@ from app.models import Gossip, Notification, Reminder, User
 from app.repositories.library_repo import LibraryRepository
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.gossip_service import GossipService
-from app.services.providers.registry import get_tvdb_provider
+from app.services.providers.registry import get_tvdb_provider, get_tvmaze_provider
 from app.services.ranking_service import RankingService
 from app.services.reminder_service import ReminderService
 from app.services.tvdb_updates import TVDBUpdatesSync
+from app.services.tvmaze_updates import TVMazeUpdatesSync
 from app.tasks.lease import leased
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,23 @@ def tvdb_updates_task(self):
         return result
     except Exception as exc:
         logger.error("tvdb_updates_task failed: %s", exc)
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
+def tvmaze_updates_task(self):
+    try:
+        provider = get_tvmaze_provider()
+        if provider is None:
+            logger.info("TVmaze updates skipped: TVmaze provider not active")
+            return {"skipped": "provider_inactive"}
+        with db_session() as db:
+            result = TVMazeUpdatesSync(db, provider).run()
+        logger.info("TVmaze updates: %s", result)
+        return result
+    except Exception as exc:
+        logger.error("tvmaze_updates_task failed: %s", exc)
         raise self.retry(exc=exc)
 
 

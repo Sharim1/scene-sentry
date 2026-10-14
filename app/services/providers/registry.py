@@ -52,3 +52,8 @@ def get_active_providers() -> list[ContentProvider]:
 def get_tvdb_provider() -> ContentProvider | None:
     """The TVDB provider if it is enabled and usable, else None."""
     return next((p for p in get_active_providers() if p.name == "tvdb"), None)
+
+
+def get_tvmaze_provider() -> ContentProvider | None:
+    """The TVmaze provider if it is enabled, else None."""
+    return next((p for p in get_active_providers() if p.name == "tvmaze"), None)

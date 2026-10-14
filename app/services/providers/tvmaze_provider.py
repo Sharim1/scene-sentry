@@ -15,6 +15,7 @@ import logging
 import re
 import time
 from collections import deque
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -105,6 +106,37 @@ class TVMazeProvider(ContentProvider):
         if not isinstance(data, list):
             raise ProviderError(self.name, f"/shows page {page}: unexpected response body")
         return data
+
+    # ---- change feed ---- #
+
+    # /updates/shows only offers these windows; each covers a little under its name's span.
+    _UPDATE_WINDOWS = (("day", timedelta(days=1)), ("week", timedelta(days=7)), ("month", timedelta(days=30)))
+
+    def get_updated_ids(self, content_type: str, since: datetime, now: datetime | None = None) -> list[int]:
+        """TVmaze ids of shows changed since ``since``. Raises ProviderError on any failure.
+
+        Asks for the smallest window that covers the gap, then drops shows stamped before ``since``.
+        """
+        if content_type != "tv_show":
+            return []
+        age = (now or datetime.now(UTC)) - since
+        window = next((name for name, span in self._UPDATE_WINDOWS if age <= span), None)
+        if window is None:
+            raise ProviderError(self.name, f"updates since {since.isoformat()}: older than the feed's widest window")
+        self._rate_limit()
+        try:
+            resp = self._client.get("/updates/shows", params={**self._base_query(), "since": window})
+            resp.raise_for_status()
+            body = resp.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise ProviderError(self.name, f"/updates/shows since={window}: {type(e).__name__}: {e}") from e
+        if not isinstance(body, dict):
+            raise ProviderError(self.name, "/updates/shows: unexpected response body")
+        try:
+            cutoff = since.timestamp()
+            return [int(show_id) for show_id, changed_at in body.items() if changed_at >= cutoff]
+        except (TypeError, ValueError) as e:
+            raise ProviderError(self.name, f"/updates/shows: malformed entry: {e}") from e
 
     # ---- normalisation helpers ---- #
 
