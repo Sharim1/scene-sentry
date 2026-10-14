@@ -132,15 +132,15 @@ The result: one `Content` row per real-world movie or show, with external IDs an
 
 ## DiscoveryState
 
-`app/models/discovery_state.py` — one row per `(provider_name, content_type)` pair.
+`app/models/discovery_state.py` — one row per `(provider, content_type)` pair (unique constraint `uq_provider_content_type`).
 
 | Column | Purpose |
 |---|---|
-| `provider_name` | e.g. `"tmdb"` |
+| `provider` | e.g. `"tmdb"` |
 | `content_type` | `"movie"` or `"tv_show"` |
 | `last_page` | Last successfully fetched page number |
 | `total_items_fetched` | Running count |
 | `fully_synced` | True when provider returned 0 items (end of catalog) |
-| `last_run_at` | Timestamp of last sync attempt |
+| `last_synced_at` | Timestamp of last sync attempt |
 
 Once `fully_synced = True`, the next discovery run resets `last_page` to 0 and picks up any newly added content from the provider's beginning.
