@@ -90,6 +90,13 @@ def test_legacy_database_is_adopted_and_migrated(temp_db):
     assert provider == "tmdb"
 
 
+def test_migrations_create_the_sync_state_table_with_the_model_columns(temp_db):
+    database.init_db()
+
+    columns = {c["name"] for c in inspect(temp_db).get_columns("sync_state")}
+    assert columns == {"id", "provider", "stream", "watermark", "status", "last_error", "last_run_at"}
+
+
 def test_drop_all_rebuilds_schema(temp_db):
     database.init_db()
     database.init_db(drop_all=True)

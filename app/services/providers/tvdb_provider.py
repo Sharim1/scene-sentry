@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from typing import Any
 
 from app.config import settings
@@ -268,6 +269,30 @@ class TVDBProvider(ContentProvider):
 
     def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         return []
+
+    # ---- change feed ---- #
+
+    _UPDATE_TYPES = {"tv_show": "series", "movie": "movies"}
+    _MAX_UPDATE_PAGES = 500
+
+    def get_updated_ids(self, content_type: str, since: datetime) -> list[int]:
+        """TVDB ids of titles created or edited since ``since``. Raises ProviderError on any failure."""
+        if not self.client:
+            raise ProviderError(self.name, "client not configured")
+        api_type = self._UPDATE_TYPES[content_type]
+        ids: list[int] = []
+        try:
+            for page in range(self._MAX_UPDATE_PAGES):
+                raw = self.client.get_updates(int(since.timestamp()), type=api_type, page=page)
+                records = _as_item_list(raw)
+                if not records:
+                    return ids
+                ids.extend(
+                    int(r["recordId"]) for r in records if r.get("method") != "delete" and r.get("recordId") is not None
+                )
+        except Exception as e:
+            raise ProviderError(self.name, f"updates {api_type} since {since.isoformat()}: {e}") from e
+        raise ProviderError(self.name, f"updates {api_type}: more than {self._MAX_UPDATE_PAGES} pages")
 
     # ---- detail + episode enrichment ---- #
 

@@ -12,6 +12,7 @@ from app.models.notification import Notification
 from app.models.ranking import UserContentRank
 from app.models.reminder import Reminder
 from app.models.review_item import ReviewItem
+from app.models.sync_state import SyncState
 from app.models.user import User
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "UserContentRank",
     "DiscoveryState",
     "ReviewItem",
+    "SyncState",
 ]

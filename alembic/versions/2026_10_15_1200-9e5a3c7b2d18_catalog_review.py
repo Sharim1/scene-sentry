@@ -5,11 +5,11 @@ of being guessed, merged or dropped (ADR-0006, issue #83). ``fingerprint`` is un
 re-run of the sync does not list the same title twice. New, empty table: no backfill.
 
 BEFORE RUNNING IN PRODUCTION: take a snapshot/backup first.
-ROLLBACK: ``alembic downgrade 8d4f2b6a1c07`` drops ``catalog_review`` (only parked entries are lost).
+ROLLBACK: ``alembic downgrade 8d2f4b6a1c93`` drops ``catalog_review`` (only parked entries are lost).
 
 Revision ID: 9e5a3c7b2d18
-Revises: 8d4f2b6a1c07
-Create Date: 2026-10-15 11:00:00.000000
+Revises: 8d2f4b6a1c93
+Create Date: 2026-10-15 12:00:00.000000
 
 """
 
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "9e5a3c7b2d18"
-down_revision: str | None = "8d4f2b6a1c07"
+down_revision: str | None = "8d2f4b6a1c93"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
