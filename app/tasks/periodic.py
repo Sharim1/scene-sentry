@@ -13,6 +13,9 @@ from app.services.reminder_service import ReminderService
 
 logger = logging.getLogger(__name__)
 
+# Share of the soft limit discovery may spend fetching pages; the rest is left for saving and enrichment.
+DISCOVERY_BUDGET_FRACTION = 0.5
+
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def content_discovery_task(self):
@@ -23,7 +26,8 @@ def content_discovery_task(self):
                 total = svc.seed_catalog()
                 logger.info("Seed complete: %d items", total)
             else:
-                result = svc.run_scheduled_sync()
+                budget = (content_discovery_task.soft_time_limit or 0) * DISCOVERY_BUDGET_FRACTION or None
+                result = svc.run_scheduled_sync(time_budget=budget)
                 logger.info("Sync: %d movies, %d TV shows", result["movies"], result["tv_shows"])
             enriched = svc.enrich_sparse_content(batch_size=30)
             if enriched:
