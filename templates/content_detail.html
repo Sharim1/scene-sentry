@@ -212,12 +212,12 @@
                 </div>
                 {% endif %}
 
-                {% if content.imdb_id %}
+                {% if imdb_id %}
                 <div>
                     <span class="text-muted-foreground block text-xs uppercase tracking-wider mb-1">IMDb</span>
-                    <a href="https://www.imdb.com/title/{{ content.imdb_id }}" target="_blank" rel="noopener"
+                    <a href="https://www.imdb.com/title/{{ imdb_id }}" target="_blank" rel="noopener"
                        class="font-medium text-primary hover:underline inline-flex items-center gap-1">
-                        {{ content.imdb_id }}
+                        {{ imdb_id }}
                         <i data-lucide="external-link" class="w-3 h-3"></i>
                     </a>
                 </div>

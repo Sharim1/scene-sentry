@@ -7,6 +7,39 @@ from app.utils.log_safety import quiet_http_client_logs
 
 quiet_http_client_logs()
 
+SOFT_LIMIT_FRACTION = 0.8
+HARD_LIMIT_FRACTION = 0.9
+
+PERIODIC_TASKS = {
+    "content-discovery": (
+        "app.tasks.periodic.content_discovery_task",
+        timedelta(hours=settings.discovery_interval_hours),
+    ),
+    "content-enrichment": (
+        "app.tasks.periodic.content_enrichment_task",
+        timedelta(minutes=settings.enrichment_interval_minutes),
+    ),
+    "gossip-scraping": (
+        "app.tasks.periodic.gossip_scraping_task",
+        timedelta(minutes=settings.gossip_scrape_interval_minutes),
+    ),
+    "content-reranking": ("app.tasks.periodic.reranking_task", timedelta(minutes=settings.reranking_interval_minutes)),
+    "send-reminders": ("app.tasks.periodic.reminder_task", timedelta(minutes=settings.reminder_check_interval_minutes)),
+    "content-embedding": (
+        "app.tasks.periodic.embedding_refresh_task",
+        timedelta(minutes=settings.embedding_interval_minutes),
+    ),
+    "tvdb-updates": (
+        "app.tasks.periodic.tvdb_updates_task",
+        timedelta(minutes=settings.tvdb_updates_interval_minutes),
+    ),
+    "tvmaze-updates": (
+        "app.tasks.periodic.tvmaze_updates_task",
+        timedelta(minutes=settings.tvmaze_updates_interval_minutes),
+    ),
+    "cleanup": ("app.tasks.periodic.cleanup_task", timedelta(hours=24)),
+}
+
 celery_app = Celery("scenesentry", include=["app.tasks.periodic"])
 
 celery_app.conf.update(
@@ -19,33 +52,16 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     timezone="UTC",
     beat_schedule={
-        "content-discovery": {
-            "task": "app.tasks.periodic.content_discovery_task",
-            "schedule": timedelta(hours=settings.discovery_interval_hours),
-        },
-        "content-enrichment": {
-            "task": "app.tasks.periodic.content_enrichment_task",
-            "schedule": timedelta(minutes=settings.enrichment_interval_minutes),
-        },
-        "gossip-scraping": {
-            "task": "app.tasks.periodic.gossip_scraping_task",
-            "schedule": timedelta(minutes=settings.gossip_scrape_interval_minutes),
-        },
-        "content-reranking": {
-            "task": "app.tasks.periodic.reranking_task",
-            "schedule": timedelta(minutes=settings.reranking_interval_minutes),
-        },
-        "send-reminders": {
-            "task": "app.tasks.periodic.reminder_task",
-            "schedule": timedelta(minutes=settings.reminder_check_interval_minutes),
-        },
-        "content-embedding": {
-            "task": "app.tasks.periodic.embedding_refresh_task",
-            "schedule": timedelta(minutes=settings.embedding_interval_minutes),
-        },
-        "cleanup": {
-            "task": "app.tasks.periodic.cleanup_task",
-            "schedule": timedelta(hours=24),
-        },
+        name: {"task": task, "schedule": interval, "options": {"expires": interval.total_seconds()}}
+        for name, (task, interval) in PERIODIC_TASKS.items()
+    },
+    # Each task may run for at most 80% (soft) / 90% (hard) of its interval, so one
+    # slow run can never outlast its schedule.
+    task_annotations={
+        task: {
+            "soft_time_limit": int(interval.total_seconds() * SOFT_LIMIT_FRACTION),
+            "time_limit": int(interval.total_seconds() * HARD_LIMIT_FRACTION),
+        }
+        for task, interval in PERIODIC_TASKS.values()
     },
 )

@@ -131,6 +131,45 @@ def _year_from_date(d: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+class ProviderError(Exception):
+    """A provider call failed (timeout, rate limit, bad response, auth failure).
+
+    Raised instead of returning an empty list, so callers can tell a failure
+    from a genuinely empty page.
+    """
+
+    def __init__(self, provider: str, message: str) -> None:
+        super().__init__(f"{provider}: {message}")
+        self.provider = provider
+
+
+class Page(list):
+    """A page of discovered titles that also says whether the source itself was out of pages.
+
+    A provider that filters a page (TVmaze keeps only popular, running, English shows)
+    can end up with nothing to return while the source still has more pages. It returns
+    ``Page([], exhausted=False)`` so the walker keeps going. A plain list means
+    "exhausted when empty".
+    """
+
+    def __init__(self, items=(), exhausted: bool | None = None) -> None:
+        super().__init__(items)
+        self.exhausted = (not self) if exhausted is None else exhausted
+        self.explicit_end = exhausted is True and not self  # the provider itself said "no more pages"
+
+
+def is_explicit_end(items: list) -> bool:
+    """True when the provider itself marked an empty page as the end (``Page([], exhausted=True)``)."""
+    return not items and getattr(items, "explicit_end", False)
+
+
+def is_end_of_stream(items: list) -> bool:
+    """True when a discovery page means there is nothing further on the source."""
+    if items:
+        return False
+    return getattr(items, "exhausted", True)
+
+
 class ContentProvider(ABC):
     """Interface that every content platform must implement."""
 

@@ -32,7 +32,7 @@ Constraints: one developer, no budget, one small Oracle box (2 CPU, ~1 GB RAM), 
 
 - **Modules:** `providers` (fetch and normalise only, raise `ProviderError` on failure, never return `[]` for an error; small capabilities: changes-since, details, episodes, search), `identity` (resolver: match / create / conflict, pure, one place for all id and title rules), `store` (batched `INSERT ... ON CONFLICT`), `planner` (what is due now), `pipeline` (fetch → normalise → resolve → store for one chunk). Celery tasks stay thin.
 - **Data model:**
-  - `content_external_id (provider, kind, external_id)` with a database `PRIMARY KEY` / unique rule, one row per provider id. The existing id columns stay as read-through copies until pages and queries have moved.
+  - `content_external_id (provider, kind, external_id)` with a database `PRIMARY KEY` / unique rule, one row per provider id. The old id columns on `content` were copies while pages and queries moved; migration `a1b6c4d8e2f7` (#89) dropped them, so this table is the only place provider ids live (episodes keep their own id columns).
   - Per-title refresh state on `content`: `last_refreshed_at`, `next_refresh_at`, `refresh_attempts`, `last_error`.
   - `sync_state` per (provider, stream): timestamp watermark, status, lease, last error (extends `discovery_state`).
 - **Refresh tiers** (start values, tune with data): hot (tracked by a user, or something airing within 14 days) 6 h; warm (running shows, announced movies) 12 h to 1 day; cold (ended / released) 30 to 180 days; failed (3+ attempts) exponential backoff, capped at 7 days.
@@ -68,6 +68,15 @@ Moving the sync worker to the database VM removes most of the round-trip cost, b
 5. Change feeds for TVDB and TVmaze with watermarks.
 6. Bulk backfill and cleanup; correct stale docs (`ARCHITECTURE.md`, `DATA_FLOWS.md`, `PROVIDERS.md` still describe APScheduler).
 
-**To revisit:** the Option C gate after Phase 3; tier lengths once real change-feed data exists; whether TMDb returns (it would add a third feed); removing the old id columns.
+**To revisit:** the Option C gate after Phase 3; tier lengths once real change-feed data exists; whether TMDb returns (it would add a third feed).
 
 **Not verified:** Sonarr's metadata proxy source is closed; memory per Celery process on the Oracle box and spare capacity on the database VM are unmeasured; whether TVmaze's `fully_synced` state is a false end.
+
+## Notes
+
+- **2026-10-15, sync_state lease:** the data model above lists a lease on `sync_state`. The lease lives in Redis (`app/tasks/lease.py`) by design, so `sync_state` has no lease or expiry column; do not add one.
+- **2026-10-15, IMDb ids are global:** one IMDb id names one title whatever its type. The resolver and the reads treat it that way, and `record_external_ids` now refuses to store an IMDb id under a second title even though the table key is (provider, kind, external_id) and would allow it. Other providers' ids stay scoped to the content type.
+- **2026-10-15, fully synced rule:** a stream is marked fully synced only by an empty page that follows pages with titles (this walk or an earlier one, via the saved cursor), or by an explicit end marker from the provider (`Page([], exhausted=True)`). An empty first page of a fresh walk is not enough.
+- **2026-10-15, cold tier:** the cold refresh delay is `refresh_cold_days` (default 30), capped by `refresh_cold_days_max` (180), so the ADR's 30 to 180 day range is reachable by setting alone.
+- **2026-10-15, hand-edited titles:** `python manage.py lock-title <id>` / `unlock-title <id>` set `refresh_locked`.
+

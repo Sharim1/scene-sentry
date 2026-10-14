@@ -9,13 +9,18 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.config import settings
+from app.services.provider_notices import Notice, NoticeAction
 from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
     NormalizedEpisode,
+    ProviderError,
     _year_from_date,
 )
 
@@ -209,8 +214,7 @@ class TVDBProvider(ContentProvider):
             raw = self.client.get_all_movies(page=max(0, page - 1))
             return [_normalize_search_result(it, "movie") for it in _as_item_list(raw)]
         except Exception as e:
-            logger.warning("TVDB discover_movies failed: %s", e)
-            return []
+            raise ProviderError(self.name, f"discover_movies page {page}: {e}") from e
 
     def get_movie_release(self, tvdb_id: int) -> tuple[str | None, str | None]:
         """Release date and poster for a movie. The list endpoint omits the date, so ask the detail endpoint."""
@@ -235,8 +239,7 @@ class TVDBProvider(ContentProvider):
             raw = self.client.get_all_series(page=max(0, page - 1))
             return [_normalize_search_result(it, "tv_show") for it in _as_item_list(raw)]
         except Exception as e:
-            logger.warning("TVDB discover_tv_shows failed: %s", e)
-            return []
+            raise ProviderError(self.name, f"discover_tv_shows page {page}: {e}") from e
 
     def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if not self.client:
@@ -269,6 +272,49 @@ class TVDBProvider(ContentProvider):
 
     def get_upcoming(self, content_type: str = "tv_show") -> list[NormalizedContent]:
         return []
+
+    # ---- change feed ---- #
+
+    _UPDATE_TYPES = {"tv_show": "series", "movie": "movies"}
+    _MAX_UPDATE_PAGES = 500
+
+    def get_updated_ids(self, content_type: str, since: datetime) -> list[int]:
+        """TVDB ids of titles created or edited since ``since``. Raises ProviderError on any failure."""
+        return self.read_updates(content_type, since)[0]
+
+    def read_updates(self, content_type: str, since: datetime) -> tuple[list[int], list[Notice]]:
+        """One pass over the feed: ids created or edited, and delete/merge notices.
+
+        A delete record may carry ``mergeToId`` (assumed from TVDB v4 /updates; not verified against
+        the live API), which makes it a merge. Raises ProviderError on any failure.
+        """
+        if not self.client:
+            raise ProviderError(self.name, "client not configured")
+        api_type = self._UPDATE_TYPES[content_type]
+        ids: list[int] = []
+        notices: list[Notice] = []
+        try:
+            for page in range(self._MAX_UPDATE_PAGES):
+                raw = self.client.get_updates(int(since.timestamp()), type=api_type, page=page)
+                records = _as_item_list(raw)
+                if not records:
+                    return ids, notices
+                for r in records:
+                    if r.get("recordId") is None:
+                        continue
+                    if r.get("method") != "delete":
+                        ids.append(int(r["recordId"]))
+                    elif r.get("mergeToId") is not None:
+                        notices.append(
+                            Notice(NoticeAction.MERGE, self.name, content_type, str(r["recordId"]), str(r["mergeToId"]))
+                        )
+                    else:
+                        notices.append(Notice(NoticeAction.DELETE, self.name, content_type, str(r["recordId"])))
+        except SoftTimeLimitExceeded:
+            raise
+        except Exception as e:
+            raise ProviderError(self.name, f"updates {api_type} since {since.isoformat()}: {e}") from e
+        raise ProviderError(self.name, f"updates {api_type}: more than {self._MAX_UPDATE_PAGES} pages")
 
     # ---- detail + episode enrichment ---- #
 

@@ -5,16 +5,20 @@ SQLAlchemy Models
 from app.models.content import Content
 from app.models.discovery_state import DiscoveryState
 from app.models.episode import Episode
+from app.models.external_id import ContentExternalId
 from app.models.gossip import Gossip, GossipTag
 from app.models.library import LibraryItem, WatchStatus
 from app.models.notification import Notification
 from app.models.ranking import UserContentRank
 from app.models.reminder import Reminder
+from app.models.review_item import ReviewItem
+from app.models.sync_state import SyncState
 from app.models.user import User
 
 __all__ = [
     "User",
     "Content",
+    "ContentExternalId",
     "Episode",
     "LibraryItem",
     "WatchStatus",
@@ -24,4 +28,6 @@ __all__ = [
     "Notification",
     "UserContentRank",
     "DiscoveryState",
+    "ReviewItem",
+    "SyncState",
 ]

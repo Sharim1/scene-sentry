@@ -10,76 +10,91 @@ seen, to pick up newly-registered content on the source platform.
 """
 
 import logging
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.content import Content
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
-from app.services.providers.base import ContentProvider, NormalizedContent
+from app.services.identity import PROVIDER_ID_KIND, Conflict, Identity, Match, id_keys, item_ids, resolve
+from app.services.providers.base import (
+    ContentProvider,
+    NormalizedContent,
+    _normalise_title,
+    _year_from_date,
+    is_end_of_stream,
+    is_explicit_end,
+)
 from app.services.providers.registry import get_active_providers
+from app.services.refresh_planner import due_titles, failure_delay, success_delay
+from app.services.review_list import park
 
 logger = logging.getLogger(__name__)
 
 SEED_PAGES = 5  # pages to fetch on first-ever run per provider
 
 
-def _ids_conflict(a: NormalizedContent, b: NormalizedContent) -> bool:
-    """True if both items carry the same kind of external id with different values.
-
-    Two entries with different ids from the same source are different titles, even
-    when their names and years match.
-    """
-    return any(
-        getattr(a, attr) is not None and getattr(b, attr) is not None and getattr(a, attr) != getattr(b, attr)
-        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+def _identity(nc: NormalizedContent) -> Identity:
+    return Identity(
+        title=nc.title,
+        content_type=nc.content_type,
+        year=nc.year or _year_from_date(nc.release_date),
+        ids=item_ids(nc),
+        ref=nc,
     )
 
 
-def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
-    """Merge duplicates across providers using external IDs then title+year."""
-    by_imdb: dict[str, NormalizedContent] = {}
-    by_tmdb: dict[int, NormalizedContent] = {}
-    by_tvdb: dict[int, NormalizedContent] = {}
-    by_tvmaze: dict[int, NormalizedContent] = {}
-    by_key: dict[str, NormalizedContent] = {}
+def _deduplicate(
+    items: list[NormalizedContent],
+    on_conflict: Callable[[Identity, Conflict], None] | None = None,
+) -> list[NormalizedContent]:
+    """Merge duplicates across providers; the identity resolver decides what is the same title.
+
+    Only the kept items that share an id or a title with the incoming one are shown to the
+    resolver, so the pass stays linear. A conflict is never merged; with ``on_conflict`` it
+    is also left out of the result and handed to that callback.
+    """
+    by_key: dict[tuple[Any, ...], list[Identity]] = {}
     result: list[NormalizedContent] = []
 
     for nc in items:
-        existing: NormalizedContent | None = None
+        incoming = _identity(nc)
+        keys = [("id", *k) for k in id_keys(incoming)]
+        title = _normalise_title(nc.title)
+        if title:
+            keys.append(("title", nc.content_type, title))
+        candidates = [c for key in keys for c in by_key.get(key, [])]
 
-        if nc.imdb_id and nc.imdb_id in by_imdb:
-            existing = by_imdb[nc.imdb_id]
-        elif nc.tmdb_id and nc.tmdb_id in by_tmdb:
-            existing = by_tmdb[nc.tmdb_id]
-        elif nc.tvdb_id and nc.tvdb_id in by_tvdb:
-            existing = by_tvdb[nc.tvdb_id]
-        elif nc.tvmaze_id and nc.tvmaze_id in by_tvmaze:
-            existing = by_tvmaze[nc.tvmaze_id]
-        else:
-            key = nc.dedup_key
-            candidate = None if key.startswith("::") else by_key.get(key)
-            if candidate is not None and not _ids_conflict(candidate, nc):
-                existing = candidate
-
-        if existing:
-            existing.merge(nc)
-        else:
-            result.append(nc)
-            if nc.imdb_id:
-                by_imdb[nc.imdb_id] = nc
-            if nc.tmdb_id:
-                by_tmdb[nc.tmdb_id] = nc
-            if nc.tvdb_id:
-                by_tvdb[nc.tvdb_id] = nc
-            if nc.tvmaze_id:
-                by_tvmaze[nc.tvmaze_id] = nc
-            if not nc.dedup_key.startswith("::"):
-                by_key.setdefault(nc.dedup_key, nc)
+        decision = resolve(incoming, candidates)
+        if isinstance(decision, Match):
+            decision.candidate.ref.merge(nc)
+            continue
+        if isinstance(decision, Conflict) and on_conflict is not None:
+            on_conflict(incoming, decision)
+            continue
+        result.append(nc)
+        for key in keys:
+            by_key.setdefault(key, []).append(incoming)
 
     logger.info("Dedup: %d raw items → %d unique", len(items), len(result))
     return result
+
+
+def _row_identity(row: Any, ids: dict[str, str]) -> Identity:
+    """A stored title's identity; ``ids`` are its provider ids from the external-id table."""
+    return Identity(
+        title=row.title,
+        content_type=row.content_type,
+        year=_year_from_date(row.release_date),
+        ids=dict(ids),
+        ref=row,
+    )
 
 
 class ContentDiscoveryService:
@@ -87,6 +102,12 @@ class ContentDiscoveryService:
         self.repo = ContentRepository(db)
         self.db = db
         self.providers = get_active_providers()
+        self._clock = time.monotonic
+        self._deadline: float | None = None
+        self._known_ids: dict[int, dict[str, str]] = {}  # content id -> {provider: id}, from the external-id table
+
+    def _out_of_time(self) -> bool:
+        return self._deadline is not None and self._clock() >= self._deadline
 
     # ---- state management ------------------------------------------------ #
 
@@ -157,12 +178,17 @@ class ContentDiscoveryService:
     ) -> tuple[list[NormalizedContent], bool]:
         """Read consecutive pages after ``state.last_page``; returns (items, reached_end).
 
-        ``reached_end`` is True when an empty page was hit, i.e. there is nothing
-        further on the source right now.
+        ``reached_end`` is True when an empty page was confirmed as the end: it came after
+        pages with titles (in this walk or earlier ones, via the saved cursor), or the provider
+        marked it as the end itself. An empty first page of a fresh walk is not enough, since
+        a source that lists nothing usable would otherwise be called finished.
         """
         all_items: list[NormalizedContent] = []
 
         for _ in range(pages):
+            if self._out_of_time():
+                logger.info("%s: time budget reached for %s, resuming next run", provider.name, content_type)
+                return all_items, False
             next_page = state.last_page + 1
             try:
                 if content_type == "movie":
@@ -179,9 +205,14 @@ class ContentDiscoveryService:
                 )
                 return all_items, False
 
-            if not items:
+            if is_end_of_stream(items):
                 logger.info("%s: empty page %d for %s", provider.name, next_page, content_type)
-                return all_items, True
+                followed_pages = bool(all_items) or state.last_page > 0
+                return all_items, followed_pages or is_explicit_end(items)
+            if not items:
+                logger.info("%s: page %d for %s had nothing usable, moving on", provider.name, next_page, content_type)
+                self._advance_state(state, 0)
+                continue
 
             logger.info(
                 "%s: fetched %d %s items from page %d",
@@ -224,8 +255,6 @@ class ContentDiscoveryService:
     # ---- public API ------------------------------------------------------- #
 
     def is_catalog_empty(self) -> bool:
-        from app.models.content import Content
-
         return self.db.query(Content.id).first() is None
 
     def seed_catalog(self) -> int:
@@ -236,11 +265,19 @@ class ContentDiscoveryService:
         total += self._discover("tv_show", pages=SEED_PAGES)
         return total
 
-    def run_scheduled_sync(self) -> dict[str, int]:
-        """Called by the scheduler — uses configured batch_size."""
-        batch = settings.discovery_batch_size
-        movies = self._discover("movie", pages=batch)
-        shows = self._discover("tv_show", pages=batch)
+    def run_scheduled_sync(self, time_budget: float | None = None) -> dict[str, int]:
+        """Called by the scheduler — uses configured batch_size.
+
+        With *time_budget* (seconds), stops fetching pages once it is spent; what was
+        fetched is saved together with the page cursor, so the next run continues.
+        """
+        self._deadline = self._clock() + time_budget if time_budget is not None else None
+        try:
+            batch = settings.discovery_batch_size
+            movies = self._discover("movie", pages=batch)
+            shows = self._discover("tv_show", pages=batch)
+        finally:
+            self._deadline = None
         return {"movies": movies, "tv_shows": shows}
 
     def run_full_sync(
@@ -262,6 +299,19 @@ class ContentDiscoveryService:
         movies = self._discover("movie", pages=pages, provider_filter=provider_name)
         shows = self._discover("tv_show", pages=pages, provider_filter=provider_name)
         return {"movies": movies, "tv_shows": shows}
+
+    def _screen_stored(self, items: list[NormalizedContent]) -> list[NormalizedContent]:
+        """Park titles whose ids point at several stored titles, or contradict the one they match."""
+        kept: list[NormalizedContent] = []
+        sharing = self.repo.stored_sharing_ids(items)
+        known = self.repo.external_ids_for([row.id for rows in sharing for row in rows])
+        for nc, rows in zip(items, sharing, strict=True):
+            decision = resolve(_identity(nc), [_row_identity(r, known[r.id]) for r in rows]) if rows else None
+            if isinstance(decision, Conflict):
+                park(self.db, _identity(nc), decision)
+            else:
+                kept.append(nc)
+        return kept
 
     def _fill_new_movie_release_dates(self, items: list[NormalizedContent]) -> None:
         """Give new movies a release date and poster before they are saved.
@@ -308,7 +358,7 @@ class ContentDiscoveryService:
         if not all_items:
             return 0
 
-        deduped = _deduplicate(all_items)
+        deduped = self._screen_stored(_deduplicate(all_items, on_conflict=lambda i, c: park(self.db, i, c)))
         to_save = deduped[:limit] if limit > 0 else deduped
         self._fill_new_movie_release_dates(to_save)
         saved = self.repo.bulk_upsert_normalized(to_save)
@@ -357,6 +407,7 @@ class ContentDiscoveryService:
         content_type: str | None = None,
         content_id: int | None = None,
         provider_filter: str | None = None,
+        now: datetime | None = None,
     ) -> int:
         """Backfill missing detail data (runtime, episodes, language, etc.)
         on content records that have sparse information.
@@ -369,9 +420,9 @@ class ContentDiscoveryService:
 
         Returns the number of records enriched.
         """
-        from app.models.content import Content
         from app.repositories.episode_repo import EpisodeRepository
 
+        now = now or datetime.now(UTC)
         if content_id:
             target = self.db.query(Content).get(content_id)
             if not target:
@@ -379,7 +430,7 @@ class ContentDiscoveryService:
                 return 0
             sparse = [target]
         else:
-            sparse = self._find_sparse(batch_size, content_type)
+            sparse = due_titles(self.db, batch_size, now, content_type)
 
         if not sparse:
             logger.info("No sparse content records to enrich")
@@ -394,57 +445,61 @@ class ContentDiscoveryService:
 
         ep_repo = EpisodeRepository(self.db)
         enriched = 0
+        self._known_ids = self.repo.external_ids_for([c.id for c in sparse])
 
         for content in sparse:
             try:
-                detail = self._get_detail_for_content(content, providers)
+                detail, detail_error = self._get_detail_with_error(content, providers)
                 if detail:
-                    self.repo._merge_into(content, detail)
+                    self.repo._merge_into(content, detail, overwrite=True)
 
                 if content.content_type == "tv_show":
                     episodes = self._get_episodes_for_content(content, providers)
                     if episodes:
-                        count = ep_repo.bulk_upsert(content.id, episodes)
+                        count = ep_repo.bulk_upsert(content.id, episodes, overwrite=not content.refresh_locked)
                         if not content.episodes:
                             content.episodes = count
                         if not content.seasons:
                             content.seasons = ep_repo.get_season_count(content.id)
 
+                if detail_error and not detail:
+                    raise detail_error
+                self._record_refresh_success(content, now)
                 enriched += 1
                 self.db.commit()
+            except SoftTimeLimitExceeded:
+                # Out of time, not the title's fault: what was finished is already committed.
+                self.db.rollback()
+                logger.warning("Enrichment out of time after %d record(s); the rest are due next run", enriched)
+                break
             except Exception as e:
                 self.db.rollback()
                 logger.warning("Enrichment failed for %r: %s", content.title, e)
+                self._record_refresh_failure(content.id, e, now)
 
         logger.info("Enriched %d content records", enriched)
         return enriched
 
-    def _find_sparse(self, batch_size: int, content_type: str | None = None) -> list:
-        """Return content records that need enrichment."""
-        from app.models.content import Content
+    def _record_refresh_success(self, content: Content, now: datetime) -> None:
+        content.last_refreshed_at = now
+        content.refresh_attempts = 0
+        content.last_error = None
+        content.next_refresh_at = now + success_delay(self.db, content.id, now)
 
-        # Priority 1: TV shows missing episode counts
-        q = self.db.query(Content).filter(
-            Content.content_type == "tv_show",
-            Content.episodes.is_(None),
-        )
-        if content_type and content_type != "tv_show":
-            q = q.filter(False)  # skip this tier if caller wants movies only
-        sparse = q.order_by(Content.id).limit(batch_size).all()
-        if sparse:
-            return sparse
-
-        # Priority 2: anything missing runtime
-        q = self.db.query(Content).filter(Content.runtime.is_(None))
-        if content_type:
-            q = q.filter(Content.content_type == content_type)
-        sparse = q.order_by(Content.id).limit(batch_size).all()
-        return sparse
+    def _record_refresh_failure(self, content_id: int, error: Exception, now: datetime) -> None:
+        """Keep the error and raise the attempt count; never let bookkeeping stop the run."""
+        try:
+            row = self.db.get(Content, content_id)
+            row.refresh_attempts = (row.refresh_attempts or 0) + 1
+            row.last_error = f"{type(error).__name__}: {error}"[:2000]
+            row.next_refresh_at = now + failure_delay(row.refresh_attempts)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.exception("Could not record refresh failure for content %s", content_id)
 
     def count_sparse(self, content_type: str | None = None) -> dict:
         """Return counts of records that still need enrichment."""
-        from app.models.content import Content
-
         q_tv = self.db.query(Content).filter(
             Content.content_type == "tv_show",
             Content.episodes.is_(None),
@@ -460,25 +515,31 @@ class ContentDiscoveryService:
             "missing_runtime": q_runtime.count(),
         }
 
-    def _get_detail_for_content(self, content, providers: list | None = None) -> NormalizedContent | None:
-        """Try each provider's get_details() using the matching external ID."""
+    def _get_detail_with_error(
+        self, content: Content, providers: list[ContentProvider] | None = None
+    ) -> tuple[NormalizedContent | None, Exception | None]:
+        """Try each provider's get_details() using the matching external ID; also returns the last error seen."""
+        last_error: Exception | None = None
         for provider in providers or self.providers:
             try:
                 ext_id = self._external_id_for(content, provider)
                 if ext_id:
                     detail = provider.get_details(ext_id)
                     if detail:
-                        return detail
+                        return detail, None
+            except SoftTimeLimitExceeded:
+                raise
             except Exception as e:
+                last_error = e
                 logger.debug(
                     "%s get_details for %r failed: %s",
                     provider.name,
                     content.title,
                     e,
                 )
-        return None
+        return None, last_error
 
-    def _get_episodes_for_content(self, content, providers: list | None = None) -> list:
+    def _get_episodes_for_content(self, content: Content, providers: list[ContentProvider] | None = None) -> list:
         """Try each provider's get_episodes() using the matching external ID."""
         for provider in providers or self.providers:
             try:
@@ -487,6 +548,8 @@ class ContentDiscoveryService:
                     episodes = provider.get_episodes(ext_id)
                     if episodes:
                         return episodes
+            except SoftTimeLimitExceeded:
+                raise
             except Exception as e:
                 logger.debug(
                     "%s get_episodes for %r failed: %s",
@@ -496,13 +559,12 @@ class ContentDiscoveryService:
                 )
         return []
 
-    @staticmethod
-    def _external_id_for(content, provider) -> str | None:
-        """Return the appropriate external ID string for a given provider."""
-        if provider.name == "tvmaze" and content.tvmaze_id:
-            return str(content.tvmaze_id)
-        if provider.name == "tvdb" and content.tvdb_id:
-            return str(content.tvdb_id)
-        if provider.name == "omdb" and content.imdb_id:
-            return content.imdb_id
-        return None
+    def _external_id_for(self, content, provider) -> str | None:
+        """Return the appropriate external ID string for a given provider, from the external-id table."""
+        wanted = PROVIDER_ID_KIND.get(provider.name)
+        if wanted is None:
+            return None
+        ids = self._known_ids.get(content.id)
+        if ids is None:
+            ids = self._known_ids[content.id] = self.repo.external_ids_for([content.id])[content.id]
+        return ids.get(wanted)

@@ -19,6 +19,16 @@ Usage:
     python manage.py enrich --all                        # Loop until nothing left
     python manage.py enrich --status                     # Show how many records need enrichment
 
+    python manage.py audit-ids             # Read-only report: ids shared by a movie and a show, likely duplicate titles
+    python manage.py audit-ids --samples 25
+    python manage.py review-list           # Read-only: titles parked because their ids conflict
+    python manage.py failing-titles        # Titles whose refresh keeps failing (3+ by default)
+    python manage.py lock-title 3907       # Protect a hand-edited title from refresh overwrites
+    python manage.py unlock-title 3907     # Let refresh overwrite it again
+
+    python manage.py recheck-sync          # Read-only: is each 'fully synced' end genuine?
+    python manage.py recheck-sync --reset tvmaze/tv_show   # Owner's go only: unsync wrongly ended streams
+
     python manage.py fix-emails            # Backfill real emails from Clerk for placeholder users
     python manage.py fix-emails --dry-run  # Preview what would be updated
 """
@@ -262,6 +272,113 @@ def cmd_fix_emails(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# audit-ids
+# ---------------------------------------------------------------------------
+
+
+def cmd_audit_ids(args: argparse.Namespace) -> None:
+    """Read-only report of titles that would break a unique rule on provider ids."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.catalog_audit import format_report, run_read_only
+
+    db = SessionLocal()
+    try:
+        print(format_report(run_read_only(db, sample_limit=args.samples)))
+    finally:
+        db.close()
+
+
+def cmd_review_list(args: argparse.Namespace) -> None:
+    """Read-only list of titles the sync parked instead of guessing."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.review_list import format_review, list_review
+
+    db = SessionLocal()
+    try:
+        print(format_review(list_review(db)))
+    finally:
+        db.close()
+
+
+def cmd_failing_titles(args: argparse.Namespace) -> None:
+    """Read-only report of titles whose refresh keeps failing."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.refresh_planner import failing_titles
+
+    db = SessionLocal()
+    try:
+        rows = failing_titles(db, args.min_failures)
+        print(f"{len(rows)} titles with repeated refresh failures")
+        for r in rows:
+            print(f"  [{r.id}] {r.title} ({r.content_type}) attempts={r.refresh_attempts} error={r.last_error}")
+    finally:
+        db.close()
+
+
+def _set_lock(content_id: int, locked: bool) -> None:
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.refresh_planner import set_refresh_lock
+
+    db = SessionLocal()
+    try:
+        row = set_refresh_lock(db, content_id, locked)
+        if row is None:
+            print(f"No title with id {content_id}")
+        else:
+            print(f"{'Locked' if locked else 'Unlocked'} [{row.id}] {row.title} ({row.content_type})")
+    finally:
+        db.close()
+
+
+def cmd_lock_title(args: argparse.Namespace) -> None:
+    """Stop refresh from overwriting a hand-edited title."""
+    _set_lock(args.content_id, True)
+
+
+def cmd_unlock_title(args: argparse.Namespace) -> None:
+    """Let refresh overwrite a title again."""
+    _set_lock(args.content_id, False)
+
+
+# ---------------------------------------------------------------------------
+# recheck-sync
+# ---------------------------------------------------------------------------
+
+
+def cmd_recheck_sync(args: argparse.Namespace) -> None:
+    """Report whether each 'fully synced' end is genuine; optionally reset wrong ones."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.providers.registry import get_active_providers
+    from app.services.sync_recheck import format_report, recheck_streams, reset_wrong_streams
+
+    db = SessionLocal()
+    try:
+        providers = get_active_providers()
+        if not args.reset:
+            print(format_report(recheck_streams(db, providers)))
+            return
+        streams = [tuple(r.split("/", 1)) for r in args.reset]
+        done = reset_wrong_streams(db, providers, streams)
+        for p, t in done:
+            print(f"Reset {p}/{t}: fully_synced cleared, cursor kept.")
+        for key in streams:
+            if key not in done:
+                print(f"Left alone {key[0]}/{key[1]}: not currently judged wrong.")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -351,6 +468,36 @@ def main():
         help="Preview changes without applying them",
     )
     fe.set_defaults(func=cmd_fix_emails)
+
+    # -- audit-ids --
+    audit = sub.add_parser("audit-ids", help="Read-only report of duplicate/conflicting provider ids")
+    audit.add_argument("--samples", type=int, default=10, help="Sample rows per problem kind (default 10)")
+    audit.set_defaults(func=cmd_audit_ids)
+
+    review = sub.add_parser("review-list", help="Read-only list of titles parked because their ids conflict")
+    review.set_defaults(func=cmd_review_list)
+
+    failing = sub.add_parser("failing-titles", help="Read-only report of titles whose refresh keeps failing")
+    failing.add_argument("--min-failures", type=int, default=None, help="Minimum failures (default: setting, 3)")
+    failing.set_defaults(func=cmd_failing_titles)
+
+    lock = sub.add_parser("lock-title", help="Protect a hand-edited title from refresh overwrites")
+    lock.add_argument("content_id", type=int, help="Database id of the title")
+    lock.set_defaults(func=cmd_lock_title)
+
+    unlock = sub.add_parser("unlock-title", help="Let refresh overwrite a title again")
+    unlock.add_argument("content_id", type=int, help="Database id of the title")
+    unlock.set_defaults(func=cmd_unlock_title)
+
+    # -- recheck-sync --
+    recheck = sub.add_parser("recheck-sync", help="Check 'fully synced' streams; --reset to unsync wrong ones")
+    recheck.add_argument(
+        "--reset",
+        nargs="+",
+        metavar="PROVIDER/TYPE",
+        help="Clear fully_synced on these streams if still judged wrong (needs the owner's go)",
+    )
+    recheck.set_defaults(func=cmd_recheck_sync)
 
     args = parser.parse_args()
     if not args.command:

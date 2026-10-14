@@ -11,6 +11,7 @@ from sqlalchemy import event
 from app.models.content import Content
 from app.repositories.content_repo import ContentRepository
 from app.services.providers.base import NormalizedContent
+from tests.id_helpers import id_of
 
 
 def movie(i, **kw):
@@ -44,7 +45,7 @@ class TestStatementCount:
 
         assert saved == n
         assert len(stored(db_session)) == n
-        assert len(statements) <= 25, f"{len(statements)} statements for {n} titles"
+        assert len(statements) <= 30, f"{len(statements)} statements for {n} titles"
 
     def test_titles_that_already_exist_are_also_batched(self, db_session, statements):
         repo = ContentRepository(db_session)
@@ -53,7 +54,7 @@ class TestStatementCount:
 
         repo.bulk_upsert_normalized([movie(i, poster_url=f"https://img/{i}.jpg") for i in range(1, 401)])
 
-        assert len(statements) <= 25, f"{len(statements)} statements for 400 existing titles"
+        assert len(statements) <= 30, f"{len(statements)} statements for 400 existing titles"
 
 
 class TestSameResultsAsTheSingleTitleSave:
@@ -64,7 +65,7 @@ class TestSameResultsAsTheSingleTitleSave:
 
         repo.bulk_upsert_normalized([movie(1, description="replacement", poster_url="https://img/1.jpg")])
 
-        row = [r for r in stored(db_session) if r.tvdb_id == 1][0]
+        row = [r for r in stored(db_session) if id_of(db_session, r, "tvdb") == 1][0]
         assert row.description == "original"
         assert row.poster_url == "https://img/1.jpg"
 
@@ -76,7 +77,10 @@ class TestSameResultsAsTheSingleTitleSave:
 
         repo.bulk_upsert_normalized([movie(7)])
 
-        assert {(r.content_type, r.tvdb_id) for r in stored(db_session)} == {("tv_show", 7), ("movie", 7)}
+        assert {(r.content_type, id_of(db_session, r, "tvdb")) for r in stored(db_session)} == {
+            ("tv_show", 7),
+            ("movie", 7),
+        }
 
     def test_two_titles_with_the_same_name_and_year_but_different_ids_are_both_saved(self, db_session):
         repo = ContentRepository(db_session)
@@ -85,7 +89,7 @@ class TestSameResultsAsTheSingleTitleSave:
 
         repo.bulk_upsert_normalized([a, b])
 
-        assert {r.tvdb_id for r in stored(db_session)} == {1, 2}
+        assert {id_of(db_session, r, "tvdb") for r in stored(db_session)} == {1, 2}
 
     def test_an_id_less_title_merges_into_a_pending_title_from_the_same_batch(self, db_session):
         repo = ContentRepository(db_session)
@@ -95,7 +99,7 @@ class TestSameResultsAsTheSingleTitleSave:
         repo.bulk_upsert_normalized([a, b])
 
         rows = stored(db_session)
-        assert len(rows) == 1 and (rows[0].tvdb_id, rows[0].tmdb_id) == (5, 99)
+        assert len(rows) == 1 and (id_of(db_session, rows[0], "tvdb"), id_of(db_session, rows[0], "tmdb")) == (5, 99)
 
     def test_new_rows_get_their_timestamps(self, db_session):
         ContentRepository(db_session).bulk_upsert_normalized([movie(1)])
@@ -110,4 +114,4 @@ class TestSameResultsAsTheSingleTitleSave:
         saved = ContentRepository(db_session).bulk_upsert_normalized([good_before, bad, good_after])
 
         assert saved == 2
-        assert {r.tvdb_id for r in stored(db_session)} == {1, 3}
+        assert {id_of(db_session, r, "tvdb") for r in stored(db_session)} == {1, 3}

@@ -112,6 +112,7 @@ def content_detail(
         return RedirectResponse(url="/dashboard", status_code=303)
 
     library_item = LibraryRepository(db).get_by_user_and_content(user.id, content_id)
+    imdb_id = ContentRepository(db).external_ids_for([content_id])[content_id].get("imdb")
 
     episodes = []
     seasons_map: dict = {}
@@ -134,6 +135,7 @@ def content_detail(
             "request": request,
             "user": user,
             "content": content,
+            "imdb_id": imdb_id,
             "library_item": library_item,
             "episodes": episodes,
             "seasons_map": seasons_map,

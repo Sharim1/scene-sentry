@@ -15,6 +15,7 @@ import logging
 import re
 import time
 from collections import deque
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -24,6 +25,8 @@ from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
     NormalizedEpisode,
+    Page,
+    ProviderError,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +91,52 @@ class TVMazeProvider(ContentProvider):
         except ValueError as e:
             logger.warning("TVMaze invalid JSON for %s: %s", path, e)
             return None
+
+    def _get_show_page(self, page: int) -> list[Any]:
+        """One page of the show index. Failures raise; a 404 means the page is past the end."""
+        self._rate_limit()
+        try:
+            resp = self._client.get("/shows", params={**self._base_query(), "page": page})
+            if resp.status_code == 404:
+                return []
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise ProviderError(self.name, f"/shows page {page}: {type(e).__name__}: {e}") from e
+        if not isinstance(data, list):
+            raise ProviderError(self.name, f"/shows page {page}: unexpected response body")
+        return data
+
+    # ---- change feed ---- #
+
+    # /updates/shows only offers these windows; each covers a little under its name's span.
+    _UPDATE_WINDOWS = (("day", timedelta(days=1)), ("week", timedelta(days=7)), ("month", timedelta(days=30)))
+
+    def get_updated_ids(self, content_type: str, since: datetime, now: datetime | None = None) -> list[int]:
+        """TVmaze ids of shows changed since ``since``. Raises ProviderError on any failure.
+
+        Asks for the smallest window that covers the gap, then drops shows stamped before ``since``.
+        """
+        if content_type != "tv_show":
+            return []
+        age = (now or datetime.now(UTC)) - since
+        window = next((name for name, span in self._UPDATE_WINDOWS if age <= span), None)
+        if window is None:
+            raise ProviderError(self.name, f"updates since {since.isoformat()}: older than the feed's widest window")
+        self._rate_limit()
+        try:
+            resp = self._client.get("/updates/shows", params={**self._base_query(), "since": window})
+            resp.raise_for_status()
+            body = resp.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise ProviderError(self.name, f"/updates/shows since={window}: {type(e).__name__}: {e}") from e
+        if not isinstance(body, dict):
+            raise ProviderError(self.name, "/updates/shows: unexpected response body")
+        try:
+            cutoff = since.timestamp()
+            return [int(show_id) for show_id, changed_at in body.items() if changed_at >= cutoff]
+        except (TypeError, ValueError) as e:
+            raise ProviderError(self.name, f"/updates/shows: malformed entry: {e}") from e
 
     # ---- normalisation helpers ---- #
 
@@ -238,10 +287,8 @@ class TVMazeProvider(ContentProvider):
         return []
 
     def discover_tv_shows(self, page: int = 1) -> list[NormalizedContent]:
+        data = self._get_show_page(page)
         try:
-            data = self._get_json("/shows", page=page)
-            if not isinstance(data, list):
-                return []
             allowed_status = {"Running", "To Be Determined"}
             filtered: list[dict[str, Any]] = []
             for s in data:
@@ -260,10 +307,10 @@ class TVMazeProvider(ContentProvider):
                     continue
                 filtered.append(s)
             filtered.sort(key=lambda x: int(x.get("weight") or 0), reverse=True)
-            return [self._normalize_show(s) for s in filtered]
+            # exhausted only when the source page itself was empty, not when the filter emptied it
+            return Page([self._normalize_show(s) for s in filtered], exhausted=not data)
         except Exception as e:
-            logger.warning("discover_tv_shows failed: %s", e)
-            return []
+            raise ProviderError(self.name, f"/shows page {page}: could not read response: {e}") from e
 
     def search(self, query: str, content_type: str | None = None) -> list[NormalizedContent]:
         if content_type == "movie":

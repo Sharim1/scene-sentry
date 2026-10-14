@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import false as sa_false
 
 from app.database import Base
 
@@ -38,13 +39,8 @@ class Content(Base):
     embedding_hash = Column(String(64), nullable=True)
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True)
 
-    # External IDs (used for cross-platform deduplication)
+    # Provider ids (tmdb, imdb, tvdb, tvmaze, isbn) live in ContentExternalId, not on this row.
     external_id = Column(String(50), nullable=True)
-    tmdb_id = Column(Integer, nullable=True, index=True)
-    imdb_id = Column(String(20), nullable=True, index=True)
-    tvdb_id = Column(Integer, nullable=True, index=True)
-    tvmaze_id = Column(Integer, nullable=True, index=True)
-    isbn = Column(String(20), nullable=True)
 
     # Which provider originally ingested this record
     provider = Column(String(20), nullable=True)  # "tmdb", "tvdb", "omdb", "tvmaze"
@@ -85,6 +81,14 @@ class Content(Base):
     # Scheduling (for upcoming releases)
     next_episode_date = Column(DateTime, nullable=True)
     premiere_date = Column(DateTime, nullable=True)
+
+    # Refresh state (ADR-0006). NULL next_refresh_at means "never scheduled": due now.
+    last_refreshed_at = Column(DateTime(timezone=True), nullable=True)
+    next_refresh_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    refresh_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    last_error = Column(Text, nullable=True)
+    # True protects hand-edited fields from being overwritten by a refresh.
+    refresh_locked = Column(Boolean, nullable=False, default=False, server_default=sa_false())
 
     # Timestamps (timezone-aware)
     created_at = Column(DateTime(timezone=True), default=utc_now)

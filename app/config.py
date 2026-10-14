@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     discovery_interval_hours: int = 6
     discovery_batch_size: int = 10  # pages per provider per scheduled run
     enrichment_interval_minutes: int = 15  # how often to backfill episode/detail data
+    # Refresh tiers (ADR-0006 starting values; tune with data)
+    refresh_hot_hours: int = 6  # tracked by a user, or airing soon
+    refresh_warm_hours: int = 12  # running shows, announced movies
+    refresh_cold_days: int = 30  # ended / released (ADR range 30 to 180 days)
+    refresh_cold_days_max: int = 180  # ceiling for refresh_cold_days
+    refresh_airing_window_days: int = 14  # "airing soon" for the hot tier
+    refresh_failure_threshold: int = 3  # attempts before a title counts as failing
+    refresh_failure_backoff_base_hours: int = 1  # first retry delay; doubles each failure
+    refresh_failure_backoff_cap_days: int = 7
     reminder_check_interval_minutes: int = 1  # how often to check for due reminders
 
     # Embeddings (SCE-33)
@@ -76,6 +85,12 @@ class Settings(BaseSettings):
     embedding_model: str = "models/text-embedding-004"
     embedding_dim: int = 768
     embedding_interval_minutes: int = 30
+    tvdb_updates_interval_minutes: int = 60  # how often to follow the TVDB updates feed
+    tvdb_updates_overlap_minutes: int = 60  # each run starts this far before the bookmark
+    tvdb_updates_window_days: int = 28  # older bookmarks fall back to the tier planner
+    tvmaze_updates_interval_minutes: int = 60  # how often to follow the TVmaze updates feed
+    tvmaze_updates_overlap_minutes: int = 60  # each run starts this far before the bookmark
+    tvmaze_updates_window_days: int = 29  # TVmaze's widest window is a month; older bookmarks fall back to the planner
     embedding_batch_size: int = 100
 
     # Public contact form (override CONTACT_TO_EMAIL in .env)
