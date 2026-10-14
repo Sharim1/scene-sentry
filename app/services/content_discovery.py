@@ -12,13 +12,21 @@ seen, to pick up newly-registered content on the source platform.
 import logging
 import time
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
-from app.services.providers.base import ContentProvider, NormalizedContent, is_end_of_stream
+from app.services.identity import ID_KINDS, Identity, Match, id_keys, resolve
+from app.services.providers.base import (
+    ContentProvider,
+    NormalizedContent,
+    _normalise_title,
+    _year_from_date,
+    is_end_of_stream,
+)
 from app.services.providers.registry import get_active_providers
 
 logger = logging.getLogger(__name__)
@@ -26,58 +34,40 @@ logger = logging.getLogger(__name__)
 SEED_PAGES = 5  # pages to fetch on first-ever run per provider
 
 
-def _ids_conflict(a: NormalizedContent, b: NormalizedContent) -> bool:
-    """True if both items carry the same kind of external id with different values.
-
-    Two entries with different ids from the same source are different titles, even
-    when their names and years match.
-    """
-    return any(
-        getattr(a, attr) is not None and getattr(b, attr) is not None and getattr(a, attr) != getattr(b, attr)
-        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+def _identity(nc: NormalizedContent) -> Identity:
+    return Identity(
+        title=nc.title,
+        content_type=nc.content_type,
+        year=nc.year or _year_from_date(nc.release_date),
+        ids={kind: getattr(nc, f"{kind}_id") for kind in ID_KINDS},
+        ref=nc,
     )
 
 
 def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
-    """Merge duplicates across providers using external IDs then title+year."""
-    by_imdb: dict[str, NormalizedContent] = {}
-    by_tmdb: dict[int, NormalizedContent] = {}
-    by_tvdb: dict[int, NormalizedContent] = {}
-    by_tvmaze: dict[int, NormalizedContent] = {}
-    by_key: dict[str, NormalizedContent] = {}
+    """Merge duplicates across providers; the identity resolver decides what is the same title.
+
+    Only the kept items that share an id or a title with the incoming one are shown to the
+    resolver, so the pass stays linear. A conflict is never merged.
+    """
+    by_key: dict[tuple[Any, ...], list[Identity]] = {}
     result: list[NormalizedContent] = []
 
     for nc in items:
-        existing: NormalizedContent | None = None
+        incoming = _identity(nc)
+        keys = [("id", *k) for k in id_keys(incoming)]
+        title = _normalise_title(nc.title)
+        if title:
+            keys.append(("title", nc.content_type, title))
+        candidates = [c for key in keys for c in by_key.get(key, [])]
 
-        if nc.imdb_id and nc.imdb_id in by_imdb:
-            existing = by_imdb[nc.imdb_id]
-        elif nc.tmdb_id and nc.tmdb_id in by_tmdb:
-            existing = by_tmdb[nc.tmdb_id]
-        elif nc.tvdb_id and nc.tvdb_id in by_tvdb:
-            existing = by_tvdb[nc.tvdb_id]
-        elif nc.tvmaze_id and nc.tvmaze_id in by_tvmaze:
-            existing = by_tvmaze[nc.tvmaze_id]
-        else:
-            key = nc.dedup_key
-            candidate = None if key.startswith("::") else by_key.get(key)
-            if candidate is not None and not _ids_conflict(candidate, nc):
-                existing = candidate
-
-        if existing:
-            existing.merge(nc)
-        else:
-            result.append(nc)
-            if nc.imdb_id:
-                by_imdb[nc.imdb_id] = nc
-            if nc.tmdb_id:
-                by_tmdb[nc.tmdb_id] = nc
-            if nc.tvdb_id:
-                by_tvdb[nc.tvdb_id] = nc
-            if nc.tvmaze_id:
-                by_tvmaze[nc.tvmaze_id] = nc
-            if not nc.dedup_key.startswith("::"):
-                by_key.setdefault(nc.dedup_key, nc)
+        decision = resolve(incoming, candidates)
+        if isinstance(decision, Match):
+            decision.candidate.ref.merge(nc)
+            continue
+        result.append(nc)
+        for key in keys:
+            by_key.setdefault(key, []).append(incoming)
 
     logger.info("Dedup: %d raw items → %d unique", len(items), len(result))
     return result
@@ -418,7 +408,7 @@ class ContentDiscoveryService:
 
         for content in sparse:
             try:
-                detail = self._get_detail_for_content(content, providers)
+                detail, detail_error = self._get_detail_with_error(content, providers)
                 if detail:
                     self.repo._merge_into(content, detail)
 
@@ -431,14 +421,37 @@ class ContentDiscoveryService:
                         if not content.seasons:
                             content.seasons = ep_repo.get_season_count(content.id)
 
+                if detail_error and not detail:
+                    raise detail_error
+                self._record_refresh_success(content)
                 enriched += 1
                 self.db.commit()
             except Exception as e:
                 self.db.rollback()
                 logger.warning("Enrichment failed for %r: %s", content.title, e)
+                self._record_refresh_failure(content.id, e)
 
         logger.info("Enriched %d content records", enriched)
         return enriched
+
+    @staticmethod
+    def _record_refresh_success(content) -> None:
+        content.last_refreshed_at = datetime.now(UTC)
+        content.refresh_attempts = 0
+        content.last_error = None
+
+    def _record_refresh_failure(self, content_id: int, error: Exception) -> None:
+        """Keep the error and raise the attempt count; never let bookkeeping stop the run."""
+        from app.models.content import Content
+
+        try:
+            row = self.db.get(Content, content_id)
+            row.refresh_attempts = (row.refresh_attempts or 0) + 1
+            row.last_error = f"{type(error).__name__}: {error}"[:2000]
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.exception("Could not record refresh failure for content %s", content_id)
 
     def _find_sparse(self, batch_size: int, content_type: str | None = None) -> list:
         """Return content records that need enrichment."""
@@ -483,21 +496,29 @@ class ContentDiscoveryService:
 
     def _get_detail_for_content(self, content, providers: list | None = None) -> NormalizedContent | None:
         """Try each provider's get_details() using the matching external ID."""
+        return self._get_detail_with_error(content, providers)[0]
+
+    def _get_detail_with_error(
+        self, content, providers: list | None = None
+    ) -> tuple[NormalizedContent | None, Exception | None]:
+        """Like _get_detail_for_content, but also returns the last provider error seen."""
+        last_error: Exception | None = None
         for provider in providers or self.providers:
             try:
                 ext_id = self._external_id_for(content, provider)
                 if ext_id:
                     detail = provider.get_details(ext_id)
                     if detail:
-                        return detail
+                        return detail, None
             except Exception as e:
+                last_error = e
                 logger.debug(
                     "%s get_details for %r failed: %s",
                     provider.name,
                     content.title,
                     e,
                 )
-        return None
+        return None, last_error
 
     def _get_episodes_for_content(self, content, providers: list | None = None) -> list:
         """Try each provider's get_episodes() using the matching external ID."""

@@ -15,6 +15,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, defer
 
 from app.models.content import Content
+from app.services.identity import ID_KINDS, ids_disagree
 from app.services.providers.base import NormalizedContent, _year_from_date
 
 logger = logging.getLogger(__name__)
@@ -43,9 +44,9 @@ _BULK_CHUNK = 500  # titles per lookup query / multi-row insert
 def _ids_conflict(row: Any, nc: NormalizedContent) -> bool:
     """True if the row and the incoming item carry the same kind of external id with
     different values: they are then different titles even if name and year match."""
-    return any(
-        getattr(row, attr) is not None and getattr(nc, attr) is not None and getattr(row, attr) != getattr(nc, attr)
-        for attr in ("tvdb_id", "tmdb_id", "imdb_id", "tvmaze_id")
+    return ids_disagree(
+        {kind: getattr(row, f"{kind}_id") for kind in ID_KINDS},
+        {kind: getattr(nc, f"{kind}_id") for kind in ID_KINDS},
     )
 
 
