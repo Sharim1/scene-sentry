@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.discovery_state import DiscoveryState
 from app.repositories.content_repo import ContentRepository
-from app.services.identity import ID_KINDS, Identity, Match, _id_keys, resolve
+from app.services.identity import ID_KINDS, Identity, Match, id_keys, resolve
 from app.services.providers.base import ContentProvider, NormalizedContent, _normalise_title, _year_from_date
 from app.services.providers.registry import get_active_providers
 
@@ -49,7 +49,7 @@ def _deduplicate(items: list[NormalizedContent]) -> list[NormalizedContent]:
 
     for nc in items:
         incoming = _identity(nc)
-        keys = [("id", *k) for k in _id_keys(incoming)]
+        keys = [("id", *k) for k in id_keys(incoming)]
         title = _normalise_title(nc.title)
         if title:
             keys.append(("title", nc.content_type, title))

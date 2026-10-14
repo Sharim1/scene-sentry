@@ -49,7 +49,7 @@ class Conflict:
 Decision = Match | Create | Conflict
 
 
-def _id_keys(i: Identity) -> list[tuple[Any, ...]]:
+def id_keys(i: Identity) -> list[tuple[Any, ...]]:
     keys: list[tuple[Any, ...]] = []
     for kind in ID_KINDS:
         value = i.ids.get(kind)
@@ -65,10 +65,10 @@ def ids_disagree(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
 
 def resolve(incoming: Identity, candidates: Sequence[Identity]) -> Decision:
     """Decide what ``incoming`` is, given the known ``candidates`` (earlier ones win ties)."""
-    keys = set(_id_keys(incoming))
+    keys = set(id_keys(incoming))
     by_id: list[Identity] = []
     for c in candidates:
-        if keys & set(_id_keys(c)) and not any(c is seen for seen in by_id):
+        if keys & set(id_keys(c)) and not any(c is seen for seen in by_id):
             by_id.append(c)
     if by_id:
         if len(by_id) > 1 or ids_disagree(incoming.ids, by_id[0].ids):
