@@ -143,6 +143,27 @@ class ProviderError(Exception):
         self.provider = provider
 
 
+class Page(list):
+    """A page of discovered titles that also says whether the source itself was out of pages.
+
+    A provider that filters a page (TVmaze keeps only popular, running, English shows)
+    can end up with nothing to return while the source still has more pages. It returns
+    ``Page([], exhausted=False)`` so the walker keeps going. A plain list means
+    "exhausted when empty".
+    """
+
+    def __init__(self, items=(), exhausted: bool | None = None) -> None:
+        super().__init__(items)
+        self.exhausted = (not self) if exhausted is None else exhausted
+
+
+def is_end_of_stream(items: list) -> bool:
+    """True when a discovery page means there is nothing further on the source."""
+    if items:
+        return False
+    return getattr(items, "exhausted", True)
+
+
 class ContentProvider(ABC):
     """Interface that every content platform must implement."""
 
