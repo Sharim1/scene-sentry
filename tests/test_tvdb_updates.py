@@ -306,3 +306,35 @@ def test_provider_raises_provider_error_when_the_feed_call_fails():
 
     with pytest.raises(ProviderError):
         provider_with_client(FakeSDKClient({}, fail=True)).get_updated_ids("movie", NOW)
+
+
+def test_soft_time_limit_ends_the_run_cleanly_and_keeps_the_bookmark(db_session):
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    before = NOW - timedelta(hours=2)
+    set_bookmark(db_session, before)
+
+    class OutOfTime(FakeFeed):
+        def read_updates(self, content_type, since):
+            raise SoftTimeLimitExceeded()
+
+    run_job(db_session, OutOfTime())  # must not raise (no retry)
+
+    row = state(db_session)
+    assert row.watermark.replace(tzinfo=UTC) == before
+    assert row.status == "timeout"
+
+
+def test_a_notice_that_fails_does_not_hold_the_bookmark_back(db_session):
+    set_bookmark(db_session, NOW - timedelta(hours=2))
+    add_title(db_session, "Doomed", 1)
+    feed = FakeFeed()
+    feed.notice("tv_show", Notice("delete", "tvdb", "tv_show", "1"), NOW - timedelta(minutes=10))
+
+    with patch("app.services.provider_notices._apply_delete", side_effect=RuntimeError("boom")):
+        run_job(db_session, feed)
+
+    row = state(db_session)
+    assert row.watermark.replace(tzinfo=UTC) == NOW
+    assert row.status == "ok"
+    assert "1 notice(s) failed" in row.last_error

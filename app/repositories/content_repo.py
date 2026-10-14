@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, defer
 
 from app.models.content import Content
 from app.models.external_id import ContentExternalId
-from app.services.identity import ID_KINDS, ids_disagree
+from app.services.identity import ID_KINDS, ids_disagree, item_ids
 from app.services.providers.base import NormalizedContent, _year_from_date
 
 logger = logging.getLogger(__name__)
@@ -43,9 +43,13 @@ def _parse_datetime(date_str: str | None) -> datetime | None:
 _BULK_CHUNK = 500  # titles per lookup query / multi-row insert
 
 
+class ExternalIdError(RuntimeError):
+    """Provider ids of saved titles could not be written; the save is rolled back so no title is left without them."""
+
+
 def _nc_ids(nc: NormalizedContent) -> dict[str, str]:
     """The provider ids an incoming item carries, as text (the external-id table keeps text)."""
-    return {kind: str(getattr(nc, f"{kind}_id")) for kind in ID_KINDS if getattr(nc, f"{kind}_id")}
+    return item_ids(nc)
 
 
 def _ids_conflict(known: Mapping[str, Any], nc: NormalizedContent) -> bool:
@@ -273,6 +277,24 @@ class ContentRepository:
                     )
                 )
                 present.update((provider, kind, v) for v in found.scalars())
+        failures: list[str] = []
+        # An IMDb id is global (one id, one title, whatever its type), but the table keys it per type:
+        # an id already stored under any type for another title is a conflict, not a new row.
+        imdb = [(k, v) for (p, k, v) in wanted if p == "imdb"]
+        for start in range(0, len(imdb), _BULK_CHUNK):
+            owners = dict(
+                self.db.execute(
+                    select(ContentExternalId.external_id, ContentExternalId.content_id).where(
+                        ContentExternalId.provider == "imdb",
+                        ContentExternalId.external_id.in_([v for _, v in imdb[start : start + _BULK_CHUNK]]),
+                    )
+                ).all()
+            )
+            for kind, value in imdb[start : start + _BULK_CHUNK]:
+                if value in owners:
+                    present.add(("imdb", kind, value))
+                    if owners[value] != wanted[("imdb", kind, value)]:
+                        failures.append(f"imdb/{value}: already belongs to title {owners[value]}")
         rows = [
             {"provider": p, "kind": k, "external_id": v, "content_id": cid}
             for (p, k, v), cid in wanted.items()
@@ -290,7 +312,10 @@ class ContentRepository:
                         with self.db.begin_nested():
                             self.db.execute(ContentExternalId.__table__.insert().values([row]))
                     except Exception as e2:
-                        logger.warning("Could not record %s id %s: %s", row["provider"], row["external_id"], e2)
+                        failures.append(f"{row['provider']}/{row['kind']}/{row['external_id']}: {e2}")
+        if failures:
+            # A title saved without its ids would be saved again as a duplicate on the next run.
+            raise ExternalIdError(f"could not record {len(failures)} external id(s): {'; '.join(failures[:5])}")
 
     def get_by_title_year_type(self, title: str, year: int | None, content_type: str) -> Content | None:
         return next(iter(self._all_by_title_year_type(title, year, content_type)), None)
@@ -474,22 +499,18 @@ class ContentRepository:
         found: dict[tuple[str, str | None, str], list[Content]] = {}
         wanted: dict[tuple[str, str | None], set[str]] = {}
         for nc in items:
-            for kind in ID_KINDS:
-                value = getattr(nc, f"{kind}_id")
-                if value:
-                    wanted.setdefault((kind, None if kind == "imdb" else nc.content_type), set()).add(str(value))
+            for kind, value in item_ids(nc).items():
+                wanted.setdefault((kind, None if kind == "imdb" else nc.content_type), set()).add(value)
         for (kind, content_type), values in wanted.items():
             for value, row in _rows_by_external_id(self.db, kind, content_type, sorted(values)):
                 found.setdefault((kind, content_type, value), []).append(row)
         result: list[list[Content]] = []
         for nc in items:
             rows: dict[int, Content] = {}
-            for kind in ID_KINDS:
-                value = getattr(nc, f"{kind}_id")
-                if value:
-                    key = (kind, None if kind == "imdb" else nc.content_type, str(value))
-                    for row in found.get(key, []):
-                        rows.setdefault(row.id, row)
+            for kind, value in item_ids(nc).items():
+                key = (kind, None if kind == "imdb" else nc.content_type, value)
+                for row in found.get(key, []):
+                    rows.setdefault(row.id, row)
             result.append(sorted(rows.values(), key=lambda r: r.id))
         return result
 
@@ -576,10 +597,16 @@ class ContentRepository:
             values.update(is_adaptation=False, created_at=now, updated_at=now)
             rows.append((values, _nc_ids(nc)))
         failed, inserted = self._insert_rows(rows)
-        self.record_external_ids(
-            [(int(row.id), str(row.content_type), existing.ids[row.id]) for row in merged.values()]
-        )
-        self.record_external_ids(inserted, known_new=True)
+        try:
+            self.record_external_ids(
+                [(int(row.id), str(row.content_type), existing.ids[row.id]) for row in merged.values()]
+            )
+            self.record_external_ids(inserted, known_new=True)
+        except ExternalIdError:
+            # Do not keep titles whose ids are missing: they would be saved again as duplicates next run.
+            if inserted:
+                self.db.execute(Content.__table__.delete().where(Content.id.in_([cid for cid, _, _ in inserted])))
+            raise
         return len(valid) - failed
 
     def _insert_rows(
@@ -591,33 +618,48 @@ class ContentRepository:
         the caller can record its external ids.
         """
         table = Content.__table__
-        returned = [table.c.id, table.c.content_type, table.c.title]
+        returned = [table.c.id, table.c.content_type, table.c.title, table.c.release_date]
         failed = 0
         inserted: list[tuple[int, str, dict[str, Any]]] = []
 
+        def key(values: dict[str, Any]) -> tuple[Any, ...]:
+            return (values["content_type"], values["title"], values.get("release_date"))
+
         def keep(chunk: list[tuple[dict[str, Any], dict[str, str]]], result: Any) -> None:
-            # The ids recorded are the ones we just sent, matched to the new rows by type and title
-            # (ids from a sequence rise in the order of the rows).
-            waiting: dict[tuple[str, str], list[dict[str, str]]] = {}
-            for values, ids in chunk:
-                waiting.setdefault((values["content_type"], values["title"]), []).append(ids)
-            for r in sorted(result, key=lambda r: r.id):
-                inserted.append((r.id, r.content_type, waiting[(r.content_type, r.title)].pop(0)))
+            # Rows come back in no promised order, so each is paired with the ids sent for it by
+            # (type, title, release date). The caller makes sure no key is shared within one statement.
+            sent = {key(values): ids for values, ids in chunk}
+            for r in result:
+                inserted.append((r.id, r.content_type, sent[(r.content_type, r.title, r.release_date)]))
+
+        def insert_one(row: tuple[dict[str, Any], dict[str, str]]) -> None:
+            nonlocal failed
+            try:
+                with self.db.begin_nested():
+                    keep([row], self.db.execute(table.insert().values([row[0]]).returning(*returned)))
+            except Exception as e2:
+                failed += 1
+                logger.warning("Failed to save %r: %s", row[0].get("title"), e2)
 
         for start in range(0, len(rows), _BULK_CHUNK):
             chunk = rows[start : start + _BULK_CHUNK]
+            counts: dict[tuple[Any, ...], int] = {}
+            for values, _ in chunk:
+                counts[key(values)] = counts.get(key(values), 0) + 1
+            # Rows that share a key cannot be told apart in the result: they are inserted one at a time.
+            batch = [row for row in chunk if counts[key(row[0])] == 1]
+            for row in chunk:
+                if counts[key(row[0])] > 1:
+                    insert_one(row)
+            if not batch:
+                continue
             try:
                 with self.db.begin_nested():
-                    keep(chunk, self.db.execute(table.insert().values([v for v, _ in chunk]).returning(*returned)))
+                    keep(batch, self.db.execute(table.insert().values([v for v, _ in batch]).returning(*returned)))
             except Exception as e:
-                logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(chunk), e)
-                for row in chunk:
-                    try:
-                        with self.db.begin_nested():
-                            keep([row], self.db.execute(table.insert().values([row[0]]).returning(*returned)))
-                    except Exception as e2:
-                        failed += 1
-                        logger.warning("Failed to save %r: %s", row[0].get("title"), e2)
+                logger.warning("Bulk insert of %d titles failed (%s); saving them one by one", len(batch), e)
+                for row in batch:
+                    insert_one(row)
         return failed, inserted
 
     # Legacy method kept for backward compat with old TMDB-dict ingestion
@@ -661,7 +703,7 @@ class ContentRepository:
         """Fill blanks on an existing row from a NormalizedContent.
 
         With ``overwrite`` the provider-owned fields (status, rating, season and episode
-        counts) also take the provider's newer value; a title with ``refresh_locked`` set
+        counts, release date) also take the provider's newer value; a title with ``refresh_locked`` set
         is never overwritten.
 
         ``known_ids`` are the title's ids in the external-id table (looked up when not given).
@@ -670,7 +712,7 @@ class ContentRepository:
         known = dict(known_ids if known_ids is not None else self.external_ids_for([content.id])[content.id])
         embedding_input_changed = False
         if overwrite and not content.refresh_locked:
-            for field in ("status", "rating", "seasons", "episodes"):
+            for field in ("status", "rating", "seasons", "episodes", "release_date"):
                 value = getattr(nc, field)
                 if value is not None:
                     setattr(content, field, value)
@@ -710,7 +752,7 @@ class ContentRepository:
             content.country = nc.country
         if nc.premiered and not content.premiere_date:
             content.premiere_date = _parse_datetime(nc.premiered)
-        if nc.next_episode_date:
+        if nc.next_episode_date and not content.refresh_locked:
             content.next_episode_date = _parse_datetime(nc.next_episode_date)
         content.updated_at = datetime.now(UTC)
         if embedding_input_changed:

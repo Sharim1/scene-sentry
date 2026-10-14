@@ -9,7 +9,10 @@ logged. Rows are changed with flush only; the caller commits.
 
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
 
+from sqlalchemy import Column, Integer, MetaData, Table, delete, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.models.content import Content
@@ -19,37 +22,76 @@ from app.models.gossip import Gossip
 from app.models.library import LibraryItem
 from app.models.ranking import UserContentRank
 from app.models.reminder import Reminder
-from app.repositories.content_repo import ContentRepository
-from app.services.identity import ID_KINDS
 
 logger = logging.getLogger(__name__)
+
+# The recommendations model is not registered with the app (its relationships have no other side), but
+# the table has a non-null foreign key to content, so a notice must still move or drop its rows.
+_RECOMMENDATIONS = Table("recommendations", MetaData(), Column("content_id", Integer))
+
+
+class NoticeAction(StrEnum):
+    DELETE = "delete"
+    MERGE = "merge"
 
 
 @dataclass(frozen=True)
 class Notice:
     """One provider notice. ``merged_into`` is the surviving id, set only for a merge."""
 
-    action: str  # "delete" | "merge"
+    action: NoticeAction
     provider: str
     content_type: str
     external_id: str
     merged_into: str | None = None
 
 
-def apply_notices(db: Session, notices: list[Notice]) -> dict[str, int]:
-    result = {"deleted": 0, "flagged": 0, "merged": 0, "ignored": 0}
+@dataclass
+class NoticeResult:
+    """How many notices ended each way. A ``failed`` notice is skipped so it cannot block the rest."""
+
+    deleted: int = 0
+    flagged: int = 0
+    merged: int = 0
+    ignored: int = 0
+    failed: int = 0
+
+
+def apply_notices(db: Session, notices: list[Notice]) -> NoticeResult:
+    result = NoticeResult()
     for notice in notices:
-        title = _find(db, notice.provider, notice.content_type, notice.external_id)
-        if title is None:
-            result["ignored"] += 1
-            logger.info("notice ignored, id not in catalog: %s", notice)
-            continue
-        if notice.action == "merge" and notice.merged_into:
-            outcome = _apply_merge(db, notice, title)
-        else:
-            outcome = _apply_delete(db, notice, title)
-        result[outcome] += 1
+        try:
+            with db.begin_nested():
+                outcome = _apply_one(db, notice)
+        except Exception:
+            outcome = "failed"
+            logger.exception("notice failed and was skipped: %s", notice)
+        setattr(result, outcome, getattr(result, outcome) + 1)
     return result
+
+
+def _apply_one(db: Session, notice: Notice) -> str:
+    title = _find(db, notice.provider, notice.content_type, notice.external_id)
+    if title is None:
+        logger.info("notice ignored, id not in catalog: %s", notice)
+        return "ignored"
+    if notice.action == NoticeAction.MERGE and notice.merged_into:
+        return _apply_merge(db, notice, title)
+    return _apply_delete(db, notice, title)
+
+
+def _repoint_recommendations(db: Session, source_id: int, target_id: int | None) -> None:
+    """Move (or with no target, drop) the recommendation rows of a title; absent table is fine."""
+    statement = (
+        delete(_RECOMMENDATIONS).where(_RECOMMENDATIONS.c.content_id == source_id)
+        if target_id is None
+        else update(_RECOMMENDATIONS).where(_RECOMMENDATIONS.c.content_id == source_id).values(content_id=target_id)
+    )
+    try:
+        with db.begin_nested():
+            db.execute(statement)
+    except DBAPIError as e:
+        logger.debug("recommendations not updated: %s", e)
 
 
 def _apply_delete(db: Session, notice: Notice, title: Content) -> str:
@@ -73,8 +115,6 @@ def _apply_merge(db: Session, notice: Notice, source: Content) -> str:
         db.query(ContentExternalId).filter_by(
             provider=notice.provider, kind=notice.content_type, external_id=notice.external_id
         ).update({ContentExternalId.external_id: notice.merged_into}, synchronize_session=False)
-        if notice.provider in ID_KINDS:
-            setattr(source, f"{notice.provider}_id", int(notice.merged_into))
         db.flush()
         logger.info("notice applied, title %s now carries id %s: %s", source.id, notice.merged_into, notice)
         return "merged"
@@ -122,6 +162,7 @@ def _merge_titles(db: Session, source: Content, target: Content) -> None:
         else:
             episode.content_id = tid
     db.query(Reminder).filter_by(content_id=sid).update({Reminder.content_id: tid}, synchronize_session=False)
+    _repoint_recommendations(db, sid, tid)
     db.query(Gossip).filter_by(related_content_id=sid).update(
         {Gossip.related_content_id: tid}, synchronize_session=False
     )
@@ -130,12 +171,6 @@ def _merge_titles(db: Session, source: Content, target: Content) -> None:
     db.expire(source)
     db.delete(source)
     db.flush()
-
-
-def _ids_of(db: Session, titles: list[Content]) -> list[tuple[Content, dict[str, str]]]:
-    """Each title with its ids ({provider: external id}) from the external-id table."""
-    found = ContentRepository(db).external_ids_for([t.id for t in titles])
-    return [(t, found[t.id]) for t in titles]
 
 
 def _flag_deleted(title: Content, notice: Notice) -> None:
@@ -148,6 +183,7 @@ def _remove_title(db: Session, title: Content) -> None:
     """Delete a title and the rows that only exist because of it."""
     for model in (Episode, UserContentRank, Reminder):
         db.query(model).filter_by(content_id=title.id).delete(synchronize_session=False)
+    _repoint_recommendations(db, title.id, None)
     db.query(Gossip).filter_by(related_content_id=title.id).update(
         {Gossip.related_content_id: None}, synchronize_session=False
     )

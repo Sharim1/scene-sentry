@@ -59,7 +59,7 @@ def run_job(db, feed, now=NOW):
     with (
         patch("app.tasks.periodic.db_session", session),
         patch("app.tasks.periodic.get_tvmaze_provider", return_value=feed),
-        patch("app.services.tvmaze_updates.utc_now", return_value=now),
+        patch("app.services.tvdb_updates.utc_now", return_value=now),
     ):
         return tvmaze_updates_task.run()
 
@@ -213,3 +213,20 @@ def test_provider_refuses_a_gap_wider_than_a_month():
 
     with pytest.raises(ProviderError):
         provider_with_http(FakeHTTP()).get_updated_ids("tv_show", NOW - timedelta(days=45), now=NOW)
+
+
+def test_soft_time_limit_ends_the_run_cleanly_and_keeps_the_bookmark(db_session):
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    before = NOW - timedelta(hours=2)
+    set_bookmark(db_session, before)
+
+    class OutOfTime(FakeFeed):
+        def get_updated_ids(self, content_type, since):
+            raise SoftTimeLimitExceeded()
+
+    run_job(db_session, OutOfTime())  # must not raise (no retry)
+
+    row = state(db_session)
+    assert row.watermark.replace(tzinfo=UTC) == before
+    assert row.status == "timeout"

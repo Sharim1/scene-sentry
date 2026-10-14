@@ -91,3 +91,24 @@ def test_a_later_success_clears_the_failure(db_session):
     assert row.refresh_attempts == 0
     assert row.last_error is None
     assert row.last_refreshed_at is not None
+
+
+def test_soft_time_limit_stops_enrichment_cleanly_keeping_finished_titles(db_session):
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    first = add_movie(db_session, "First", 1)
+    second = add_movie(db_session, "Second", 2)
+
+    class OutOfTime(FakeDetailProvider):
+        def get_details(self, ext_id):
+            if int(ext_id) == 2:
+                raise SoftTimeLimitExceeded()
+            return super().get_details(ext_id)
+
+    enrich(db_session, OutOfTime())  # must not raise
+
+    assert db_session.get(Content, first.id).last_refreshed_at is not None
+    unfinished = db_session.get(Content, second.id)
+    assert unfinished.last_refreshed_at is None
+    assert unfinished.refresh_attempts == 0  # running out of time is not the title's fault
+    assert unfinished.last_error is None

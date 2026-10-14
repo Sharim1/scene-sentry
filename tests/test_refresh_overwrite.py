@@ -86,3 +86,34 @@ def test_a_missing_value_from_the_provider_keeps_the_stored_one(db_session):
 
     show = db_session.get(Content, show.id)
     assert (show.status, show.rating) == ("Running", 7.0)
+
+
+def _dated_detail(**fields):
+    return NormalizedContent(title="Show", content_type="tv_show", provider="tvmaze", **fields)
+
+
+def test_refresh_replaces_a_moved_release_date_and_next_episode_date(db_session):
+    show = add_show(db_session, release_date="2026-11-01", next_episode_date=datetime(2026, 11, 2, tzinfo=UTC))
+    detail = _dated_detail(release_date="2026-12-01", next_episode_date="2026-12-02")
+
+    refresh(db_session, FakeShowProvider(detail))
+
+    show = db_session.get(Content, show.id)
+    assert show.release_date == "2026-12-01"
+    assert show.next_episode_date.date().isoformat() == "2026-12-02"
+
+
+def test_a_hand_edited_title_keeps_its_dates(db_session):
+    show = add_show(
+        db_session,
+        release_date="2026-11-01",
+        next_episode_date=datetime(2026, 11, 2, tzinfo=UTC),
+        refresh_locked=True,
+    )
+    detail = _dated_detail(release_date="2026-12-01", next_episode_date="2026-12-02")
+
+    refresh(db_session, FakeShowProvider(detail))
+
+    show = db_session.get(Content, show.id)
+    assert show.release_date == "2026-11-01"
+    assert show.next_episode_date.date().isoformat() == "2026-11-02"

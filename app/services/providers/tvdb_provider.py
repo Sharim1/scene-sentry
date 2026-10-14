@@ -12,8 +12,10 @@ import re
 from datetime import datetime
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.config import settings
-from app.services.provider_notices import Notice
+from app.services.provider_notices import Notice, NoticeAction
 from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
@@ -304,10 +306,12 @@ class TVDBProvider(ContentProvider):
                         ids.append(int(r["recordId"]))
                     elif r.get("mergeToId") is not None:
                         notices.append(
-                            Notice("merge", self.name, content_type, str(r["recordId"]), str(r["mergeToId"]))
+                            Notice(NoticeAction.MERGE, self.name, content_type, str(r["recordId"]), str(r["mergeToId"]))
                         )
                     else:
-                        notices.append(Notice("delete", self.name, content_type, str(r["recordId"])))
+                        notices.append(Notice(NoticeAction.DELETE, self.name, content_type, str(r["recordId"])))
+        except SoftTimeLimitExceeded:
+            raise
         except Exception as e:
             raise ProviderError(self.name, f"updates {api_type} since {since.isoformat()}: {e}") from e
         raise ProviderError(self.name, f"updates {api_type}: more than {self._MAX_UPDATE_PAGES} pages")

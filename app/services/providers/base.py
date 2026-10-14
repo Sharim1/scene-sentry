@@ -155,6 +155,12 @@ class Page(list):
     def __init__(self, items=(), exhausted: bool | None = None) -> None:
         super().__init__(items)
         self.exhausted = (not self) if exhausted is None else exhausted
+        self.explicit_end = exhausted is True and not self  # the provider itself said "no more pages"
+
+
+def is_explicit_end(items: list) -> bool:
+    """True when the provider itself marked an empty page as the end (``Page([], exhausted=True)``)."""
+    return not items and getattr(items, "explicit_end", False)
 
 
 def is_end_of_stream(items: list) -> bool:

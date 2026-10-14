@@ -3,23 +3,9 @@
 Same per-stream bookmark in ``sync_state``; only shows exist on TVmaze.
 """
 
-from datetime import datetime
-
-from app.config import settings
-from app.services.tvdb_updates import TVDBUpdatesSync, utc_now
+from app.services.tvdb_updates import UpdatesSync
 
 
-class TVMazeUpdatesSync(TVDBUpdatesSync):
+class TVMazeUpdatesSync(UpdatesSync):
     provider_name = "tvmaze"
     streams = ("tv_show",)
-
-    @property
-    def window_days(self) -> int:
-        return settings.tvmaze_updates_window_days
-
-    @property
-    def overlap_minutes(self) -> int:
-        return settings.tvmaze_updates_overlap_minutes
-
-    def _utc_now(self) -> datetime:
-        return utc_now()

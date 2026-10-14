@@ -23,6 +23,8 @@ Usage:
     python manage.py audit-ids --samples 25
     python manage.py review-list           # Read-only: titles parked because their ids conflict
     python manage.py failing-titles        # Titles whose refresh keeps failing (3+ by default)
+    python manage.py lock-title 3907       # Protect a hand-edited title from refresh overwrites
+    python manage.py unlock-title 3907     # Let refresh overwrite it again
 
     python manage.py recheck-sync          # Read-only: is each 'fully synced' end genuine?
     python manage.py recheck-sync --reset tvmaze/tv_show   # Owner's go only: unsync wrongly ended streams
@@ -319,6 +321,33 @@ def cmd_failing_titles(args: argparse.Namespace) -> None:
         db.close()
 
 
+def _set_lock(content_id: int, locked: bool) -> None:
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.refresh_planner import set_refresh_lock
+
+    db = SessionLocal()
+    try:
+        row = set_refresh_lock(db, content_id, locked)
+        if row is None:
+            print(f"No title with id {content_id}")
+        else:
+            print(f"{'Locked' if locked else 'Unlocked'} [{row.id}] {row.title} ({row.content_type})")
+    finally:
+        db.close()
+
+
+def cmd_lock_title(args: argparse.Namespace) -> None:
+    """Stop refresh from overwriting a hand-edited title."""
+    _set_lock(args.content_id, True)
+
+
+def cmd_unlock_title(args: argparse.Namespace) -> None:
+    """Let refresh overwrite a title again."""
+    _set_lock(args.content_id, False)
+
+
 # ---------------------------------------------------------------------------
 # recheck-sync
 # ---------------------------------------------------------------------------
@@ -451,6 +480,14 @@ def main():
     failing = sub.add_parser("failing-titles", help="Read-only report of titles whose refresh keeps failing")
     failing.add_argument("--min-failures", type=int, default=None, help="Minimum failures (default: setting, 3)")
     failing.set_defaults(func=cmd_failing_titles)
+
+    lock = sub.add_parser("lock-title", help="Protect a hand-edited title from refresh overwrites")
+    lock.add_argument("content_id", type=int, help="Database id of the title")
+    lock.set_defaults(func=cmd_lock_title)
+
+    unlock = sub.add_parser("unlock-title", help="Let refresh overwrite a title again")
+    unlock.add_argument("content_id", type=int, help="Database id of the title")
+    unlock.set_defaults(func=cmd_unlock_title)
 
     # -- recheck-sync --
     recheck = sub.add_parser("recheck-sync", help="Check 'fully synced' streams; --reset to unsync wrong ones")

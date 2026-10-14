@@ -9,7 +9,9 @@ the gap instead.
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,12 +19,9 @@ from app.config import settings
 from app.models.content import Content
 from app.models.external_id import ContentExternalId
 from app.models.sync_state import SyncState
-from app.services.provider_notices import apply_notices
+from app.services.provider_notices import Notice, apply_notices
 
 logger = logging.getLogger(__name__)
-
-PROVIDER = "tvdb"
-STREAMS = ("tv_show", "movie")
 
 
 def utc_now() -> datetime:
@@ -33,29 +32,35 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
-class TVDBUpdatesSync:
-    """Follows one provider's updates feed per stream. Subclasses name the provider and its knobs."""
+class UpdatesSync:
+    """Follows one provider's updates feed per stream. Subclasses name the provider, its streams and
+    (through ``<provider>_updates_*`` settings) its window and overlap."""
 
-    provider_name = PROVIDER
-    streams = STREAMS
+    provider_name: str
+    streams: tuple[str, ...]
 
-    def __init__(self, db: Session, provider):
+    def __init__(self, db: Session, provider: Any) -> None:
         self.db = db
         self.provider = provider
 
     @property
     def window_days(self) -> int:
-        return settings.tvdb_updates_window_days
+        return int(getattr(settings, f"{self.provider_name}_updates_window_days"))
 
     @property
     def overlap_minutes(self) -> int:
-        return settings.tvdb_updates_overlap_minutes
+        return int(getattr(settings, f"{self.provider_name}_updates_overlap_minutes"))
 
     def _utc_now(self) -> datetime:
         return utc_now()
 
     def run(self) -> dict[str, dict]:
-        return {stream: self._sync_stream(stream) for stream in self.streams}
+        results: dict[str, dict] = {}
+        for stream in self.streams:
+            results[stream] = self._sync_stream(stream)
+            if results[stream]["status"] == "timeout":
+                break  # out of time: the other streams wait for the next run
+        return results
 
     def _get_state(self, stream: str) -> SyncState:
         state = self.db.query(SyncState).filter_by(provider=self.provider_name, stream=stream).first()
@@ -92,22 +97,30 @@ class TVDBUpdatesSync:
             queued = self._queue_known(stream, ids, started)
             if notices:
                 logger.info("%s/%s notices applied: %s", self.provider_name, stream, applied)
+            failed_notices = applied.failed
+        except SoftTimeLimitExceeded:
+            return self._record_failure(stream, started, "timeout", "soft time limit exceeded")
         except Exception as exc:
-            self.db.rollback()
-            state = self._get_state(stream)
-            state.status = "failed"
-            state.last_error = f"{type(exc).__name__}: {exc}"[:2000]
-            state.last_run_at = started
-            self.db.commit()
-            logger.warning("%s/%s updates failed, bookmark unchanged: %s", self.provider_name, stream, exc)
-            return {"status": "failed", "queued": 0}
+            return self._record_failure(stream, started, "failed", f"{type(exc).__name__}: {exc}")
 
         state = self._get_state(stream)
-        state.watermark, state.status, state.last_error = started, "ok", None
+        state.watermark, state.status = started, "ok"
+        state.last_error = f"{failed_notices} notice(s) failed and were skipped" if failed_notices else None
         self.db.commit()
         return {"status": "ok", "queued": queued}
 
-    def _read_updates(self, stream: str, since: datetime):
+    def _record_failure(self, stream: str, started: datetime, status: str, error: str) -> dict:
+        """Roll back the unfinished run; the bookmark stays, so the next run repeats it."""
+        self.db.rollback()
+        state = self._get_state(stream)
+        state.status = status
+        state.last_error = error[:2000]
+        state.last_run_at = started
+        self.db.commit()
+        logger.warning("%s/%s updates %s, bookmark unchanged: %s", self.provider_name, stream, status, error)
+        return {"status": status, "queued": 0}
+
+    def _read_updates(self, stream: str, since: datetime) -> tuple[list[int], list[Notice]]:
         """(changed ids, delete/merge notices). Providers whose feed has no notices only list ids."""
         read = getattr(self.provider, "read_updates", None)
         if read is None:
@@ -130,3 +143,8 @@ class TVDBUpdatesSync:
                 .update({Content.next_refresh_at: now}, synchronize_session=False)
             )
         return queued
+
+
+class TVDBUpdatesSync(UpdatesSync):
+    provider_name = "tvdb"
+    streams = ("tv_show", "movie")

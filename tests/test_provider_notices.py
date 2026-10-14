@@ -7,6 +7,9 @@ no real database.
 import logging
 from datetime import UTC, datetime
 
+import pytest
+from sqlalchemy import text
+
 from app.models.content import Content
 from app.models.episode import Episode
 from app.models.external_id import ContentExternalId
@@ -15,7 +18,7 @@ from app.models.library import LibraryItem, WatchStatus
 from app.models.ranking import UserContentRank
 from app.models.reminder import Reminder, ReminderType
 from app.models.user import User
-from app.services.provider_notices import Notice, apply_notices
+from app.services.provider_notices import Notice, NoticeResult, apply_notices
 
 
 def add_title(db, title, tvdb_id, content_type="tv_show"):
@@ -50,7 +53,7 @@ def test_delete_removes_a_title_nobody_has_in_a_library(db_session):
 
     result = apply_notices(db_session, [delete_notice(100)])
 
-    assert result == {"deleted": 1, "flagged": 0, "merged": 0, "ignored": 0}
+    assert result == NoticeResult(deleted=1, flagged=0, merged=0, ignored=0)
     assert db_session.get(Content, dead_id) is None
     assert db_session.query(ContentExternalId).filter_by(external_id="100").count() == 0
 
@@ -64,7 +67,7 @@ def test_delete_keeps_a_title_that_is_in_a_library_and_stops_refreshing_it(db_se
 
     result = apply_notices(db_session, [delete_notice(101)])
 
-    assert result == {"deleted": 0, "flagged": 1, "merged": 0, "ignored": 0}
+    assert result == NoticeResult(deleted=0, flagged=1, merged=0, ignored=0)
     db_session.refresh(kept)
     assert db_session.get(LibraryItem, item.id).content_id == kept.id
     assert kept.next_refresh_at is None
@@ -96,7 +99,7 @@ def test_merge_moves_the_id_to_the_surviving_title_and_library_items_follow(db_s
 
     result = apply_notices(db_session, [merge_notice(200, 201)])
 
-    assert result == {"deleted": 0, "flagged": 0, "merged": 1, "ignored": 0}
+    assert result == NoticeResult(deleted=0, flagged=0, merged=1, ignored=0)
     assert db_session.get(Content, old_id) is None
     moved = db_session.get(LibraryItem, item.id)
     assert (moved.content_id, moved.rating) == (survivor_id, 5)
@@ -156,7 +159,7 @@ def test_merge_into_an_id_we_do_not_have_gives_the_title_the_new_id(db_session):
 
     result = apply_notices(db_session, [merge_notice(220, 221)])
 
-    assert result["merged"] == 1
+    assert result.merged == 1
     db_session.refresh(title)
     rows = db_session.query(ContentExternalId).filter_by(provider="tvdb", content_id=title_id).all()
     assert [r.external_id for r in rows] == ["221"]
@@ -170,8 +173,8 @@ def test_unknown_ids_and_replayed_notices_change_nothing(db_session):
     first = apply_notices(db_session, notices)
     second = apply_notices(db_session, notices)
 
-    assert first == {"deleted": 0, "flagged": 0, "merged": 1, "ignored": 1}
-    assert second == {"deleted": 0, "flagged": 0, "merged": 0, "ignored": 2}
+    assert first == NoticeResult(deleted=0, flagged=0, merged=1, ignored=1)
+    assert second == NoticeResult(deleted=0, flagged=0, merged=0, ignored=2)
 
 
 def test_every_applied_notice_is_logged(db_session, caplog):
@@ -185,3 +188,72 @@ def test_every_applied_notice_is_logged(db_session, caplog):
     applied = [r.getMessage() for r in caplog.records if "notice applied" in r.getMessage()]
     assert len(applied) == 2
     assert "240" in applied[0] and "241" in applied[1] and "242" in applied[1]
+
+
+@pytest.fixture()
+def recommendations(db_session):
+    """The recommendations table exists in production but its model is not registered with the app."""
+    db_session.execute(
+        text("CREATE TABLE recommendations (id INTEGER PRIMARY KEY, user_id INTEGER, content_id INTEGER NOT NULL)")
+    )
+
+    def rows():
+        return [r[0] for r in db_session.execute(text("SELECT content_id FROM recommendations ORDER BY id"))]
+
+    return rows
+
+
+def test_a_merge_moves_recommendations_to_the_survivor(db_session, recommendations):
+    old, new = add_title(db_session, "Old", 500), add_title(db_session, "New", 501)
+    db_session.execute(text("INSERT INTO recommendations (user_id, content_id) VALUES (1, :c)"), {"c": old.id})
+    new_id = new.id
+
+    result = apply_notices(db_session, [merge_notice(500, 501)])
+
+    assert result.merged == 1
+    assert recommendations() == [new_id]
+
+
+def test_a_delete_removes_recommendations_of_the_title(db_session, recommendations):
+    dead = add_title(db_session, "Dead", 510)
+    db_session.execute(text("INSERT INTO recommendations (user_id, content_id) VALUES (1, :c)"), {"c": dead.id})
+
+    result = apply_notices(db_session, [delete_notice(510)])
+
+    assert result.deleted == 1
+    assert recommendations() == []
+
+
+def test_a_merge_of_an_imdb_id_into_an_id_we_lack_just_renames_it(db_session):
+    row = Content(title="Film", content_type="movie")
+    db_session.add(row)
+    db_session.flush()
+    db_session.add(ContentExternalId(provider="imdb", kind="movie", external_id="tt1", content_id=row.id))
+    db_session.flush()
+    notice = Notice(action="merge", provider="imdb", content_type="movie", external_id="tt1", merged_into="tt2")
+
+    result = apply_notices(db_session, [notice])
+
+    assert result.merged == 1
+    assert db_session.query(ContentExternalId).filter_by(content_id=row.id).one().external_id == "tt2"
+
+
+def test_one_failing_notice_is_recorded_and_the_others_still_apply(db_session, monkeypatch):
+    a, b = add_title(db_session, "A", 520), add_title(db_session, "B", 521)
+    b_id = b.id
+    from app.services import provider_notices
+
+    original = provider_notices._apply_delete
+
+    def flaky(db, notice, title):
+        if notice.external_id == "520":
+            raise RuntimeError("constraint exploded")
+        return original(db, notice, title)
+
+    monkeypatch.setattr(provider_notices, "_apply_delete", flaky)
+
+    result = apply_notices(db_session, [delete_notice(520), delete_notice(521)])
+
+    assert (result.failed, result.deleted) == (1, 1)
+    assert db_session.get(Content, b_id) is None
+    assert db_session.get(Content, a.id) is not None
