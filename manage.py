@@ -21,6 +21,10 @@ Usage:
 
     python manage.py audit-ids             # Read-only duplicate / conflicting provider id report
     python manage.py audit-ids --samples 25
+    python manage.py failing-titles        # Titles whose refresh keeps failing (3+ by default)
+
+    python manage.py recheck-sync          # Read-only: is each 'fully synced' end genuine?
+    python manage.py recheck-sync --reset tvmaze/tv_show   # Owner's go only: unsync wrongly ended streams
 
     python manage.py fix-emails            # Backfill real emails from Clerk for placeholder users
     python manage.py fix-emails --dry-run  # Preview what would be updated
@@ -283,6 +287,53 @@ def cmd_audit_ids(args: argparse.Namespace) -> None:
         db.close()
 
 
+def cmd_failing_titles(args: argparse.Namespace) -> None:
+    """Read-only report of titles whose refresh keeps failing."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.refresh_planner import failing_titles
+
+    db = SessionLocal()
+    try:
+        rows = failing_titles(db, args.min_failures)
+        print(f"{len(rows)} titles with repeated refresh failures")
+        for r in rows:
+            print(f"  [{r.id}] {r.title} ({r.content_type}) attempts={r.refresh_attempts} error={r.last_error}")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# recheck-sync
+# ---------------------------------------------------------------------------
+
+
+def cmd_recheck_sync(args: argparse.Namespace) -> None:
+    """Report whether each 'fully synced' end is genuine; optionally reset wrong ones."""
+    _init_app()
+
+    from app.database import SessionLocal
+    from app.services.providers.registry import get_active_providers
+    from app.services.sync_recheck import format_report, recheck_streams, reset_wrong_streams
+
+    db = SessionLocal()
+    try:
+        providers = get_active_providers()
+        if not args.reset:
+            print(format_report(recheck_streams(db, providers)))
+            return
+        streams = [tuple(r.split("/", 1)) for r in args.reset]
+        done = reset_wrong_streams(db, providers, streams)
+        for p, t in done:
+            print(f"Reset {p}/{t}: fully_synced cleared, cursor kept.")
+        for key in streams:
+            if key not in done:
+                print(f"Left alone {key[0]}/{key[1]}: not currently judged wrong.")
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -378,6 +429,20 @@ def main():
     audit = sub.add_parser("audit-ids", help="Read-only report of duplicate/conflicting provider ids")
     audit.add_argument("--samples", type=int, default=10, help="Sample rows per problem kind (default 10)")
     audit.set_defaults(func=cmd_audit_ids)
+
+    failing = sub.add_parser("failing-titles", help="Read-only report of titles whose refresh keeps failing")
+    failing.add_argument("--min-failures", type=int, default=None, help="Minimum failures (default: setting, 3)")
+    failing.set_defaults(func=cmd_failing_titles)
+
+    # -- recheck-sync --
+    recheck = sub.add_parser("recheck-sync", help="Check 'fully synced' streams; --reset to unsync wrong ones")
+    recheck.add_argument(
+        "--reset",
+        nargs="+",
+        metavar="PROVIDER/TYPE",
+        help="Clear fully_synced on these streams if still judged wrong (needs the owner's go)",
+    )
+    recheck.set_defaults(func=cmd_recheck_sync)
 
     args = parser.parse_args()
     if not args.command:

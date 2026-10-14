@@ -10,6 +10,7 @@ from app.services.content_discovery import ContentDiscoveryService
 from app.services.gossip_service import GossipService
 from app.services.ranking_service import RankingService
 from app.services.reminder_service import ReminderService
+from app.tasks.lease import leased
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ DISCOVERY_BUDGET_FRACTION = 0.5
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def content_discovery_task(self):
     try:
         with db_session() as db:
@@ -38,6 +40,7 @@ def content_discovery_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def content_enrichment_task(self):
     try:
         with db_session() as db:
@@ -50,6 +53,7 @@ def content_enrichment_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def gossip_scraping_task(self):
     try:
         with db_session() as db:
@@ -63,6 +67,7 @@ def gossip_scraping_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def reranking_task(self):
     try:
         with db_session() as db:
@@ -80,6 +85,7 @@ def reranking_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def reminder_task(self):
     try:
         with db_session() as db:
@@ -92,6 +98,7 @@ def reminder_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def embedding_refresh_task(self):
     try:
         from app.services.embedding_service import EmbeddingService
@@ -108,6 +115,7 @@ def embedding_refresh_task(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@leased
 def cleanup_task(self):
     try:
         cutoff_30 = datetime.now(UTC) - timedelta(days=30)

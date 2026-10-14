@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are tracked in Linear (team: "Scene Sentry") via the Linear MCP server. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for this repository, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
