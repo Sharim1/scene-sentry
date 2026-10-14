@@ -32,7 +32,7 @@ Constraints: one developer, no budget, one small Oracle box (2 CPU, ~1 GB RAM), 
 
 - **Modules:** `providers` (fetch and normalise only, raise `ProviderError` on failure, never return `[]` for an error; small capabilities: changes-since, details, episodes, search), `identity` (resolver: match / create / conflict, pure, one place for all id and title rules), `store` (batched `INSERT ... ON CONFLICT`), `planner` (what is due now), `pipeline` (fetch → normalise → resolve → store for one chunk). Celery tasks stay thin.
 - **Data model:**
-  - `content_external_id (provider, kind, external_id)` with a database `PRIMARY KEY` / unique rule, one row per provider id. The existing id columns stay as read-through copies until pages and queries have moved.
+  - `content_external_id (provider, kind, external_id)` with a database `PRIMARY KEY` / unique rule, one row per provider id. The old id columns on `content` were copies while pages and queries moved; migration `a1b6c4d8e2f7` (#89) dropped them, so this table is the only place provider ids live (episodes keep their own id columns).
   - Per-title refresh state on `content`: `last_refreshed_at`, `next_refresh_at`, `refresh_attempts`, `last_error`.
   - `sync_state` per (provider, stream): timestamp watermark, status, lease, last error (extends `discovery_state`).
 - **Refresh tiers** (start values, tune with data): hot (tracked by a user, or something airing within 14 days) 6 h; warm (running shows, announced movies) 12 h to 1 day; cold (ended / released) 30 to 180 days; failed (3+ attempts) exponential backoff, capped at 7 days.
@@ -68,6 +68,6 @@ Moving the sync worker to the database VM removes most of the round-trip cost, b
 5. Change feeds for TVDB and TVmaze with watermarks.
 6. Bulk backfill and cleanup; correct stale docs (`ARCHITECTURE.md`, `DATA_FLOWS.md`, `PROVIDERS.md` still describe APScheduler).
 
-**To revisit:** the Option C gate after Phase 3; tier lengths once real change-feed data exists; whether TMDb returns (it would add a third feed); removing the old id columns.
+**To revisit:** the Option C gate after Phase 3; tier lengths once real change-feed data exists; whether TMDb returns (it would add a third feed).
 
 **Not verified:** Sonarr's metadata proxy source is closed; memory per Celery process on the Oracle box and spare capacity on the database VM are unmeasured; whether TVmaze's `fully_synced` state is a false end.

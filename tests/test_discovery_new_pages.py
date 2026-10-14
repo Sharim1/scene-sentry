@@ -14,6 +14,7 @@ from app.models.content import Content
 from app.models.discovery_state import DiscoveryState
 from app.services.content_discovery import ContentDiscoveryService
 from app.services.providers.base import NormalizedContent
+from tests.id_helpers import id_of
 
 
 class FakeTVDB:
@@ -72,8 +73,8 @@ def state(db_session, content_type: str) -> DiscoveryState:
 
 def saved_ids(db_session, content_type: str) -> set[int]:
     db_session.expire_all()
-    rows = db_session.query(Content.tvdb_id).filter(Content.content_type == content_type).all()
-    return {r[0] for r in rows}
+    rows = db_session.query(Content).filter(Content.content_type == content_type).all()
+    return {id_of(db_session, r, "tvdb") for r in rows}
 
 
 @pytest.mark.parametrize("content_type", ["movie", "tv_show"])

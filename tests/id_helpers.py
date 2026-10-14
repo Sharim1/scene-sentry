@@ -20,13 +20,21 @@ def add_title(db, title, content_type="movie", ids=None, **fields):
 
 
 def add_row_with_ids(db, **fields):
-    """Add a title the way production has it after the backfill: ids on the old columns and in the table."""
-    row = Content(**fields)
-    db.add(row)
-    db.flush()
+    """Add a title from keyword fields where ``tvdb_id=7`` style values go into the external-id table."""
+    ids = {kind: fields.pop(f"{kind}_id") for kind in ("tmdb", "imdb", "tvdb", "tvmaze") if fields.get(f"{kind}_id")}
     for kind in ("tmdb", "imdb", "tvdb", "tvmaze"):
-        value = fields.get(f"{kind}_id")
-        if value:
-            db.add(ContentExternalId(provider=kind, kind=row.content_type, external_id=str(value), content_id=row.id))
-    db.commit()
-    return row
+        fields.pop(f"{kind}_id", None)
+    return add_title(db, fields.pop("title"), fields.pop("content_type", "movie"), ids=ids, **fields)
+
+
+def id_of(db, row, provider):
+    """The row's id for a provider from the external-id table (int for numeric providers), or None."""
+    db.expire_all()
+    found = (
+        db.query(ContentExternalId.external_id)
+        .filter(ContentExternalId.content_id == row.id, ContentExternalId.provider == provider)
+        .scalar()
+    )
+    if found is not None and provider in ("tmdb", "tvdb", "tvmaze"):
+        return int(found)
+    return found

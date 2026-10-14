@@ -19,7 +19,7 @@ Usage:
     python manage.py enrich --all                        # Loop until nothing left
     python manage.py enrich --status                     # Show how many records need enrichment
 
-    python manage.py audit-ids             # Read-only duplicate / conflicting provider id report
+    python manage.py audit-ids             # Read-only report: ids shared by a movie and a show, likely duplicate titles
     python manage.py audit-ids --samples 25
     python manage.py review-list           # Read-only: titles parked because their ids conflict
     python manage.py failing-titles        # Titles whose refresh keeps failing (3+ by default)

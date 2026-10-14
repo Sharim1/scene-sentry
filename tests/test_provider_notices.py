@@ -19,7 +19,7 @@ from app.services.provider_notices import Notice, apply_notices
 
 
 def add_title(db, title, tvdb_id, content_type="tv_show"):
-    row = Content(title=title, content_type=content_type, tvdb_id=tvdb_id)
+    row = Content(title=title, content_type=content_type)
     db.add(row)
     db.flush()
     db.add(ContentExternalId(provider="tvdb", kind=content_type, external_id=str(tvdb_id), content_id=row.id))
@@ -70,7 +70,6 @@ def test_delete_keeps_a_title_that_is_in_a_library_and_stops_refreshing_it(db_se
     assert kept.next_refresh_at is None
     assert "deleted" in kept.last_error
     assert db_session.query(ContentExternalId).filter_by(external_id="101").count() == 0
-    assert kept.tvdb_id is None
 
 
 def test_merge_gives_the_survivor_the_ids_it_lacked_going_by_the_external_id_table(db_session):
@@ -82,7 +81,6 @@ def test_merge_gives_the_survivor_the_ids_it_lacked_going_by_the_external_id_tab
     apply_notices(db_session, [merge_notice(300, 301)])
 
     db_session.expire_all()
-    assert db_session.get(Content, survivor.id).imdb_id == "tt9"  # old column, still written until #89
     ids = {(r.provider, r.external_id) for r in db_session.query(ContentExternalId).filter_by(content_id=survivor.id)}
     assert ids == {("tvdb", "300"), ("tvdb", "301"), ("imdb", "tt9")}
 
@@ -160,7 +158,6 @@ def test_merge_into_an_id_we_do_not_have_gives_the_title_the_new_id(db_session):
 
     assert result["merged"] == 1
     db_session.refresh(title)
-    assert title.tvdb_id == 221
     rows = db_session.query(ContentExternalId).filter_by(provider="tvdb", content_id=title_id).all()
     assert [r.external_id for r in rows] == ["221"]
 

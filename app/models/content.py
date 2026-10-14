@@ -39,13 +39,8 @@ class Content(Base):
     embedding_hash = Column(String(64), nullable=True)
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True)
 
-    # External IDs (used for cross-platform deduplication)
+    # Provider ids (tmdb, imdb, tvdb, tvmaze, isbn) live in ContentExternalId, not on this row.
     external_id = Column(String(50), nullable=True)
-    tmdb_id = Column(Integer, nullable=True, index=True)
-    imdb_id = Column(String(20), nullable=True, index=True)
-    tvdb_id = Column(Integer, nullable=True, index=True)
-    tvmaze_id = Column(Integer, nullable=True, index=True)
-    isbn = Column(String(20), nullable=True)
 
     # Which provider originally ingested this record
     provider = Column(String(20), nullable=True)  # "tmdb", "tvdb", "omdb", "tvmaze"

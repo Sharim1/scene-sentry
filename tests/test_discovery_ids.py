@@ -9,7 +9,7 @@ database.
 import pytest
 
 from tests.discovery_helpers import FakeProvider, FakeTVDBWithDates, item, provider_with, stored, sync
-from tests.id_helpers import add_row_with_ids
+from tests.id_helpers import add_row_with_ids, id_of
 
 
 def add_row(db_session, **kw):
@@ -74,7 +74,7 @@ class TestStillTheSameTitleWhenItShouldBe:
 
         rows = stored(db_session, "tv_show")
         assert len(rows) == 1
-        assert (rows[0].tvdb_id, rows[0].tmdb_id) == (5, 99)
+        assert (id_of(db_session, rows[0], "tvdb"), id_of(db_session, rows[0], "tmdb")) == (5, 99)
 
 
 class TestDifferentIdsAreDifferentTitles:
@@ -83,7 +83,7 @@ class TestDifferentIdsAreDifferentTitles:
 
         sync(db_session, provider_with("tv_show", "tvdb", [item("The Voice", "tv_show", year=2011, tvdb_id=11)]))
 
-        assert {r.tvdb_id for r in stored(db_session, "tv_show")} == {10, 11}
+        assert {id_of(db_session, r, "tvdb") for r in stored(db_session, "tv_show")} == {10, 11}
 
     def test_two_such_titles_arriving_in_one_run_are_both_stored(self, db_session):
         items = [
@@ -93,4 +93,4 @@ class TestDifferentIdsAreDifferentTitles:
 
         sync(db_session, provider_with("tv_show", "tvdb", items))
 
-        assert {r.tvdb_id for r in stored(db_session, "tv_show")} == {10, 11}
+        assert {id_of(db_session, r, "tvdb") for r in stored(db_session, "tv_show")} == {10, 11}
