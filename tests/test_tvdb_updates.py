@@ -201,17 +201,12 @@ def test_ids_are_matched_within_the_same_content_type(db_session):
 
 
 def test_delete_and_merge_notices_from_the_feed_are_applied_and_the_bookmark_moves(db_session):
-    from app.models.external_id import ContentExternalId
     from app.models.library import LibraryItem
     from app.models.user import User
 
     gone = add_title(db_session, "Gone", 1)
     old = add_title(db_session, "Old", 2)
     survivor = add_title(db_session, "Survivor", 3)
-    for row in (gone, old, survivor):
-        db_session.add(
-            ContentExternalId(provider="tvdb", kind="tv_show", external_id=str(row.tvdb_id), content_id=row.id)
-        )
     user = User(username="u", email="u@example.com")
     db_session.add(user)
     db_session.flush()
