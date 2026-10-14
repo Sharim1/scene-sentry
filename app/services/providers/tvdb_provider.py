@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from app.config import settings
+from app.services.provider_notices import Notice
 from app.services.providers.base import (
     ContentProvider,
     NormalizedContent,
@@ -277,19 +278,36 @@ class TVDBProvider(ContentProvider):
 
     def get_updated_ids(self, content_type: str, since: datetime) -> list[int]:
         """TVDB ids of titles created or edited since ``since``. Raises ProviderError on any failure."""
+        return self.read_updates(content_type, since)[0]
+
+    def read_updates(self, content_type: str, since: datetime) -> tuple[list[int], list[Notice]]:
+        """One pass over the feed: ids created or edited, and delete/merge notices.
+
+        A delete record may carry ``mergeToId`` (assumed from TVDB v4 /updates; not verified against
+        the live API), which makes it a merge. Raises ProviderError on any failure.
+        """
         if not self.client:
             raise ProviderError(self.name, "client not configured")
         api_type = self._UPDATE_TYPES[content_type]
         ids: list[int] = []
+        notices: list[Notice] = []
         try:
             for page in range(self._MAX_UPDATE_PAGES):
                 raw = self.client.get_updates(int(since.timestamp()), type=api_type, page=page)
                 records = _as_item_list(raw)
                 if not records:
-                    return ids
-                ids.extend(
-                    int(r["recordId"]) for r in records if r.get("method") != "delete" and r.get("recordId") is not None
-                )
+                    return ids, notices
+                for r in records:
+                    if r.get("recordId") is None:
+                        continue
+                    if r.get("method") != "delete":
+                        ids.append(int(r["recordId"]))
+                    elif r.get("mergeToId") is not None:
+                        notices.append(
+                            Notice("merge", self.name, content_type, str(r["recordId"]), str(r["mergeToId"]))
+                        )
+                    else:
+                        notices.append(Notice("delete", self.name, content_type, str(r["recordId"])))
         except Exception as e:
             raise ProviderError(self.name, f"updates {api_type} since {since.isoformat()}: {e}") from e
         raise ProviderError(self.name, f"updates {api_type}: more than {self._MAX_UPDATE_PAGES} pages")
