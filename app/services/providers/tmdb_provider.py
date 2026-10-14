@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.services.providers.base import ContentProvider, NormalizedContent, _year_from_date
+from app.services.providers.base import ContentProvider, NormalizedContent, ProviderError, _year_from_date
 from app.utils.log_safety import describe_http_error
 
 logger = logging.getLogger(__name__)
@@ -38,9 +38,8 @@ class TMDbProvider(ContentProvider):
 
     # ---- HTTP helpers ---- #
 
-    def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
-        if not self._api_key:
-            return None
+    def _request(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """GET an endpoint; any failure raises ProviderError."""
         base_params: dict[str, Any] = {"api_key": self._api_key, "language": "en-US"}
         if params:
             base_params.update(params)
@@ -48,9 +47,21 @@ class TMDbProvider(ContentProvider):
             with httpx.Client(timeout=15.0) as client:
                 resp = client.get(f"{BASE_URL}/{endpoint}", params=base_params)
                 resp.raise_for_status()
-                return resp.json()
+                data = resp.json()
         except Exception as e:
-            logger.error("TMDb API error (%s): %s", endpoint, describe_http_error(e))
+            raise ProviderError(self.name, f"{endpoint}: {describe_http_error(e)}") from None
+        if not isinstance(data, dict):
+            raise ProviderError(self.name, f"{endpoint}: unexpected response body")
+        return data
+
+    def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        """Best-effort GET for lookups that degrade to "nothing found" on failure."""
+        if not self._api_key:
+            return None
+        try:
+            return self._request(endpoint, params)
+        except ProviderError as e:
+            logger.error("TMDb API error (%s): %s", endpoint, e)
             return None
 
     def _format_poster(self, item: dict[str, Any]) -> dict[str, Any]:
@@ -60,8 +71,13 @@ class TMDbProvider(ContentProvider):
             item["backdrop_path"] = f"{BACKDROP_BASE_URL}{item['backdrop_path']}"
         return item
 
-    def _fetch_results(self, endpoint: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        data = self._get(endpoint, params)
+    def _fetch_results(
+        self, endpoint: str, params: dict[str, Any] | None = None, *, strict: bool = False
+    ) -> list[dict[str, Any]]:
+        if strict:
+            data: dict[str, Any] | None = self._request(endpoint, params)
+        else:
+            data = self._get(endpoint, params)
         if not data:
             return []
         return [self._format_poster(r) for r in data.get("results", []) if isinstance(r, dict)]
@@ -107,6 +123,7 @@ class TMDbProvider(ContentProvider):
         raw = self._fetch_results(
             "discover/movie",
             {"sort_by": "popularity.desc", "page": page, "include_adult": "false"},
+            strict=True,
         )
         return self._normalize_list(raw, "movie")
 
@@ -116,6 +133,7 @@ class TMDbProvider(ContentProvider):
         raw = self._fetch_results(
             "discover/tv",
             {"sort_by": "popularity.desc", "page": page},
+            strict=True,
         )
         return self._normalize_list(raw, "tv_show")
 
