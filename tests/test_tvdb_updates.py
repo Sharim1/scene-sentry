@@ -11,6 +11,7 @@ from unittest.mock import patch
 from app.models.content import Content
 from app.models.external_id import ContentExternalId
 from app.models.sync_state import SyncState
+from app.services.provider_notices import Notice
 from app.services.providers.base import ProviderError
 from app.services.refresh_planner import due_titles
 
@@ -24,6 +25,7 @@ class FakeFeed:
 
     def __init__(self):
         self.changes = {"tv_show": [], "movie": []}  # (tvdb_id, changed_at)
+        self.notices = {"tv_show": [], "movie": []}  # (Notice, changed_at)
         self.asked = []
         self.fail = False
 
@@ -35,6 +37,13 @@ class FakeFeed:
         if self.fail:
             raise ProviderError("tvdb", "updates feed unavailable")
         return [i for i, at in self.changes[content_type] if at >= since]
+
+    def read_updates(self, content_type, since):
+        notices = [n for n, at in self.notices[content_type] if at >= since]
+        return self.get_updated_ids(content_type, since), notices
+
+    def notice(self, content_type, notice, at):
+        self.notices[content_type].append((notice, at))
 
 
 def add_title(db, title, tvdb_id, content_type="tv_show", next_refresh_at=None):
@@ -191,6 +200,39 @@ def test_ids_are_matched_within_the_same_content_type(db_session):
     assert due_ids(db_session) == set()
 
 
+def test_delete_and_merge_notices_from_the_feed_are_applied_and_the_bookmark_moves(db_session):
+    from app.models.external_id import ContentExternalId
+    from app.models.library import LibraryItem
+    from app.models.user import User
+
+    gone = add_title(db_session, "Gone", 1)
+    old = add_title(db_session, "Old", 2)
+    survivor = add_title(db_session, "Survivor", 3)
+    for row in (gone, old, survivor):
+        db_session.add(
+            ContentExternalId(provider="tvdb", kind="tv_show", external_id=str(row.tvdb_id), content_id=row.id)
+        )
+    user = User(username="u", email="u@example.com")
+    db_session.add(user)
+    db_session.flush()
+    item = LibraryItem(user_id=user.id, content_id=old.id)
+    db_session.add(item)
+    db_session.commit()
+    survivor_id, item_id, gone_id = survivor.id, item.id, gone.id
+    set_bookmark(db_session, NOW - timedelta(hours=2))
+    feed = FakeFeed()
+    at = NOW - timedelta(minutes=10)
+    feed.notice("tv_show", Notice("delete", "tvdb", "tv_show", "1"), at)
+    feed.notice("tv_show", Notice("merge", "tvdb", "tv_show", "2", "3"), at)
+
+    run_job(db_session, feed)
+
+    db_session.expire_all()
+    assert db_session.get(Content, gone_id) is None
+    assert db_session.get(LibraryItem, item_id).content_id == survivor_id
+    assert state(db_session).watermark.replace(tzinfo=UTC) == NOW
+
+
 def test_first_run_starts_the_bookmark_without_fetching(db_session):
     feed = FakeFeed()
 
@@ -241,6 +283,27 @@ def test_provider_reads_every_page_of_the_feed_and_skips_deletions():
     since, kwargs = client.calls[0]
     assert since == int(NOW.timestamp())
     assert kwargs["type"] == "series"
+
+
+def test_provider_turns_delete_and_merge_records_into_notices_in_the_same_pass():
+    # Record shape assumed from TVDB v4 /updates: method "delete", with mergeToId when merged.
+    pages = {
+        0: [
+            {"recordId": 1, "method": "update"},
+            {"recordId": 2, "method": "delete"},
+            {"recordId": 3, "method": "delete", "mergeToId": 4, "mergeToEntityType": "series"},
+        ],
+    }
+    client = FakeSDKClient(pages)
+
+    ids, notices = provider_with_client(client).read_updates("tv_show", NOW)
+
+    assert ids == [1]
+    assert notices == [
+        Notice(action="delete", provider="tvdb", content_type="tv_show", external_id="2"),
+        Notice(action="merge", provider="tvdb", content_type="tv_show", external_id="3", merged_into="4"),
+    ]
+    assert len(client.calls) == 2  # page 0, then the empty page that ends the feed
 
 
 def test_provider_raises_provider_error_when_the_feed_call_fails():
